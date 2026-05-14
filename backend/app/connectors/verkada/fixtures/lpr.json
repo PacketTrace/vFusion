@@ -1,0 +1,18 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "lpr",
+  "created_at": 1700000300,
+  "webhook_id": "10000000-0000-0000-0000-000000000004",
+  "data": {
+    "camera_id": "30000000-0000-0000-0000-000000000003",
+    "created": 1700000300,
+    "detected": 1700000300123,
+    "license_plate_number": "ABC1234",
+    "confidence": 0.94,
+    "crop": [0.50, 0.62, 0.31, 0.43],
+    "image_url": "https://example.invalid/lpr/detection_0.jpg?ANONYMIZED",
+    "license_plate_state": "us-ca",
+    "license_plate_state_confidence": 1.0,
+    "vehicle_image_url": "https://example.invalid/lpr/detection_vehicle.jpg?ANONYMIZED"
+  }
+}

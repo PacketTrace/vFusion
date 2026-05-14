@@ -1,0 +1,33 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "notification",
+  "created_at": 1700000400,
+  "webhook_id": "10000000-0000-0000-0000-000000000005",
+  "data": {
+    "event_id": "20000000-0000-0000-0000-000000000005",
+    "device_id": "40000000-0000-0000-0000-000000000001",
+    "created": 1700000400,
+    "notification_type": "door_opened",
+    "device_type": "access_control",
+    "door_id": "40000000-0000-0000-0000-000000000001",
+    "direction": null,
+    "input_value": null,
+    "aux_info": null,
+    "user_info": null,
+    "lockdown_info": null,
+    "scenario_info": null,
+    "door_info": {
+      "acu_name": "Main ACU",
+      "acu_id": "50000000-0000-0000-0000-000000000001",
+      "name": "Front Door",
+      "door_id": "40000000-0000-0000-0000-000000000001",
+      "site": {
+        "name": "HQ",
+        "site_id": "60000000-0000-0000-0000-000000000001"
+      },
+      "api_control_enabled": true,
+      "camera_info": null,
+      "timezone": "America/Los_Angeles"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "sensor_alert",
+  "created_at": 1700000600,
+  "webhook_id": "10000000-0000-0000-0000-000000000007",
+  "data": {
+    "alert_event_id": "20000000-0000-0000-0000-000000000007",
+    "device_id": "80000000-0000-0000-0000-000000000001",
+    "device_name": "Hallway Sensor",
+    "device_serial": "EXMP-FAKE-0001",
+    "end_time": null,
+    "is_above_max_event": true,
+    "most_extreme_value": 83.1,
+    "reading": "noise_level",
+    "start_time": 1700000599,
+    "threshold": 80
+  }
+}

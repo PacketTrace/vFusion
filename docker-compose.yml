@@ -1,0 +1,110 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: verkada
+      POSTGRES_PASSWORD: verkada
+      POSTGRES_DB: verkadaroute
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verkada -d verkadaroute"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://verkada:verkada@postgres:5432/verkadaroute
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      FERNET_KEY: ${FERNET_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173}
+      PUBLIC_WEBHOOK_BASE: ${PUBLIC_WEBHOOK_BASE:-}
+    ports:
+      - "18080:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - webhook_assets:/app/data
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://verkada:verkada@postgres:5432/verkadaroute
+      REDIS_URL: redis://redis:6379/0
+      FERNET_KEY: ${FERNET_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - webhook_assets:/app/data
+    command: arq app.worker.WorkerSettings
+
+  # Cloudflare Tunnel — production mode. Stable URL on your own domain.
+  # Requires CF_TUNNEL_TOKEN in .env. See README "Production deploy".
+  #   docker compose --profile cloudflared up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
+    depends_on:
+      - backend
+    profiles: ["cloudflared"]
+
+  # Cloudflare TryCloudflare — quick mode. Ephemeral random URL, no
+  # account, no domain. The URL changes every restart, so don't point
+  # production Verkada webhooks at this. Useful for kicking the tires
+  # end-to-end without setting up DNS. The backend's /api/config endpoint
+  # reads the assigned hostname from cloudflared's metrics endpoint and
+  # surfaces it in the Webhook Inbox banner.
+  #   docker compose --profile quick up -d
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://backend:8000
+    depends_on:
+      - backend
+    profiles: ["quick"]
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE: ${VITE_API_BASE:-http://localhost:18080}
+    ports:
+      - "15173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    # Run install on each startup so new deps in package.json land
+    # without manually rebuilding the anonymous node_modules volume.
+    # No-op when nothing's changed (npm is fast on a warm cache).
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  postgres_data:
+  webhook_assets:

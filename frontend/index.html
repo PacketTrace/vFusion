@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" type="image/jpeg" href="/favicon.jpg" />
+    <title>vSplice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Vanta animated network background — same library used in the
+         a prior demo app BYOA app. Loaded sync so the canvas is ready before
+         our React app mounts and the empty body never flashes. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
+    <style>
+      html,
+      body {
+        font-family: "Poppins", "Inter", system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #000;
+      }
+      /* Vanta canvas sits as a fixed background; React app renders on top. */
+      .vanta-canvas {
+        z-index: 0 !important;
+        position: fixed !important;
+        inset: 0;
+      }
+      #vanta-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+      }
+      #bg-logo {
+        position: fixed;
+        inset: 0;
+        background-image: url("/verkadaLogo.png");
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: 60%;
+        opacity: 0.18;
+        filter: brightness(0.75) contrast(1.05);
+        pointer-events: none;
+        z-index: 1;
+      }
+      /* Frost layer sits above the Vanta canvas + logo and below the React
+         app, blurring the animation a touch so foreground UI reads cleanly
+         while the network pattern still feels alive underneath. */
+      #frost {
+        position: fixed;
+        inset: 0;
+        backdrop-filter: blur(6px) saturate(110%);
+        -webkit-backdrop-filter: blur(6px) saturate(110%);
+        background: rgba(0, 0, 0, 0.15);
+        pointer-events: none;
+        z-index: 2;
+      }
+      #root {
+        position: relative;
+        z-index: 3;
+        min-height: 100%;
+      }
+    </style>
+  </head>
+  <body class="text-slate-100">
+    <div id="vanta-bg" aria-hidden="true"></div>
+    <div id="bg-logo" aria-hidden="true"></div>
+    <div id="frost" aria-hidden="true"></div>
+    <div id="root"></div>
+    <script>
+      // Defer init until DOM is ready so the #vanta-bg div exists.
+      window.addEventListener("DOMContentLoaded", function () {
+        if (!window.VANTA || !window.VANTA.NET) return;
+        // We turn off Vanta's own mouseControls so the cursor doesn't yank
+        // the network around at full strength, then forward dampened
+        // mousemoves into it via the SDK's hooks. Effect: cursor still
+        // influences the network, but at ~50% sensitivity.
+        const instance = window.VANTA.NET({
+          el: "#vanta-bg",
+          mouseControls: false,
+          touchControls: false,
+          minHeight: 200.0,
+          minWidth: 200.0,
+          scale: 1.0,
+          scaleMobile: 1.0,
+          color: 0xffffff,
+          backgroundColor: 0x000000,
+          points: 14.0,
+          maxDistance: 24.0,
+          spacing: 18.0,
+        });
+        window.__vantaInstance = instance;
+
+        const DAMPEN = 0.5;
+        window.addEventListener(
+          "mousemove",
+          function (e) {
+            if (!instance || !instance.mouse) return;
+            const cx = window.innerWidth / 2;
+            const cy = window.innerHeight / 2;
+            // Lerp the cursor toward viewport center; Vanta's internal
+            // mouse object uses these to compute the network's pull.
+            instance.mouse.x = cx + (e.clientX - cx) * DAMPEN;
+            instance.mouse.y = cy + (e.clientY - cy) * DAMPEN;
+            instance.mouse.updated = true;
+          },
+          { passive: true },
+        );
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

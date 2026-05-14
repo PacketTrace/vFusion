@@ -1,0 +1,26 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "notification",
+  "created_at": 1700000100,
+  "webhook_id": "10000000-0000-0000-0000-000000000002",
+  "data": {
+    "event_id": "20000000-0000-0000-0000-000000000002",
+    "device_id": "30000000-0000-0000-0000-000000000002",
+    "created": 1700000100,
+    "notification_type": "person_of_interest",
+    "device_type": "camera",
+    "camera_id": "30000000-0000-0000-0000-000000000002",
+    "person_label": "Jane Doe",
+    "objects": [],
+    "crowd_threshold": null,
+    "image_url": "https://example.invalid/notifications/image/redeem?token=ANONYMIZED",
+    "video_url": "https://example.invalid/cameras/30000000-0000-0000-0000-000000000002/history/86400/1700000100/",
+    "event_description": null,
+    "license_plate_number": null,
+    "license_plate_state": null,
+    "location": null,
+    "location_lon": null,
+    "location_lat": null,
+    "camera_status": null
+  }
+}

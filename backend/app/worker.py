@@ -1,0 +1,543 @@
+"""arq worker — runs flow DAGs out-of-band of the webhook ingest path.
+
+Each ``run_flow`` job:
+
+1. Loads the Run + Flow.
+2. Topologically sorts the flow's nodes.
+3. Walks the order, deciding each node's status:
+   - root nodes (no incoming edges) always run
+   - non-root nodes run when at least one incoming edge has a successful
+     source AND the edge's branch (if any) matches the source's
+     ``output.matched`` (only meaningful for condition nodes)
+   - otherwise the node is recorded as ``skipped`` and its downstream
+     edges propagate that
+4. Each step's output is added to the template context as
+   ``steps.<node_name>.output`` for later nodes to reference.
+5. Run-level status reflects the worst non-skipped step: if any step
+   ``failed``, the run is ``failed``; else ``success``.
+"""
+
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
+
+from arq.connections import RedisSettings
+from arq.cron import cron
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.assets import cleanup_expired as cleanup_expired_assets
+from app.config import settings
+from app.connectors.verkada.catalog import crawl_all as crawl_verkada_catalog
+from app.connectors.verkada.footage import cleanup_old_clips
+from app.connectors.verkada.sync import sync_all_connections
+from app.db import SessionLocal
+from app.engine.actions import ACTIONS
+from app.engine.conditions import evaluate as evaluate_condition
+from app.engine.progress import StepProgress
+from app.engine.schedule import is_due as schedule_is_due
+from app.models import Connection, Flow, Run
+from app.pricing.gemini import refresh_gemini_pricing
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _topo_sort(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[str]:
+    """Kahn's algorithm. Returns node ids in execution order, or raises
+    ValueError if the graph has a cycle (shouldn't happen — API validates)."""
+    ids = [n["id"] for n in nodes]
+    indegree: dict[str, int] = {nid: 0 for nid in ids}
+    outgoing: dict[str, list[str]] = defaultdict(list)
+    for e in edges:
+        src, tgt = e.get("source"), e.get("target")
+        if src in indegree and tgt in indegree:
+            indegree[tgt] += 1
+            outgoing[src].append(tgt)
+    queue: deque[str] = deque(nid for nid in ids if indegree[nid] == 0)
+    order: list[str] = []
+    while queue:
+        nid = queue.popleft()
+        order.append(nid)
+        for tgt in outgoing[nid]:
+            indegree[tgt] -= 1
+            if indegree[tgt] == 0:
+                queue.append(tgt)
+    if len(order) != len(ids):
+        raise ValueError("flow contains a cycle")
+    return order
+
+
+async def _resolve_connection(session, conn_id_raw: Any) -> Connection | None:
+    if not conn_id_raw:
+        return None
+    try:
+        conn_id = UUID(str(conn_id_raw))
+    except (ValueError, TypeError):
+        return None
+    return (
+        await session.execute(select(Connection).where(Connection.id == conn_id))
+    ).scalar_one_or_none()
+
+
+async def _run_one_node(
+    session,
+    node: dict[str, Any],
+    ctx: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute a single node. Returns a result dict on success or raises."""
+    kind = node.get("kind", "action")
+    if kind == "condition":
+        return evaluate_condition(node.get("config") or {}, ctx)
+    if kind == "action":
+        action_type = node.get("action_type")
+        spec = ACTIONS.get(action_type)
+        if spec is None:
+            raise ValueError(f"unknown action type: {action_type!r}")
+        connection = await _resolve_connection(
+            session, (node.get("config") or {}).get("connection_id")
+        )
+        if connection is None:
+            raise ValueError("connection_id missing or invalid")
+        return await spec.run(node.get("config") or {}, ctx, connection)
+    raise ValueError(f"unknown node kind: {kind!r}")
+
+
+def _progress_for(run_id: UUID, step_name: str) -> StepProgress:
+    return StepProgress(run_id=run_id, step_name=step_name)
+
+
+def _edge_matches_branch(edge: dict[str, Any], src_output: dict[str, Any] | None) -> bool:
+    """An unconditional edge always matches; a branch-gated edge requires
+    the source's output to be a condition result with the matching value."""
+    branch = edge.get("branch")
+    if branch is None:
+        return True
+    if not isinstance(src_output, dict):
+        return False
+    if branch == "true":
+        return src_output.get("matched") is True
+    if branch == "false":
+        return src_output.get("matched") is False
+    return False
+
+
+async def run_flow(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa: ARG001
+    async with SessionLocal() as session:
+        run = await session.get(Run, UUID(run_id))
+        if run is None:
+            return {"error": f"run {run_id} not found"}
+
+        flow = await session.get(Flow, run.flow_id)
+        if flow is None:
+            run.status = "failed"
+            run.error = "flow no longer exists"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        nodes = list(flow.nodes or [])
+        edges = list(flow.edges or [])
+        if not nodes:
+            run.status = "failed"
+            run.error = "flow has no nodes configured"
+            run.started_at = run.started_at or _utcnow()
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        nodes_by_id = {n["id"]: n for n in nodes}
+        incoming: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for e in edges:
+            tgt = e.get("target")
+            if tgt in nodes_by_id:
+                incoming[tgt].append(e)
+
+        try:
+            order = _topo_sort(nodes, edges)
+        except ValueError as e:
+            run.status = "failed"
+            run.error = str(e)
+            run.started_at = run.started_at or _utcnow()
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        run.status = "running"
+        run.started_at = _utcnow()
+        await session.commit()
+
+        template_ctx: dict[str, Any] = {
+            "trigger": run.input or {},
+            "steps": {},
+        }
+        # node_id -> {status, output}
+        results: dict[str, dict[str, Any]] = {}
+        step_records: list[dict[str, Any]] = []
+        any_failed = False
+
+        for nid in order:
+            node = nodes_by_id[nid]
+            inc = incoming.get(nid, [])
+            started_at = _utcnow()
+
+            # Reachability
+            reachable: bool
+            if not inc:
+                reachable = True
+            else:
+                reachable = False
+                for edge in inc:
+                    src = results.get(edge.get("source"))
+                    if not src or src["status"] != "success":
+                        continue
+                    if _edge_matches_branch(edge, src.get("output")):
+                        reachable = True
+                        break
+
+            record: dict[str, Any] = {
+                "name": node.get("name") or nid,
+                "type": node.get("action_type") or node.get("kind", "action"),
+                "kind": node.get("kind", "action"),
+                "started_at": started_at.isoformat(),
+            }
+
+            if not reachable:
+                record["status"] = "skipped"
+                record["finished_at"] = _utcnow().isoformat()
+                results[nid] = {"status": "skipped", "output": None}
+                step_records.append(record)
+                # Persist incrementally so the UI sees skipped steps live.
+                run.steps = list(step_records)
+                flag_modified(run, "steps")
+                await session.commit()
+                continue
+
+            # Mark step as running and persist so the UI's poll picks it up.
+            # flag_modified is critical here: SQLAlchemy's change detection
+            # on JSON columns compares by equality, and we mutate the same
+            # dict object across the running → success transitions. Without
+            # flag_modified the second commit is a no-op and the step stays
+            # "running" forever in the DB.
+            record["status"] = "running"
+            step_records.append(record)
+            run.steps = list(step_records)
+            flag_modified(run, "steps")
+            await session.commit()
+
+            # Bind a live-progress reporter to this step's name. Actions
+            # that emit phase/log events read this from ctx and write rows
+            # into run_events for the UI to stream.
+            step_ctx = dict(template_ctx)
+            step_ctx["_progress"] = _progress_for(run.id, record["name"])
+            try:
+                output = await _run_one_node(session, node, step_ctx)
+                record["status"] = "success"
+                record["output"] = output
+                results[nid] = {"status": "success", "output": output}
+                template_ctx["steps"][record["name"]] = {"output": output}
+                # Also expose by node id for stability.
+                template_ctx["steps"][nid] = {"output": output}
+            except Exception as e:  # noqa: BLE001 — surface anything to the UI
+                record["status"] = "failed"
+                record["error"] = str(e)
+                results[nid] = {"status": "failed", "output": None}
+                any_failed = True
+
+            record["finished_at"] = _utcnow().isoformat()
+            step_records[-1] = dict(record)
+            run.steps = list(step_records)
+            flag_modified(run, "steps")
+            await session.commit()
+
+        overall_status = "failed" if any_failed else "success"
+        last_success = next(
+            (r["output"] for r in reversed(step_records) if r.get("status") == "success"),
+            None,
+        )
+        first_error = next(
+            (r["error"] for r in step_records if r.get("status") == "failed"),
+            None,
+        )
+
+        run.steps = list(step_records)
+        flag_modified(run, "steps")
+        run.status = overall_status
+        run.error = first_error
+        run.output = last_success if overall_status == "success" else None
+        run.finished_at = _utcnow()
+        await session.commit()
+        return {"status": run.status, "nodes": len(step_records)}
+
+
+async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa: ARG001
+    """One-off "Brew Your Own Analytics" run. Same Run + step + event
+    plumbing as a normal flow execution, but the "flow" is synthesized
+    from the BYOA form payload — historical → gemini_analyze_camera;
+    live → gemini_analyze_still_image. Reusing the actions means the
+    Runs page renders the captured media + AI text identically."""
+    async with SessionLocal() as session:
+        run = await session.get(Run, UUID(run_id))
+        if run is None:
+            return {"error": f"run {run_id} not found"}
+        params = run.input or {}
+        if not isinstance(params, dict) or not params.get("byoa"):
+            run.status = "failed"
+            run.error = "byoa params missing"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        mode = params.get("mode")
+        action_type = (
+            "gemini_analyze_camera"
+            if mode == "historical"
+            else "gemini_analyze_still_image"
+        )
+        spec = ACTIONS.get(action_type)
+        if spec is None:
+            run.status = "failed"
+            run.error = f"action {action_type} unavailable"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        try:
+            verkada_conn_id = UUID(params["connection_id"])
+        except (KeyError, ValueError):
+            run.status = "failed"
+            run.error = "invalid connection_id"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+        verkada_conn = await _resolve_connection(session, str(verkada_conn_id))
+        if verkada_conn is None:
+            run.status = "failed"
+            run.error = "Verkada connection not found"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": run.error}
+
+        config: dict[str, Any] = {
+            "connection_id": params["connection_id"],
+            "gemini_connection_id": params["gemini_connection_id"],
+            "camera_id": params["camera_id"],
+            "prompt": params.get("prompt"),
+            "model": params.get("model"),
+        }
+        if mode == "historical":
+            config["start_epoch"] = params.get("start_epoch")
+            config["duration_sec"] = params.get("duration_sec", 10)
+            config["pre_roll_sec"] = params.get("pre_roll_sec", 2)
+            # The BYOA UI never wants to sit through 60s of HD-backfill
+            # waiting — the user picked the start time themselves and
+            # is iterating live. Force the pre-grab delay off.
+            config["pre_grab_delay_sec"] = 0
+
+        record: dict[str, Any] = {
+            "name": "byoa",
+            "type": action_type,
+            "kind": "action",
+            "started_at": _utcnow().isoformat(),
+            "status": "running",
+        }
+        run.status = "running"
+        run.started_at = _utcnow()
+        run.steps = [dict(record)]
+        flag_modified(run, "steps")
+        await session.commit()
+
+        ctx_for_action: dict[str, Any] = {
+            "trigger": params,
+            "steps": {},
+            "_progress": _progress_for(run.id, "byoa"),
+        }
+        analyze_output: dict[str, Any] | None = None
+        try:
+            analyze_output = await spec.run(config, ctx_for_action, verkada_conn)
+            record["status"] = "success"
+            record["output"] = analyze_output
+            record["finished_at"] = _utcnow().isoformat()
+            run.steps = [dict(record)]
+            flag_modified(run, "steps")
+            run.status = "running" if params.get("post_to_helix") else "success"
+            run.output = analyze_output
+            await session.commit()
+        except Exception as e:  # noqa: BLE001 — surface anything to the UI
+            record["status"] = "failed"
+            record["error"] = str(e)
+            record["finished_at"] = _utcnow().isoformat()
+            run.steps = [dict(record)]
+            flag_modified(run, "steps")
+            run.status = "failed"
+            run.error = str(e)
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": str(e)}
+
+        # Optional follow-up: post the AI text to Helix as a video-tagging
+        # event. Same flow the real verkada_helix_event action runs in a
+        # normal flow execution — we just synthesize a second step record
+        # so the Runs page chain shows both.
+        if not params.get("post_to_helix") or analyze_output is None:
+            run.status = "success"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"status": "success"}
+
+        helix_spec = ACTIONS.get("verkada_helix_event")
+        if helix_spec is None:
+            run.status = "success"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"status": "success", "warning": "helix action missing"}
+
+        helix_attr = params.get("helix_attribute") or "Summary"
+        text = str(analyze_output.get("text") or "")
+        time_sec = (
+            analyze_output.get("started_at_epoch")
+            or analyze_output.get("captured_at_epoch")
+            or int(_utcnow().timestamp())
+        )
+        helix_config: dict[str, Any] = {
+            "connection_id": params["connection_id"],
+            "camera_id": params["camera_id"],
+            "event_type_uid": params["helix_event_type_uid"],
+            "time_ms": int(time_sec) * 1000,
+            "attributes": {helix_attr: text},
+        }
+        helix_record: dict[str, Any] = {
+            "name": "post_helix",
+            "type": "verkada_helix_event",
+            "kind": "action",
+            "started_at": _utcnow().isoformat(),
+            "status": "running",
+        }
+        run.steps = [dict(record), dict(helix_record)]
+        flag_modified(run, "steps")
+        await session.commit()
+
+        helix_ctx: dict[str, Any] = {
+            "trigger": params,
+            "steps": {"byoa": {"output": analyze_output}},
+            "_progress": _progress_for(run.id, "post_helix"),
+        }
+        try:
+            helix_out = await helix_spec.run(
+                helix_config, helix_ctx, verkada_conn
+            )
+            helix_record["status"] = "success"
+            helix_record["output"] = helix_out
+            helix_record["finished_at"] = _utcnow().isoformat()
+            run.steps = [dict(record), dict(helix_record)]
+            flag_modified(run, "steps")
+            run.status = "success"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"status": "success"}
+        except Exception as e:  # noqa: BLE001
+            helix_record["status"] = "failed"
+            helix_record["error"] = str(e)
+            helix_record["finished_at"] = _utcnow().isoformat()
+            run.steps = [dict(record), dict(helix_record)]
+            flag_modified(run, "steps")
+            run.status = "failed"
+            run.error = f"Helix post failed: {e}"
+            run.finished_at = _utcnow()
+            await session.commit()
+            return {"error": str(e)}
+
+
+async def sync_verkada_cameras_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    return await sync_all_connections()
+
+
+async def crawl_verkada_catalog_cron(ctx: dict[str, Any]) -> list[dict[str, Any]]:  # noqa: ARG001
+    return await crawl_verkada_catalog()
+
+
+async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    """Drop webhook media + Gemini clips older than the retention window."""
+    assets = await cleanup_expired_assets()
+    clips = cleanup_old_clips()
+    return {"assets": assets, "clips": clips}
+
+
+async def tick_schedule_flows(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    """Every-minute pass over enabled schedule-trigger flows. For each
+    one that's due (based on its trigger_config kind + last_scheduled_at)
+    we create a Run with a synthetic trigger blob and enqueue run_flow.
+    Mirrors the webhook ingest path so the existing run engine doesn't
+    need to know schedules exist at all."""
+    now = _utcnow()
+    fired = 0
+    fired_ids: list[str] = []
+    pool = ctx.get("redis")
+    async with SessionLocal() as session:
+        flows = (
+            await session.execute(
+                select(Flow).where(
+                    Flow.enabled.is_(True),
+                    Flow.trigger_type == "schedule",
+                )
+            )
+        ).scalars().all()
+        for flow in flows:
+            if not schedule_is_due(
+                flow.trigger_config or {},
+                now=now,
+                last=flow.last_scheduled_at,
+            ):
+                continue
+            run = Run(
+                flow_id=flow.id,
+                webhook_event_id=None,
+                status="pending",
+                input={
+                    "schedule": True,
+                    "fired_at": int(now.timestamp()),
+                    "kind": (flow.trigger_config or {}).get("kind"),
+                    "config": flow.trigger_config or {},
+                },
+            )
+            session.add(run)
+            await session.flush()
+            flow.last_scheduled_at = now
+            if pool is not None:
+                await pool.enqueue_job("run_flow", str(run.id))
+            fired += 1
+            fired_ids.append(str(run.id))
+        await session.commit()
+    return {"fired": fired, "run_ids": fired_ids}
+
+
+async def refresh_gemini_pricing_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    """Upsert the hardcoded Gemini price table into the DB. Currently a
+    no-op refresh of static values; the seam is here so a future live
+    scrape (or a Google pricing API) can be wired in without touching
+    the rest of the system."""
+    return await refresh_gemini_pricing()
+
+
+class WorkerSettings:
+    redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    functions = [run_flow, run_byoa]
+    cron_jobs = [
+        cron(sync_verkada_cameras_cron, hour=3, minute=17, run_at_startup=False),
+        cron(
+            crawl_verkada_catalog_cron,
+            hour={0, 4, 8, 12, 16, 20},
+            minute=7,
+            run_at_startup=True,
+        ),
+        # Hourly: drop webhook media older than 24h.
+        cron(cleanup_assets_cron, minute=23),
+        # Daily 04:11 UTC: refresh Gemini pricing snapshot. run_at_startup
+        # so first deploy populates the table before any flow runs.
+        cron(refresh_gemini_pricing_cron, hour=4, minute=11, run_at_startup=True),
+        # Every minute: fire any due schedule-trigger flows.
+        cron(tick_schedule_flows, minute=set(range(60))),
+    ]
+    max_tries = 1

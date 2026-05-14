@@ -1,0 +1,18 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "notification",
+  "created_at": 1700000700,
+  "webhook_id": "10000000-0000-0000-0000-000000000008",
+  "data": {
+    "event_id": "20000000-0000-0000-0000-000000000008",
+    "device_id": "90000000-0000-0000-0000-000000000001",
+    "created": 1700000700,
+    "notification_type": "intercom_call_triggered",
+    "device_type": "intercom",
+    "device_name": "Lobby Intercom",
+    "start_timestamp": 1700000700,
+    "end_timestamp": null,
+    "answered_timestamp": null,
+    "answered_by_name": null
+  }
+}

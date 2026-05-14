@@ -1,0 +1,520 @@
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  apiDelete,
+  apiGet,
+  apiPost,
+  apiPut,
+  Connection,
+  ConnectionTypeSpec,
+} from "../lib/api";
+
+type FormMode =
+  | { kind: "create"; type: string }
+  | { kind: "finish"; connection: Connection };
+
+export default function Connections() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<FormMode | null>(null);
+
+  const types = useQuery({
+    queryKey: ["connection-types"],
+    queryFn: () => apiGet<Record<string, ConnectionTypeSpec>>("/api/connections/types"),
+  });
+  const conns = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<Connection[]>("/api/connections"),
+    refetchInterval: 5000,
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => apiDelete(`/api/connections/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["connections"] }),
+  });
+
+  // Auto-open finish-setup when a pending connection first appears.
+  const pending = (conns.data ?? []).filter((c) => !c.setup_complete);
+  useEffect(() => {
+    if (!form && pending.length > 0) {
+      setForm({ kind: "finish", connection: pending[0] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending.length]);
+
+  const verkadaConns = (conns.data ?? []).filter((c) => c.type === "verkada");
+  const thirdPartyConns = (conns.data ?? []).filter((c) => c.type !== "verkada");
+  const verkadaTypeKey = "verkada";
+  const thirdPartyTypeKeys = Object.keys(types.data ?? {}).filter(
+    (k) => k !== "verkada",
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-white">Connections</h1>
+        <p className="text-slate-300 text-sm mt-1">
+          Store API keys and webhook signing secrets. Secrets are encrypted at rest with
+          your <code className="bg-white/10 px-1 rounded">FERNET_KEY</code> and never
+          returned through the API after creation.
+        </p>
+      </div>
+
+      {/* ---- Verkada orgs ---- */}
+      <section className="space-y-3">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-xs uppercase tracking-wider text-slate-400">
+            Verkada orgs
+          </h2>
+          {types.data?.[verkadaTypeKey] && (
+            <button
+              onClick={() => setForm({ kind: "create", type: verkadaTypeKey })}
+              className="text-xs px-2 py-1 rounded border border-white/15 hover:border-sky-500 hover:bg-white/5 text-slate-200"
+            >
+              + Add Verkada org
+            </button>
+          )}
+        </div>
+
+        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-hidden">
+          {conns.isLoading ? (
+            <div className="p-6 text-sm text-slate-400">Loading…</div>
+          ) : verkadaConns.length === 0 ? (
+            <FirstRunState />
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-slate-400 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-3 py-2">Name</th>
+                  <th className="text-left px-3 py-2">External ID</th>
+                  <th className="text-left px-3 py-2">Status</th>
+                  <th className="text-left px-3 py-2">Cameras</th>
+                  <th className="text-left px-3 py-2">Doors</th>
+                  <th className="text-left px-3 py-2">Helix events</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {verkadaConns.map((c) => (
+                  <VerkadaRow
+                    key={c.id}
+                    c={c}
+                    onFinish={() => setForm({ kind: "finish", connection: c })}
+                    onDelete={() => {
+                      if (confirm(`Delete "${c.name}"? This can't be undone.`)) {
+                        del.mutate(c.id);
+                      }
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      {/* ---- 3rd-party API keys ---- */}
+      <section className="space-y-3">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h2 className="text-xs uppercase tracking-wider text-slate-400">
+            3rd-party API keys
+          </h2>
+          {types.data &&
+            thirdPartyTypeKeys.map((k) => (
+              <button
+                key={k}
+                onClick={() => setForm({ kind: "create", type: k })}
+                className="text-xs px-2 py-1 rounded border border-white/15 hover:border-sky-500 hover:bg-white/5 text-slate-200"
+              >
+                + Add {types.data![k].label}
+              </button>
+            ))}
+        </div>
+
+        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-hidden">
+          {thirdPartyConns.length === 0 ? (
+            <div className="p-6 text-sm text-slate-400">
+              No 3rd-party API keys yet. Add a Gemini key to enable AI analysis actions.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-slate-400 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-3 py-2">Name</th>
+                  <th className="text-left px-3 py-2">Type</th>
+                  <th className="text-left px-3 py-2">Status</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {thirdPartyConns.map((c) => (
+                  <tr key={c.id} className={!c.setup_complete ? "bg-amber-950/30" : ""}>
+                    <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
+                    <td className="px-3 py-2">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-900/60 text-sky-200">
+                        {c.type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusBadge ready={c.setup_complete} />
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {!c.setup_complete && (
+                        <button
+                          onClick={() => setForm({ kind: "finish", connection: c })}
+                          className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white mr-2"
+                        >
+                          Finish setup
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete "${c.name}"? This can't be undone.`)) {
+                            del.mutate(c.id);
+                          }
+                        }}
+                        className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      {form && types.data && (
+        <ConnectionFormModal
+          mode={form}
+          spec={
+            form.kind === "create"
+              ? types.data[form.type]
+              : types.data[form.connection.type]
+          }
+          onClose={() => setForm(null)}
+          onSaved={() => {
+            setForm(null);
+            qc.invalidateQueries({ queryKey: ["connections"] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+function VerkadaRow({
+  c,
+  onFinish,
+  onDelete,
+}: {
+  c: Connection;
+  onFinish: () => void;
+  onDelete: () => void;
+}) {
+  const qc = useQueryClient();
+  const syncCameras = useMutation({
+    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-cameras`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["connections"] });
+      qc.invalidateQueries({ queryKey: ["verkada-cameras"] });
+    },
+  });
+  const syncDoors = useMutation({
+    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-doors`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["connections"] });
+      qc.invalidateQueries({ queryKey: ["verkada-doors"] });
+    },
+  });
+  const syncHelix = useMutation({
+    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-helix`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["connections"] });
+      qc.invalidateQueries({ queryKey: ["helix-event-types"] });
+    },
+  });
+  return (
+    <tr className={!c.setup_complete ? "bg-amber-950/30" : ""}>
+      <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
+      <td className="px-3 py-2 font-mono text-xs text-slate-400">
+        {c.external_id ?? "—"}
+      </td>
+      <td className="px-3 py-2">
+        <StatusBadge ready={c.setup_complete} />
+      </td>
+      <CountCell n={c.camera_count} ts={c.cameras_last_synced_at} />
+      <CountCell n={c.door_count} ts={c.doors_last_synced_at} />
+      <CountCell n={c.helix_event_count} ts={c.helix_events_last_synced_at} />
+      <td className="px-3 py-2 text-right whitespace-nowrap space-x-2">
+        {c.setup_complete && (
+          <>
+            <SyncBtn
+              label="Sync cameras"
+              pending={syncCameras.isPending}
+              onClick={() => syncCameras.mutate()}
+              title="Pull camera names from Verkada API"
+            />
+            <SyncBtn
+              label="Sync doors"
+              pending={syncDoors.isPending}
+              onClick={() => syncDoors.mutate()}
+              title="Pull door names from /access/v1/doors"
+            />
+            <SyncBtn
+              label="Sync helix"
+              pending={syncHelix.isPending}
+              onClick={() => syncHelix.mutate()}
+              title="Pull Helix event types from /cameras/v1/video_tagging/event_type"
+            />
+          </>
+        )}
+        {!c.setup_complete && (
+          <button
+            onClick={onFinish}
+            className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white"
+          >
+            Finish setup
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700"
+        >
+          Delete
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+
+function SyncBtn({
+  label,
+  pending,
+  onClick,
+  title,
+}: {
+  label: string;
+  pending: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={pending}
+      title={title}
+      className="text-xs px-2 py-1 rounded border border-white/15 hover:border-sky-500 hover:bg-white/5 disabled:opacity-50"
+    >
+      {pending ? "Syncing…" : label}
+    </button>
+  );
+}
+
+
+function CountCell({ n, ts }: { n: number; ts: string | null }) {
+  return (
+    <td className="px-3 py-2 text-slate-400 text-xs">
+      {n > 0 ? <span className="text-slate-100">{n}</span> : <span className="text-slate-500">—</span>}
+      {ts && <div className="text-[10px] text-slate-500 mt-0.5">{new Date(ts).toLocaleString()}</div>}
+    </td>
+  );
+}
+
+
+function StatusBadge({ ready }: { ready: boolean }) {
+  return ready ? (
+    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200">
+      ready
+    </span>
+  ) : (
+    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200">
+      needs api key
+    </span>
+  );
+}
+
+
+function FirstRunState() {
+  return (
+    <div className="p-6 text-sm text-slate-300 space-y-2">
+      <p className="font-medium text-slate-100">No Verkada orgs connected yet.</p>
+      <p>
+        Point a Verkada webhook at this server (
+        <code className="bg-white/10 px-1 rounded text-xs">/hooks/&lt;anything&gt;</code>
+        ) and vSplice will auto-detect your org and prompt you to finish setup
+        with just an API key.
+      </p>
+      <p>
+        Or click <strong className="text-slate-100">+ Add Verkada org</strong> above to
+        enter everything manually.
+      </p>
+    </div>
+  );
+}
+
+
+function ConnectionFormModal({
+  mode,
+  spec,
+  onClose,
+  onSaved,
+}: {
+  mode: FormMode;
+  spec: ConnectionTypeSpec;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isFinish = mode.kind === "finish";
+  const conn = isFinish ? mode.connection : null;
+
+  const [name, setName] = useState(conn?.name ?? "");
+  const [values, setValues] = useState<Record<string, string>>(
+    conn?.external_id && spec.external_id_field
+      ? { [spec.external_id_field]: conn.external_id }
+      : {},
+  );
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (isFinish && conn) {
+        const secret: Record<string, string> = {};
+        for (const [k, v] of Object.entries(values)) {
+          if (v) secret[k] = v;
+        }
+        return apiPut<Connection>(`/api/connections/${conn.id}`, {
+          name,
+          secret,
+        });
+      }
+      return apiPost<Connection>("/api/connections", {
+        type: mode.kind === "create" ? mode.type : "verkada",
+        name,
+        secret: values,
+      });
+    },
+    onSuccess: onSaved,
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const title = isFinish ? `Finish setting up ${spec.label}` : `Add ${spec.label}`;
+  const description = isFinish
+    ? "vSplice detected a new Verkada org from an incoming webhook. Add your API key to enable flow actions. Everything else is optional."
+    : spec.description;
+
+  const visibleFields = spec.fields.filter(
+    (f) => !isFinish || f.name !== spec.external_id_field,
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-lg w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div>
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <p className="text-sm text-slate-300 mt-1">{description}</p>
+        </div>
+
+        {isFinish && conn?.external_id && (
+          <Field label="Verkada Org ID" help="Detected from your incoming webhook.">
+            <input
+              value={conn.external_id}
+              readOnly
+              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/10 text-slate-400 text-sm font-mono cursor-not-allowed"
+            />
+          </Field>
+        )}
+
+        <Field
+          label="Friendly name"
+          help="How this connection shows up in the UI."
+          required
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm"
+            placeholder="e.g. Home org"
+          />
+        </Field>
+
+        {visibleFields.map((f) => (
+          <Field key={f.name} label={f.label} help={f.help} required={f.required}>
+            <input
+              type={f.type === "secret" ? "password" : "text"}
+              value={values[f.name] ?? ""}
+              onChange={(e) =>
+                setValues((v) => ({ ...v, [f.name]: e.target.value }))
+              }
+              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm font-mono"
+              autoComplete={f.type === "secret" ? "new-password" : "off"}
+              placeholder={isFinish && f.type === "secret" ? "leave blank to keep existing" : undefined}
+            />
+          </Field>
+        ))}
+
+        {err && (
+          <div className="text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
+            {err}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-md border border-white/15 text-sm text-slate-200"
+          >
+            {isFinish ? "Later" : "Cancel"}
+          </button>
+          <button
+            onClick={() => {
+              setErr(null);
+              if (!name.trim()) {
+                setErr("Friendly name is required.");
+                return;
+              }
+              if (isFinish && spec.required_for_setup) {
+                if (!values[spec.required_for_setup]) {
+                  setErr(`${spec.required_for_setup} is required to finish setup.`);
+                  return;
+                }
+              }
+              save.mutate();
+            }}
+            disabled={save.isPending}
+            className="px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-sm disabled:opacity-50"
+          >
+            {save.isPending ? "Saving…" : isFinish ? "Finish setup" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function Field({
+  label,
+  help,
+  required,
+  children,
+}: {
+  label: string;
+  help?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <div className="text-xs font-medium text-slate-300 mb-1">
+        {label}
+        {required && <span className="text-rose-400 ml-1">*</span>}
+      </div>
+      {children}
+      {help && <div className="text-xs text-slate-500 mt-1">{help}</div>}
+    </label>
+  );
+}

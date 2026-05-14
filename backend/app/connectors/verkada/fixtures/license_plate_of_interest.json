@@ -1,0 +1,26 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "notification",
+  "created_at": 1700000200,
+  "webhook_id": "10000000-0000-0000-0000-000000000003",
+  "data": {
+    "event_id": "20000000-0000-0000-0000-000000000003",
+    "device_id": "30000000-0000-0000-0000-000000000003",
+    "created": 1700000200,
+    "notification_type": "license_plate_of_interest",
+    "device_type": "camera",
+    "camera_id": "30000000-0000-0000-0000-000000000003",
+    "person_label": null,
+    "objects": [],
+    "crowd_threshold": null,
+    "image_url": "https://example.invalid/notifications/image/redeem?token=ANONYMIZED",
+    "video_url": "https://example.invalid/cameras/30000000-0000-0000-0000-000000000003/history/86400/1700000200/",
+    "event_description": "Plate of interest: ABC1234",
+    "license_plate_number": "ABC1234",
+    "license_plate_state": "us-ca",
+    "location": null,
+    "location_lon": null,
+    "location_lat": null,
+    "camera_status": null
+  }
+}
