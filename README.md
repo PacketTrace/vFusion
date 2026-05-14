@@ -111,15 +111,20 @@ This won't dismiss the welcome screen — only a real Verkada webhook (with a va
 
 ### 6. Wire it into Verkada Command
 
-The welcome modal in the dashboard shows your public webhook URL with a copy button. Paste it into:
+The welcome modal in the dashboard shows your public webhook URL with a copy button. You'll plug that into Verkada Command, but **before you do**, you'll need a shared secret on both sides — Command and vFusion compute HMAC-SHA256 against the same secret string so vFusion can verify each webhook actually came from your Verkada org (not a spoof). The secret is **strongly recommended for production** — without it, anyone who finds your webhook URL could forge events.
 
-**Verkada Command** → **Settings** → **Webhooks** → **Create webhook**
-- **Endpoint URL**: paste your URL (the modal shows the full one with `/hooks/verkada` appended)
-- Pick the notification types you want, or "all events"
-- **Save**, then copy the signing secret Verkada shows (one-time view)
-- Click **Send test webhook**
+The flow is:
 
-The dashboard auto-unlocks the moment the real webhook arrives. From there, vFusion's banner walks you through pasting the API key + signing secret to finish setup.
+1. **In vFusion → Connections** → open your Verkada org's setup form → click **Generate** next to "Webhook signing secret". You'll get a 64-char random string. Click **Copy**.
+2. **In Verkada Command** → **Settings** → **Webhooks** → **Create webhook**:
+   - **Endpoint URL**: paste your public URL (the welcome modal shows it with `/hooks/verkada` appended)
+   - **Shared secret**: paste the string you just generated in vFusion
+   - Pick the notification types you want, or "all events"
+   - **Save**
+3. Back **in vFusion** → save the Connection form (with the same secret you pasted into Command).
+4. **In Verkada Command** → click **Send test webhook**.
+
+The dashboard auto-unlocks the moment the real webhook arrives. In the inbox, the event should show a green **✓ verified** badge — that's the HMAC matching. If it shows **bad sig** instead, the secret string differs between the two sides; re-copy/paste both and try again.
 
 ## Quick tunnel (real public URL, no domain needed)
 
@@ -184,20 +189,24 @@ You should see 2–4 lines (Cloudflare connects to multiple POPs for redundancy)
 
 ### 4. Configure the webhook in Verkada Command
 
-1. **Verkada Command** → **All Products** → **Settings** → **Webhooks** → **Create webhook**:
+You'll do this in two stops — generate a shared secret in vFusion first, then plug both the URL and the secret into Verkada Command. The shared secret is the HMAC key both systems use to prove each webhook is genuine — **production deploys should always set it**, because without it anyone who finds your stable URL could forge events.
+
+1. **In vFusion → Connections** → open the Verkada org form → click **Generate** next to "Webhook signing secret" → click **Copy**. (Don't save yet — keep the form open.)
+2. **In Verkada Command** → **All Products** → **Settings** → **Webhooks** → **Create webhook**:
    - **Endpoint URL**: `https://hooks.yourdomain.com/hooks/verkada`
-   - **Events**: pick whichever notification types you care about, or "all events" to start
+   - **Shared secret**: paste the string from step 1
+   - **Events**: pick the notification types you want, or "all events" to start
    - **Save**
-2. Copy the **signing secret** Verkada shows — you only see it once.
 3. Click **Send test webhook**.
 
 ### 5. Finish setup in vFusion
 
-The test webhook will land in the **Webhook Inbox** within a couple seconds. vFusion auto-detects the org and shows a banner: **"New Verkada org detected — finish setup"**. Click it and paste:
-- Your **Verkada API key** (generate in Command → My Account → API Keys)
-- The **webhook signing secret** from step 4
+The test webhook lands in the **Webhook Inbox** within a couple seconds. vFusion auto-detects the org and shows a banner: **"New Verkada org detected — finish setup"**. The form you left open in step 1 above is the same one — fill in the rest:
 
-Save. Done — flows can now read camera footage, post Helix events, unlock doors, etc.
+- Your **Verkada API key** (generate in Command → My Account → API Keys)
+- The **webhook signing secret** field already has the value from step 1 — leave it as-is
+
+Save. The test webhook in the inbox should now show a green **✓ verified** badge confirming HMAC works end-to-end. Flows can now read camera footage, post Helix events, unlock doors, etc.
 
 ### Updating
 
