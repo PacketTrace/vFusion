@@ -82,13 +82,34 @@ docker compose logs -f backend     # wait for "Uvicorn running on http://0.0.0.0
 
 ### 5. Send a test webhook
 
+Fire a realistic LPR event at your endpoint. Use either `http://localhost:18080` (LAN-only) or your trycloudflare URL (quick tunnel) — the `BASE` line below is just so you don't have to edit the URL twice:
+
 ```bash
-curl -X POST http://localhost:18080/hooks/verkada-test \
+BASE=http://localhost:18080   # or: BASE=https://your-trycloudflare-url
+
+curl -X POST "$BASE/hooks/verkada" \
   -H "Content-Type: application/json" \
-  -d '{"webhook_type":"notification","org_id":"00000000-0000-0000-0000-000000000000","data":{"notification_type":"alert_rule_motion","camera_id":"test-cam"}}'
+  -d '{
+    "org_id": "topSecretOrgDoNotTellAnyone",
+    "webhook_type": "lpr",
+    "created_at": 1778722097,
+    "webhook_id": "f319fb87-4ca6-47de-ae71-67b25aa1dab7",
+    "data": {
+      "camera_id": "93b90c2c-f06d-4fde-b25e-29b211282609",
+      "created": 1778722095,
+      "detected": 1778722097743,
+      "license_plate_number": "BVZ0938",
+      "confidence": 0.9379871428571429,
+      "crop": [0.2533212900161743, 0.3052724301815033, 0.10247643291950226, 0.1325235664844513],
+      "image_url": "https://ibb.co/nsShXXSs",
+      "license_plate_state": "us-wa",
+      "license_plate_state_confidence": 0.7,
+      "vehicle_image_url": "https://ibb.co/cX76vMwY"
+    }
+  }'
 ```
 
-It should appear in the **Webhook Inbox** within ~2s, classified as a `camera` family event.
+It should appear in the **Webhook Inbox** within ~2s, classified as an **lpr** family event with the license plate `BVZ0938`.
 
 ## Quick tunnel (real public URL, no domain needed)
 
