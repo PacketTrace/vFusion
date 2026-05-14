@@ -133,6 +133,8 @@ That's it. No account, no API key, no domain. Wait ~10 seconds for cloudflared t
 
 **Catch:** the URL changes every time `cloudflared` restarts. Don't use this for production — when the URL rolls, you'd have to re-paste the new one into Verkada Command. For something stable, see the named tunnel below.
 
+**What's exposed through the tunnel:** only the exact path `/hooks/verkada`. A Caddy reverse proxy sits between the trycloudflare URL and the backend and returns 404 for anything else (admin API, dashboard, synthetic `/hooks/<random-slug>` paths). So even if the URL leaks, attackers can only POST webhook payloads — same surface as the Verkada cloud has. On the LAN side (`http://localhost:18080`) the full catch-all `/hooks/<anything>` still works for synthetic test traffic.
+
 ## Production deploy with Cloudflare Tunnel
 
 For vFusion to receive real webhooks from Verkada's cloud, it needs a public URL. **Cloudflare Tunnel** gives you a free, stable HTTPS endpoint (`https://hooks.yourdomain.com`) without opening any ports on your router. We bundle the `cloudflared` connector as an opt-in compose profile, so the whole stack — vFusion plus its public ingress — comes up with one command.

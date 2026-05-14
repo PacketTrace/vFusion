@@ -1,0 +1,24 @@
+# Quick-mode tunnel path filter.
+#
+# Sits between the cloudflared-quick TryCloudflare tunnel and the
+# backend. The tunnel itself doesn't path-filter (--url forwards
+# everything), so without this proxy a leaked trycloudflare URL would
+# expose the entire /api/* admin surface to anyone who has it.
+#
+# Policy: only forward POST/etc. to /hooks/verkada (the path Verkada
+# Command actually posts to). Everything else returns 404 — including
+# /api/*, /hooks/test, /hooks/<random-slug>, the dashboard, etc.
+#
+# Note: this filter only applies to traffic coming through the
+# tunnel. On the LAN (port 18080 → backend:8000), the full catch-all
+# /hooks/<anything> still works for synthetic tests.
+
+:8080 {
+    @hooks path /hooks/verkada
+    handle @hooks {
+        reverse_proxy backend:8000
+    }
+    handle {
+        respond "Not Found" 404
+    }
+}

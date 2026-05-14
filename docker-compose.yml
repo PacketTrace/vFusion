@@ -75,19 +75,36 @@ services:
       - backend
     profiles: ["cloudflared"]
 
+  # Quick-mode path filter. Sits between cloudflared-quick and the
+  # backend so the trycloudflare URL only exposes /hooks/verkada (the
+  # path Verkada Command actually POSTs to). Everything else returns
+  # 404 — locks down /api/*, the dashboard, and synthetic /hooks/<slug>
+  # paths from accidental URL leaks. LAN traffic (port 18080 → backend)
+  # is unaffected.
+  caddy-quick:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    volumes:
+      - ./caddy/quick.Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+    profiles: ["quick"]
+
   # Cloudflare TryCloudflare — quick mode. Ephemeral random URL, no
   # account, no domain. The URL changes every restart, so don't point
   # production Verkada webhooks at this. Useful for kicking the tires
   # end-to-end without setting up DNS. The backend's /api/config endpoint
   # reads the assigned hostname from cloudflared's metrics endpoint and
   # surfaces it in the Webhook Inbox banner.
+  # Points at caddy-quick (path-filtered) rather than backend directly,
+  # so a leaked trycloudflare URL can't be used to hit /api/*.
   #   docker compose --profile quick up -d
   cloudflared-quick:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://backend:8000
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://caddy-quick:8080
     depends_on:
-      - backend
+      - caddy-quick
     profiles: ["quick"]
 
   frontend:
