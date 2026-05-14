@@ -53,7 +53,7 @@ export default function Workbench() {
         <p className="text-slate-300 text-sm mt-1">{meta.blurb}</p>
         {tab === "helixr" && (
           <p className="text-xs text-slate-500 mt-1.5 italic">
-            Helixr — name coined by{" "}
+            Helixr — name stolen from{" "}
             <span className="text-slate-300 not-italic font-medium">
               Andrew Stone
             </span>
