@@ -30,13 +30,38 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     refetchInterval: (q) => (q.state.data?.needs_onboarding ? 2000 : 30_000),
   });
 
-  // First-load grace: don't flash the modal before we know the answer.
-  // Once we have at least one response, trust it.
-  if (!cfg.data) return <>{children}</>;
+  // First-load: hold an empty backdrop instead of flashing the dashboard
+  // for half a second and then yanking it behind the modal. The Vanta
+  // background continues animating beneath this so it doesn't read as
+  // a hard stall.
+  if (!cfg.data) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm" />
+    );
+  }
 
   if (!cfg.data.needs_onboarding) return <>{children}</>;
 
   return <OnboardingModal cfg={cfg.data} />;
+}
+
+
+/**
+ * localStorage key for the signing secret the user generated during
+ * onboarding. ConnectionFormModal reads this on mount when the
+ * "finish setup" banner pops the form open, so the secret they pasted
+ * into Verkada Command is already in the form without re-typing.
+ *
+ * Cleared by ConnectionFormModal after a successful save.
+ */
+export const PENDING_SIGNING_SECRET_KEY = "vfusion.pending_signing_secret";
+
+
+function generateSigningSecret(): string {
+  const bytes = new Uint8Array(48);
+  crypto.getRandomValues(bytes);
+  let b64 = btoa(String.fromCharCode(...bytes));
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 
@@ -102,8 +127,29 @@ function TunnelModeBody({
   onCopy: () => void;
   copied: boolean;
 }) {
+  // Persisted across renders so leaving the modal open and rotating
+  // generations doesn't dump multiple values to localStorage. The
+  // form on the Connections page reads from the same key when the
+  // user lands there post-webhook.
+  const [secret, setSecret] = useState<string>(() =>
+    window.localStorage.getItem(PENDING_SIGNING_SECRET_KEY) ?? "",
+  );
+  const [secretCopied, setSecretCopied] = useState(false);
+
+  const handleGenerate = () => {
+    const next = generateSigningSecret();
+    setSecret(next);
+    window.localStorage.setItem(PENDING_SIGNING_SECRET_KEY, next);
+  };
+  const handleCopySecret = async () => {
+    if (!secret) return;
+    await navigator.clipboard.writeText(secret);
+    setSecretCopied(true);
+    window.setTimeout(() => setSecretCopied(false), 1500);
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
           Your public webhook URL{ephemeral ? " (changes on restart)" : ""}
@@ -128,6 +174,42 @@ function TunnelModeBody({
       </div>
 
       <div>
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
+          Webhook signing secret <span className="text-slate-500 normal-case font-normal">(recommended)</span>
+        </div>
+        <div className="text-[11px] text-slate-500 mb-2">
+          Verkada Command's <strong className="text-slate-300">Shared secret</strong> field is set by you, not assigned. Generate one here, paste it into Verkada, and we'll remember it for the Connection form once your first webhook arrives.
+        </div>
+        {secret ? (
+          <div className="flex items-center gap-2">
+            <code className="flex-1 font-mono text-xs text-amber-200 bg-amber-950/30 border border-amber-900/50 rounded px-3 py-2 break-all">
+              {secret}
+            </code>
+            <button
+              onClick={handleCopySecret}
+              className="shrink-0 text-xs px-3 py-2 rounded border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200"
+            >
+              {secretCopied ? "Copied" : "Copy"}
+            </button>
+            <button
+              onClick={handleGenerate}
+              className="shrink-0 text-xs px-3 py-2 rounded border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200"
+              title="Regenerate"
+            >
+              ↻
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleGenerate}
+            className="text-sm px-3 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white"
+          >
+            Generate signing secret
+          </button>
+        )}
+      </div>
+
+      <div>
         <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
           Wire it into Verkada Command
         </div>
@@ -135,12 +217,12 @@ function TunnelModeBody({
           <li>
             Verkada Command → <strong className="text-slate-100">Settings</strong> → <strong className="text-slate-100">Webhooks</strong> → <strong className="text-slate-100">Create webhook</strong>
           </li>
-          <li>Paste the URL above as the endpoint</li>
+          <li>Paste the URL above as <strong className="text-slate-100">Endpoint URL</strong></li>
+          <li>Paste the signing secret above as <strong className="text-slate-100">Shared secret</strong></li>
           <li>Pick the notification types you want (or "all events" to start)</li>
           <li>
-            <strong className="text-slate-100">Save</strong> and copy the signing secret Verkada shows
+            Click <strong className="text-slate-100">Save</strong>, then <strong className="text-slate-100">Send test webhook</strong>
           </li>
-          <li>Click <strong className="text-slate-100">Send test webhook</strong></li>
         </ol>
       </div>
 

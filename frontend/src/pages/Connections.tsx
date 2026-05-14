@@ -10,6 +10,7 @@ import {
   ConnectionTypeSpec,
 } from "../lib/api";
 import { useBrand } from "../lib/brand";
+import { PENDING_SIGNING_SECRET_KEY } from "../components/OnboardingGate";
 
 type FormMode =
   | { kind: "create"; type: string }
@@ -393,11 +394,24 @@ function ConnectionFormModal({
   const conn = isExisting ? mode.connection : null;
 
   const [name, setName] = useState(conn?.name ?? "");
-  const [values, setValues] = useState<Record<string, string>>(
-    conn?.external_id && spec.external_id_field
-      ? { [spec.external_id_field]: conn.external_id }
-      : {},
-  );
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    if (conn?.external_id && spec.external_id_field) {
+      initial[spec.external_id_field] = conn.external_id;
+    }
+    // If the user generated a signing secret during onboarding, the
+    // OnboardingGate stashed it here. Prefill so they don't have to
+    // re-generate / re-paste — the value they pasted into Verkada
+    // Command's Shared secret is the same one we'll store. Only seed
+    // when we're finishing an auto-detected connection (the canonical
+    // post-onboarding moment); ignore for create / edit flows where
+    // the user is being intentional about field contents.
+    if (isFinish && spec.fields.some((f) => f.name === "webhook_signing_secret")) {
+      const stored = window.localStorage.getItem(PENDING_SIGNING_SECRET_KEY);
+      if (stored) initial.webhook_signing_secret = stored;
+    }
+    return initial;
+  });
   const [err, setErr] = useState<string | null>(null);
 
   const save = useMutation({
@@ -418,7 +432,13 @@ function ConnectionFormModal({
         secret: values,
       });
     },
-    onSuccess: onSaved,
+    onSuccess: () => {
+      // Whichever path saved a signing secret, the onboarding stash
+      // has served its purpose. Clear it so a future fresh-install
+      // user doesn't inherit it.
+      window.localStorage.removeItem(PENDING_SIGNING_SECRET_KEY);
+      onSaved();
+    },
     onError: (e: Error) => setErr(e.message),
   });
 
