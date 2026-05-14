@@ -2,10 +2,6 @@
 
 Self-hosted, Verkada-flavored workflow automation — a visual router for webhooks and API events. Think n8n/make.com, but built around the Verkada API surface (Helix, Access, etc.).
 
-## Status
-
-**Phase 1: Webhook Inbox.** Send webhooks at the service and inspect them in a live UI. This is the "figure out what Verkada actually sends" discovery tool — flow editor, connectors, and runs come in later phases.
-
 ## Three ways to run
 
 | Mode | Webhook URL | Best for |
