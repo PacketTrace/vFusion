@@ -14,8 +14,15 @@
 # /hooks/<anything> still works for synthetic tests.
 
 :8080 {
-    @hooks path /hooks/verkada
-    handle @hooks {
+    # Only forward POST /hooks/verkada — the exact request Verkada
+    # Command makes. GETs, HEADs, OPTIONS preflights, etc. on the same
+    # path return 404 (intentionally opaque rather than 405 — don't
+    # confirm the path even exists to attackers probing the URL).
+    @hooks_post {
+        method POST
+        path /hooks/verkada
+    }
+    handle @hooks_post {
         reverse_proxy backend:8000
     }
     handle {
