@@ -6,19 +6,22 @@ Every Verkada webhook shares a common envelope:
     {
       "org_id": "...",
       "webhook_id": "...",
-      "webhook_type": "notification" | "lpr" | "sensor_alert",
+      "webhook_type": "notification" | "lpr" | "sensor_alert" | "credential-notification",
       "created_at": <unix-seconds>,
       "data": { ... }
     }
 
 The shape of ``data`` varies by ``webhook_type``, and for ``notification`` it
-further splits by ``data.notification_type``. We group these into five families:
+further splits by ``data.notification_type``. We group these into six families:
 
-    1. camera   — camera AI events (motion, POI, LPR-of-interest, tamper, etc.)
-    2. access   — door / ACU events (door_opened, BLE unlock, NFC scan, etc.)
-    3. lpr      — raw LPR detections (webhook_type=lpr, no notification_type)
-    4. sensor   — environmental sensor alerts (webhook_type=sensor_alert)
-    5. intercom — intercom call/missed-call events
+    1. camera     — camera AI events (motion, POI, LPR-of-interest, tamper, etc.)
+    2. access     — door / ACU events (door_opened, BLE unlock, NFC scan, etc.)
+    3. lpr        — raw LPR detections (webhook_type=lpr, no notification_type)
+    4. sensor     — environmental sensor alerts (webhook_type=sensor_alert)
+    5. intercom   — intercom call/missed-call events
+    6. credential — credential lifecycle events (created/updated/deleted),
+                     uses webhook_type=credential-notification with a different
+                     camelCase data shape (events[], eventType, grantorId, …)
 
 Derived from 10K real captures (2026-05). See fixtures/ for one canonical
 sample per family/variant.
@@ -34,6 +37,10 @@ CAMERA_EVENT_TYPES: frozenset[str] = frozenset(
         "alert_rule_motion",
         "alert_rule_line_crossing",
         "alert_rule_activity_recognition",
+        "alert_rule_crowd",
+        "alert_rule_dwell",
+        "alert_rule_inactivity",
+        "contextual_trigger_people_motion",
         "natural_language_event",
         "person_of_interest",
         "license_plate_of_interest",
@@ -51,9 +58,15 @@ ACCESS_EVENT_TYPES: frozenset[str] = frozenset(
         "door_auxoutput_activated",
         "door_auxoutput_deactivated",
         "door_mobile_nfc_scan_accepted",
+        "door_mobile_nfc_scan_rejected",
         "door_remote_unlock_accepted",
         "door_ble_unlock_attempt_accepted",
         "door_ble_unlock_attempt_rejected",
+        "door_keycard_entered_accepted",
+        "door_lp_presented_accepted",
+        "door_lp_presented_rejected",
+        "door_deactivated_credential_used",
+        "door_tailgating",
         "door_acu_offline",
         "door_schedule_override_removed",
     }
@@ -63,6 +76,7 @@ INTERCOM_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "intercom_missed_call",
         "intercom_call_triggered",
+        "intercom_receiver_admitted",
     }
 )
 
@@ -169,15 +183,37 @@ class IntercomEventData(BaseModel):
     answered_by_name: str | None = None
 
 
-Family = Literal["camera", "access", "lpr", "sensor", "intercom", "unknown"]
+class CredentialEventData(BaseModel):
+    """Credential lifecycle webhook (webhook_type=credential-notification).
+
+    Different camelCase shape from the other Verkada webhooks: a top-level
+    ``eventType`` discriminator ("CREDENTIAL_CREATED" etc.) and a nested
+    ``events`` list with per-credential detail. Issued by Verkada Access
+    when a credential is created / modified / revoked / etc.
+    """
+
+    eventId: str
+    eventType: str  # e.g. "CREDENTIAL_CREATED", "CREDENTIAL_UPDATED"
+    timestamp: str  # ISO 8601, unlike the int-epoch used elsewhere
+    grantorId: str
+    grantorEmployeeId: str | None = None
+    grantorExternalId: str | None = None
+    events: list[Any] = Field(default_factory=list)
+
+
+Family = Literal[
+    "camera", "access", "lpr", "sensor", "intercom", "credential", "unknown"
+]
 
 
 def classify(envelope: Envelope) -> Family:
-    """Bucket an envelope into one of the five families (or ``unknown``)."""
+    """Bucket an envelope into one of the six known families (or ``unknown``)."""
     if envelope.webhook_type == "lpr":
         return "lpr"
     if envelope.webhook_type == "sensor_alert":
         return "sensor"
+    if envelope.webhook_type == "credential-notification":
+        return "credential"
     if envelope.webhook_type == "notification":
         nt = envelope.data.get("notification_type") if isinstance(envelope.data, dict) else None
         if nt in CAMERA_EVENT_TYPES:
@@ -226,5 +262,11 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "webhook_type": "notification",
         "notification_types": sorted(INTERCOM_EVENT_TYPES),
         "filter_fields": ["device_name", "answered_by_name"],
+    },
+    "credential": {
+        "label": "Credential Lifecycle",
+        "webhook_type": "credential-notification",
+        "notification_types": None,
+        "filter_fields": ["eventType", "grantorId"],
     },
 }
