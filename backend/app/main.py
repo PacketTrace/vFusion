@@ -27,6 +27,13 @@ from app.reclassify import reclassify_unknowns
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Resolve / auto-generate the Fernet key eagerly at boot so the
+    # "I generated a new key" warning shows up in startup logs (vs
+    # waiting for the first encryption op). Also catches volume-mount
+    # or permission problems at boot rather than on first Connection
+    # save.
+    from app.crypto import _fernet
+    _fernet()
     # Re-classify unknowns against the latest taxonomy.
     await reclassify_unknowns()
     # Seed Gemini pricing so cost_for() has rows on first request, even
