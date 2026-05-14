@@ -8,6 +8,7 @@ import FlowEditor from "./pages/FlowEditor";
 import Connections from "./pages/Connections";
 import Runs from "./pages/Runs";
 import ApiCatalog from "./pages/ApiCatalog";
+import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
 import Workbench from "./pages/Byoa";
@@ -101,6 +102,14 @@ function AppShell() {
             >
               Stats
             </NavLink>
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+            >
+              Settings
+            </NavLink>
           </nav>
         </div>
       </header>
@@ -120,6 +129,7 @@ function AppShell() {
           <Route path="/workbench" element={<Workbench />} />
           <Route path="/byoa" element={<Workbench />} />
           <Route path="/stats" element={<Stats />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>

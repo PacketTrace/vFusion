@@ -468,16 +468,18 @@ async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: A
     """
     from app import settings_store
 
-    asset_hours = await settings_store.get_int("webhook_asset_retention_hours")
-    clip_hours = await settings_store.get_int("gemini_clip_retention_hours")
-    image_hours = await settings_store.get_int("gemini_image_retention_hours")
+    asset_days = await settings_store.get_int("webhook_asset_retention_days")
+    clip_days = await settings_store.get_int("gemini_clip_retention_days")
+    image_days = await settings_store.get_int("gemini_image_retention_days")
     event_days = await settings_store.get_int("webhook_event_retention_days")
     run_days = await settings_store.get_int("run_retention_days")
 
-    assets = await cleanup_expired_assets(asset_hours)
+    # cleanup_* helpers still take hours under the hood, so convert here.
+    # 0 stays 0 (= unlimited / skip).
+    assets = await cleanup_expired_assets(asset_days * 24)
     clips = cleanup_old_clips(
-        clip_retention_hours=clip_hours,
-        image_retention_hours=image_hours,
+        clip_retention_hours=clip_days * 24,
+        image_retention_hours=image_days * 24,
     )
     events = await _cleanup_old_webhook_events(event_days)
     runs = await _cleanup_old_runs(run_days)

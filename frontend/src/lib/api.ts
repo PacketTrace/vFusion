@@ -38,14 +38,21 @@ export interface PublicConfig {
 
 // ---- Settings ----
 
+export interface SettingUsage {
+  bytes: number | null;
+  count: number | null;
+  summary: string;
+}
+
 export interface SettingRow {
   key: string;
   label: string;
-  unit: string;        // "hours" | "days" | ""
+  unit: string;        // "days" | ""
   description: string;
   default: string;
   allow_zero: boolean; // when true, 0 = unlimited
   value: string | null;
+  usage: SettingUsage | null;
 }
 
 export interface SettingsResponse {

@@ -54,33 +54,33 @@ SETTINGS: dict[str, SettingSpec] = {
             "Webhook asset retention setting independently."
         ),
     ),
-    "webhook_asset_retention_hours": SettingSpec(
-        key="webhook_asset_retention_hours",
-        default="24",
+    "webhook_asset_retention_days": SettingSpec(
+        key="webhook_asset_retention_days",
+        default="1",
         label="Webhook assets (inline images)",
-        unit="hours",
+        unit="days",
         description=(
             "How long the images embedded in webhook bodies (LPR crops, "
             "vehicle photos, snapshots) stay on disk. Verkada signs the "
             "source URLs for a short window, so the downloaded copy is "
-            "the only way to view them after a few hours."
+            "the only way to view them after they expire."
         ),
     ),
-    "gemini_clip_retention_hours": SettingSpec(
-        key="gemini_clip_retention_hours",
-        default="168",
+    "gemini_clip_retention_days": SettingSpec(
+        key="gemini_clip_retention_days",
+        default="7",
         label="Gemini clips (camera footage)",
-        unit="hours",
+        unit="days",
         description=(
             "How long the MP4 clips pulled from Verkada cameras for Gemini "
             "video analysis stay on disk. Defaults to a week."
         ),
     ),
-    "gemini_image_retention_hours": SettingSpec(
-        key="gemini_image_retention_hours",
-        default="168",
+    "gemini_image_retention_days": SettingSpec(
+        key="gemini_image_retention_days",
+        default="7",
         label="Gemini still images (live snapshots)",
-        unit="hours",
+        unit="days",
         description=(
             "How long the single-frame JPEGs grabbed for live-image Gemini "
             "analysis stay on disk."
@@ -93,7 +93,7 @@ SETTINGS: dict[str, SettingSpec] = {
         unit="days",
         description=(
             "How long flow-run history (and the live-progress event "
-            "stream for each run) stays. Set to 0 to keep forever."
+            "stream for each run) stays."
         ),
     ),
 }
