@@ -88,12 +88,16 @@ async def _get_or_autocreate_connection(
     # the signal that a real Verkada webhook has arrived.
     if not _is_real_org_id(org_id):
         return None
+    # .first(), not .scalar_one_or_none(): the latter raises
+    # MultipleResultsFound if the table ever holds duplicate rows for an
+    # org. A 500 here would stop the whole webhook from being recorded —
+    # the ingest path must never fail over a data-integrity quirk.
     result = await session.execute(
         select(Connection).where(
             Connection.type == "verkada", Connection.external_id == org_id
         )
     )
-    conn = result.scalar_one_or_none()
+    conn = result.scalars().first()
     if conn is not None:
         return conn
     if family == "unknown":
@@ -125,7 +129,7 @@ async def _get_or_autocreate_connection(
                     Connection.external_id == org_id,
                 )
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
 
 
 async def _maybe_verify(
