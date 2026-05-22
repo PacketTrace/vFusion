@@ -6,6 +6,8 @@ Ever wish you could fuse together custom Verkada API pipelines? Now it's possibl
 
 Self-hosted, Verkada-flavored workflow automation — a visual router for webhooks and API events. Think Zapier/n8/make.com, but built around the Verkada API surface (Helix, Access, etc.).
 
+![vFusion visual flow editor](docs/images/flow-editor.png)
+
 ## Features
 
 - 📥 **Webhook inbox** — catch any Verkada webhook at `/hooks/*`, auto-classify into family (camera / access / lpr / sensor / intercom), auto-detect new orgs on first sight
@@ -18,6 +20,28 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 - 📊 **Stats & cost** — ingest counters (24h / 7d / 30d), top event types with inbox drill-down, Gemini spend tracking per model, real-time server load (CPU / memory / disk)
 - 🌍 **Public URLs built-in** — two deploy modes: quick mode (free TryCloudflare URL, zero Cloudflare setup) and production (named tunnel on your own domain). URL auto-displayed in the UI banner
 - 🔐 **Secrets at rest** — Fernet encryption for stored API keys + signing secrets, HMAC webhook signature verification, sensitive headers redacted before persistence
+
+## Screenshots
+
+**Webhook inbox** — every Verkada webhook captured, auto-classified into a family, and HMAC signature-verified.
+
+![Webhook inbox](docs/images/webhook-inbox.png)
+
+**Workbench** — a one-shot Gemini test runner: pick a camera, write a prompt, see the result before committing it to a flow.
+
+![Workbench](docs/images/workbench.png)
+
+**Run detail** — live phase progress, the frame Gemini saw, its summary, and an estimated cost.
+
+![Run detail](docs/images/run-detail.png)
+
+**Reproducible runs** — the exact trigger payload, prompt, and model are recorded next to every result.
+
+![Run output and trigger payload](docs/images/run-output.png)
+
+**Prompt templates** — save and reuse analysis prompts across actions and the Workbench.
+
+![Prompt templates](docs/images/templates.png)
 
 ## Requirements
 
@@ -75,8 +99,8 @@ docker compose version
 
 ```bash
 cd ~
-git clone https://github.com/PacketTrace/verkadaRoute.git vfusion
-cd vfusion
+git clone https://github.com/PacketTrace/vFusion.git
+cd vFusion
 cp .env.example .env
 ```
 
@@ -144,7 +168,7 @@ For always-on deploys with a stable URL. Requires a free Cloudflare account + a 
 ### 2. Add the token to `.env`
 
 ```bash
-cd ~/vfusion
+cd ~/vFusion
 echo "CF_TUNNEL_TOKEN=<paste-token-here>" >> .env
 ```
 
@@ -214,7 +238,7 @@ If you keep your `.env` private, set a signing secret on every Verkada Org conne
 ## Updating
 
 ```bash
-cd ~/vfusion
+cd ~/vFusion
 git pull
 docker compose --profile <quick|cloudflared> up --build -d
 ```
