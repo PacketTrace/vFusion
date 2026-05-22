@@ -285,6 +285,10 @@ The result lands in Verkada Command as a Helix event you can search and filter:
 
 ![Helix event — animal detection](docs/images/helix-command-animal.png)
 
+**…and Command can alert on it** — Verkada Command's own notification rules fire on the Helix events vFusion posts, so a "bear or coyote" detection lands as a push alert.
+
+![Helix event with a push notification](docs/images/helix-command-bear.png)
+
 **Delivery / package summary** — what Gemini saw at the front door.
 
 ![Helix event — delivery](docs/images/helix-command-delivery.png)
