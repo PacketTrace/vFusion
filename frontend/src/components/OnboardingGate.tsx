@@ -227,29 +227,6 @@ function TunnelModeBody({
     <div className="space-y-5">
       <div>
         <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
-          Your public webhook URL{ephemeral ? " (changes on restart)" : ""}
-        </div>
-        {url ? (
-          <div className="flex items-center gap-2">
-            <code className="flex-1 font-mono text-sm text-emerald-200 bg-emerald-950/30 border border-emerald-900/50 rounded px-3 py-2 break-all">
-              {url}
-            </code>
-            <button
-              onClick={onCopy}
-              className="shrink-0 text-xs px-3 py-2 rounded border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-        ) : (
-          <div className="text-sm text-slate-500 italic px-3 py-2 rounded border border-dashed border-white/10 bg-white/5">
-            Waiting for cloudflared to come online…
-          </div>
-        )}
-      </div>
-
-      <div>
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
           Webhook signing secret <span className="text-slate-500 normal-case font-normal">(recommended)</span>
         </div>
         <div className="text-[11px] text-slate-500 mb-2">
@@ -281,6 +258,29 @@ function TunnelModeBody({
           >
             Generate signing secret
           </button>
+        )}
+      </div>
+
+      <div>
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
+          Your public webhook URL{ephemeral ? " (changes on restart)" : ""}
+        </div>
+        {url ? (
+          <div className="flex items-center gap-2">
+            <code className="flex-1 font-mono text-sm text-emerald-200 bg-emerald-950/30 border border-emerald-900/50 rounded px-3 py-2 break-all">
+              {url}
+            </code>
+            <button
+              onClick={onCopy}
+              className="shrink-0 text-xs px-3 py-2 rounded border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500 italic px-3 py-2 rounded border border-dashed border-white/10 bg-white/5">
+            Waiting for cloudflared to come online…
+          </div>
         )}
       </div>
 
