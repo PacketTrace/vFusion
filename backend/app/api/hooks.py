@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets import download_pending_for_event, queue_event_assets
@@ -104,9 +105,27 @@ async def _get_or_autocreate_connection(
         encrypted_secret=encrypt_secret({}),
         setup_complete=False,
     )
-    session.add(conn)
-    await session.flush()  # populate conn.id before commit at end of request
-    return conn
+    try:
+        # SAVEPOINT around the insert. Webhooks from a brand-new org can
+        # arrive concurrently — each request's SELECT above misses the
+        # others' uncommitted INSERT, so without this they'd each create
+        # a duplicate stub. The unique index (migration 0018) trips an
+        # IntegrityError on the losers; the savepoint contains it so the
+        # outer transaction can still record this WebhookEvent, and we
+        # re-fetch the row the winning request committed.
+        async with session.begin_nested():
+            session.add(conn)
+            await session.flush()
+        return conn
+    except IntegrityError:
+        return (
+            await session.execute(
+                select(Connection).where(
+                    Connection.type == "verkada",
+                    Connection.external_id == org_id,
+                )
+            )
+        ).scalar_one_or_none()
 
 
 async def _maybe_verify(
