@@ -6,8 +6,6 @@ Ever wish you could fuse together custom Verkada API pipelines? Now it's possibl
 
 Self-hosted, Verkada-flavored workflow automation — a visual router for webhooks and API events. Think Zapier/n8/make.com, but built around the Verkada API surface (Helix, Access, etc.).
 
-![vFusion visual flow editor](docs/images/flow-editor.png)
-
 ## Features
 
 - 📥 **Webhook inbox** — catch any Verkada webhook at `/hooks/*`, auto-classify into family (camera / access / lpr / sensor / intercom), auto-detect new orgs on first sight
@@ -22,6 +20,10 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 - 🔐 **Secrets at rest** — Fernet encryption for stored API keys + signing secrets, HMAC webhook signature verification, sensitive headers redacted before persistence
 
 ## Screenshots
+
+**Visual flow editor** — a drag-and-drop canvas for event-driven automations: conditions, branches, and a per-step run button for testing.
+
+![Visual flow editor](docs/images/flow-editor.png)
 
 **Webhook inbox** — every Verkada webhook captured, auto-classified into a family, and HMAC signature-verified.
 
