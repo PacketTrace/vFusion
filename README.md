@@ -28,7 +28,9 @@ Line these up before you start. Docker is the only thing you install on the host
 - **A host to run it on** — Linux, macOS, or Windows. Keep it always-on for 24/7 webhook capture.
 - **Docker Desktop** (or Docker Engine + Compose v2). Verify with `docker --version` and `docker compose version`.
 - **A Verkada Command organization** with admin access — needed to create the webhook (Admin → API & Integrations → Webhooks) and to generate an API key.
-- **A Verkada API key** — generated in Verkada Command. Used to pull camera footage, post Helix events, unlock doors, and call catalog endpoints. Scope its permissions to what your flows actually need.
+- **A Verkada API key** — generated in Verkada Command. Used to pull camera footage, post Helix events, unlock doors, and call catalog endpoints.
+
+> ⚠️ **Scope the key to least privilege.** A Verkada API key only grants the permissions you pick when you create it. Give vFusion access to exactly what your flows need — and nothing more. For example, if you only want Gemini analysis of camera footage, grant camera/footage access but **not** door control. The key is stored encrypted at rest, but a tighter scope is a smaller blast radius if a key ever leaks or a flow misfires.
 
 ### Optional — needed for specific features
 
