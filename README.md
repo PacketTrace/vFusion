@@ -297,13 +297,6 @@ The result lands in Verkada Command as a Helix event you can search and filter:
 
 ![Helix event — OCR](docs/images/helix-command-ocr.png)
 
-## Dev notes
-
-- Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, `X-Verkada-Auth`) are redacted before being stored in `webhook_events`.
-- Backend code is hot-reloaded via volume mount + `uvicorn --reload`. Frontend uses Vite HMR.
-- To wipe captured webhooks: `docker compose exec postgres psql -U verkada -d verkadaroute -c "TRUNCATE webhook_events;"`
-- To reset everything: `docker compose down -v`
-
 ## Author
 
 Built by **Casey Keller** ([GitHub](https://github.com/PacketTrace) · [LinkedIn](https://www.linkedin.com/in/casey-keller-b00246b6/)) — a Verkada SE. vFusion is a personal project and is not an official Verkada product.
