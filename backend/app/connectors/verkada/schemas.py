@@ -287,7 +287,20 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "label": "Camera event",
         "webhook_type": "notification",
         "notification_types": sorted(CAMERA_EVENT_TYPES),
-        "filter_fields": ["objects", "camera_id"],
+        # The picker is sample-driven, so each of these only surfaces when
+        # an actual webhook of the selected notification_type carries the
+        # field. Ordering here is "most likely to be the meaningful filter
+        # for the type the user picked":
+        #   - alert_rule_motion → objects
+        #   - person_of_interest → person_label
+        #   - LPR-flavored camera events → license_plate_number
+        #   - camera_id is the universal fallback for "this camera only".
+        "filter_fields": [
+            "objects",
+            "person_label",
+            "license_plate_number",
+            "camera_id",
+        ],
     },
     "access": {
         "label": "Access / Door Event",
