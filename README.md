@@ -38,7 +38,7 @@ Line these up before you start. Docker is the only thing you install on the host
 
 ### Required
 
-- **A host to run it on** — Linux, macOS, or Windows. Keep it always-on for 24/7 webhook capture.
+- **A host to run it on** — Linux, macOS, or Windows. Run it always-on for 24/7 webhook capture, or spin it up just for a demo / test session and tear it back down — either works.
 - **Docker Desktop** (or Docker Engine + Compose v2). Verify with `docker --version` and `docker compose version`.
 - **A Verkada Command organization** with admin access — needed to create the webhook (Admin → API & Integrations → Webhooks) and to generate an API key.
 - **A Verkada API key** — generated in Verkada Command. Used to pull camera footage, post Helix events, unlock doors, and call catalog endpoints.
