@@ -222,34 +222,67 @@ function VerkadaRow({
   onDelete: () => void;
 }) {
   const qc = useQueryClient();
+  // Per-row status line so a failed sync surfaces inline instead of
+  // looking like a no-op (the buttons would otherwise just flip back to
+  // their idle label). Cleared on the next sync click.
+  const [syncStatus, setSyncStatus] = useState<{
+    kind: "ok" | "err";
+    msg: string;
+  } | null>(null);
+  const startSync = () => setSyncStatus(null);
+  const okMsg = (label: string, count: number) => `${label}: ${count} synced`;
+  // Strip the api-wrapper's `METHOD /path → STATUS:` prefix so the
+  // surfaced message is the actual server-side reason.
+  const cleanErr = (e: Error): string => {
+    const m = e.message.match(/→\s*\d+\s*:\s*(.+)$/);
+    return m ? m[1] : e.message;
+  };
+  const errMsg = (label: string, e: Error) => `${label} failed: ${cleanErr(e)}`;
+
   const syncCameras = useMutation({
     mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-cameras`, {}),
-    onSuccess: () => {
+    onMutate: startSync,
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-cameras"] });
+      setSyncStatus({ kind: "ok", msg: okMsg("Cameras", d.count) });
     },
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("Cameras", e) }),
   });
   const syncDoors = useMutation({
     mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-doors`, {}),
-    onSuccess: () => {
+    onMutate: startSync,
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-doors"] });
+      setSyncStatus({ kind: "ok", msg: okMsg("Doors", d.count) });
     },
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("Doors", e) }),
   });
   const syncHelix = useMutation({
     mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-helix`, {}),
-    onSuccess: () => {
+    onMutate: startSync,
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["helix-event-types"] });
+      setSyncStatus({ kind: "ok", msg: okMsg("Helix events", d.count) });
     },
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("Helix events", e) }),
   });
   const syncScenarios = useMutation({
     mutationFn: () =>
       apiPost<{ count: number }>(`/api/connections/${c.id}/sync-scenarios`, {}),
-    onSuccess: () => {
+    onMutate: startSync,
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-scenarios"] });
+      setSyncStatus({ kind: "ok", msg: okMsg("Scenarios", d.count) });
     },
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("Scenarios", e) }),
   });
   return (
     <tr className={!c.setup_complete ? "bg-amber-950/30" : ""}>
@@ -264,56 +297,71 @@ function VerkadaRow({
       <CountCell n={c.door_count} ts={c.doors_last_synced_at} />
       <CountCell n={c.helix_event_count} ts={c.helix_events_last_synced_at} />
       <CountCell n={c.scenario_count} ts={c.scenarios_last_synced_at} />
-      <td className="px-3 py-2 text-right whitespace-nowrap space-x-2">
-        {c.setup_complete && (
-          <>
-            <SyncBtn
-              label="Sync cameras"
-              pending={syncCameras.isPending}
-              onClick={() => syncCameras.mutate()}
-              title="Pull camera names from Verkada API"
-            />
-            <SyncBtn
-              label="Sync doors"
-              pending={syncDoors.isPending}
-              onClick={() => syncDoors.mutate()}
-              title="Pull door names from /access/v1/doors"
-            />
-            <SyncBtn
-              label="Sync helix"
-              pending={syncHelix.isPending}
-              onClick={() => syncHelix.mutate()}
-              title="Pull Helix event types from /cameras/v1/video_tagging/event_type"
-            />
-            <SyncBtn
-              label="Sync scenarios"
-              pending={syncScenarios.isPending}
-              onClick={() => syncScenarios.mutate()}
-              title="Pull Access scenarios from /access/v1/scenarios"
-            />
-          </>
-        )}
-        {!c.setup_complete && (
+      <td className="px-3 py-2 align-top">
+        <div className="text-right whitespace-nowrap space-x-2">
+          {c.setup_complete && (
+            <>
+              <SyncBtn
+                label="Sync cameras"
+                pending={syncCameras.isPending}
+                onClick={() => syncCameras.mutate()}
+                title="Pull camera names from Verkada API"
+              />
+              <SyncBtn
+                label="Sync doors"
+                pending={syncDoors.isPending}
+                onClick={() => syncDoors.mutate()}
+                title="Pull door names from /access/v1/doors"
+              />
+              <SyncBtn
+                label="Sync helix"
+                pending={syncHelix.isPending}
+                onClick={() => syncHelix.mutate()}
+                title="Pull Helix event types from /cameras/v1/video_tagging/event_type"
+              />
+              <SyncBtn
+                label="Sync scenarios"
+                pending={syncScenarios.isPending}
+                onClick={() => syncScenarios.mutate()}
+                title="Pull Access scenarios from /access/v1/scenarios"
+              />
+            </>
+          )}
+          {!c.setup_complete && (
+            <button
+              onClick={onFinish}
+              className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white"
+            >
+              Finish setup
+            </button>
+          )}
           <button
-            onClick={onFinish}
-            className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white"
+            onClick={onEdit}
+            className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-white/30"
+            title="Edit name, API key, or signing secret"
           >
-            Finish setup
+            Edit
           </button>
+          <button
+            onClick={onDelete}
+            className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700"
+          >
+            Delete
+          </button>
+        </div>
+        {syncStatus && (
+          <div
+            className={`text-[11px] mt-1.5 text-right break-words ${
+              syncStatus.kind === "err"
+                ? "text-rose-300"
+                : "text-emerald-300"
+            }`}
+            title={syncStatus.msg}
+          >
+            {syncStatus.kind === "err" ? "✗ " : "✓ "}
+            {syncStatus.msg}
+          </div>
         )}
-        <button
-          onClick={onEdit}
-          className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-white/30"
-          title="Edit name, API key, or signing secret"
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700"
-        >
-          Delete
-        </button>
       </td>
     </tr>
   );
