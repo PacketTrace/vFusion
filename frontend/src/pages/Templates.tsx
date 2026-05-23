@@ -105,13 +105,16 @@ function FlowTemplatesPanel() {
     try {
       const tpl = await apiGet<FlowTemplateDetail>(`/api/flow-templates/${id}`);
       // Imported / template-applied flows start disabled so the user can
-      // wire up connections before the trigger goes live.
+      // wire up connections before the trigger goes live. Strip any
+      // node positions so the editor's auto-arrange lays the template
+      // out cleanly on first load instead of whatever the template
+      // author hard-coded.
       const created = await apiPost<Flow>("/api/flows", {
         name: tpl.default_name || tpl.name,
         enabled: false,
         trigger_type: tpl.flow.trigger_type,
         trigger_config: tpl.flow.trigger_config,
-        nodes: tpl.flow.nodes,
+        nodes: tpl.flow.nodes.map((n) => ({ ...n, position: null })),
         edges: tpl.flow.edges,
       });
       navigate(`/flows/${created.id}/edit`);
