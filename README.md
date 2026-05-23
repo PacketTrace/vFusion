@@ -40,14 +40,6 @@ Line these up before you start. Docker is the only thing you install on the host
 - **A Cloudflare account + a domain on Cloudflare** — only for **production mode** (a stable webhook URL on your own domain). **Quick mode** needs neither — it uses a free, ephemeral TryCloudflare URL.
 - **Tailscale or a VPN** — recommended for remote admin access. The dashboard and admin API have no built-in auth, so don't expose them to the public internet.
 
-### Depends on what your flows do
-
-The app runs fine without these, but the matching actions won't have anything to act on:
-
-- Verkada **cameras** — for Gemini video / still-image analysis and Helix events.
-- Verkada **Access** doors — for the unlock-door action.
-- **LPR-capable cameras** — for license-plate webhook events.
-
 ## Two ways to run
 
 | Mode | Webhook URL | Best for |
