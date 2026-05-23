@@ -121,11 +121,26 @@ function FlowEditorInner() {
             : undefined;
         const filters: Array<{ field: string; value: string }> = [];
         const tryAdd = (k: string) => {
-          if (data && typeof data[k] === "string" && data[k]) {
-            filters.push({ field: k, value: data[k] as string });
+          if (!data) return;
+          const v = data[k];
+          if (typeof v === "string" && v) {
+            filters.push({ field: k, value: v });
+            return;
+          }
+          // Array fields like `objects` — backend trigger matching does
+          // array-contains, so seeding the first scalar element gives the
+          // user a sensible default ("objects" == "animal" etc.).
+          if (Array.isArray(v) && v.length > 0) {
+            const first = v[0];
+            if (typeof first === "string" && first) {
+              filters.push({ field: k, value: first });
+            } else if (typeof first === "number" || typeof first === "boolean") {
+              filters.push({ field: k, value: String(first) });
+            }
           }
         };
         tryAdd("person_label");
+        if (filters.length === 0) tryAdd("objects");
         if (filters.length === 0) tryAdd("license_plate_number");
         if (filters.length === 0) tryAdd("door_id");
         if (filters.length === 0) tryAdd("camera_id");
