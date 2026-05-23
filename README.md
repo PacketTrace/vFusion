@@ -219,10 +219,9 @@ vFusion handles credentials with broad permissions on real physical-security inf
 
 Be honest about the gaps so you don't deploy assuming things you shouldn't:
 
-- **The admin login is single-user and basic.** One shared password, no MFA, no rate-limit on the login endpoint, no IP allow-list. Treat the password like a shared API key — long, unique, and not committed anywhere. Don't expose the dashboard or backend port to the public internet on the assumption that the login alone is enough; put it behind Tailscale or a reverse proxy.
+- **Single-user, basic auth — no MFA, no RBAC.** One shared admin password gates everyone; there are no per-user accounts, no MFA, no rate-limit on the login endpoint, and no IP allow-list. Treat the password like a shared API key — long, unique, not committed anywhere. Don't rely on the login alone for public exposure: bind the dashboard and backend port to LAN/localhost, and share access with teammates via Tailscale or a VPN rather than in-app permissions.
 - **Trust between Verkada and vFusion is webhook-secret-only.** With a configured signing secret, every webhook is HMAC-verified. Without one, anyone who knows your public URL can fire fake webhooks at `/hooks/verkada`. **Always set the signing secret on production deploys.**
 - **The Fernet key is the master key.** Anyone with read access to **both** the `vfusion_secrets` volume (or `FERNET_KEY` env var, if you've overridden it) **and** the database can decrypt every stored credential. Treat the volume + env like any other production secret: restrict host-level access, back up the volume, and rotate if a host is compromised.
-- **No multi-user / RBAC.** vFusion is single-tenant: every user of the dashboard has the same (full-admin) view. If you want to share access with teammates, scope it via VPN access, not in-app permissions.
 
 ### Recovering a lost admin password
 
