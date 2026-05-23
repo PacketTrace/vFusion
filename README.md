@@ -2,9 +2,9 @@
 
 ⚠️ **Beta — built by a Verkada SE, not an official Verkada product.** Expect breaking changes. No warranty; see [LICENSE](LICENSE). This tool can unlock doors and pull camera footage — read **[Before you deploy](#before-you-deploy)** first.
 
-Ever wish you could fuse together custom Verkada API pipelines? Now it's possible by just using a UI and you don't have to type a single line of code. 
+Interacting with Verkada webhooks and APIs have never been easier with this tool. Fuse together custom pipelines that allow you to push Verkada's API to its full potential. 
 
-Self-hosted, Verkada-flavored workflow automation — a visual router for webhooks and API events. Think Zapier/n8/make.com, but built around the Verkada API surface (Helix, Access, etc.).
+Self-hosted, Verkada-flavored workflow automation — a visual router for webhooks and API events. Think Zapier/n8/make.com, but built around the Verkada API surface.
 
 📸 **[Jump to screenshots →](#screenshots)**
 
