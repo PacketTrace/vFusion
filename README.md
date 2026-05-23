@@ -357,6 +357,54 @@ vFusion classifies inbound Verkada webhooks into families (camera / access / lpr
 
 The dashboard has an **Unrecognized events** page (`/unrecognized`) that groups webhooks vFusion couldn't classify. If you see entries there, please [open an issue](https://github.com/PacketTrace/vFusion/issues/new) with the `webhook_type` and `notification_type` values (and a sample payload if you can spare one) and the taxonomy will be expanded to cover them.
 
+## FAQ
+
+<details>
+<summary><strong>Why Gemini and not another AI provider?</strong></summary>
+
+Gemini is currently the only major LLM with a usable **video** analysis API — every other provider tops out at still images. vFusion's headline action is sending real Verkada camera clips through an LLM, so Gemini was the natural fit. Other providers (OpenAI, Anthropic, etc.) will land once they ship comparable video capabilities, or sooner for the still-image / text-only actions.
+
+</details>
+
+<details>
+<summary><strong>Even though it's self-hosted, does my API key or data get shared anywhere?</strong></summary>
+
+No — vFusion has no telemetry, no analytics, and never phones home. Your stored API keys are Fernet-encrypted at rest in your local Postgres and only leave the host when one of your flows explicitly calls Verkada or Gemini.
+
+The full data path is: a webhook lands → it's recorded in your Postgres → if a flow fires, the backend makes outbound calls to **Verkada's API** (`api.verkada.com`) and/or **Google's Gemini API** (`generativelanguage.googleapis.com`) with whatever your flow says to send. That's the entire blast radius:
+
+- **Verkada** sees the API calls your flows make — same surface that Verkada Command would otherwise call.
+- **Google** sees the prompts, frames, and video clips you send to Gemini, governed by Google's own API terms.
+- **Cloudflare** (only if you use a tunnel) sees TLS-encrypted webhook traffic on its way in, the same way any reverse proxy would.
+
+Nothing goes to the maintainer or to any third party.
+
+</details>
+
+<details>
+<summary><strong>How well does this application scale?</strong></summary>
+
+Honestly — not very well yet. vFusion is early beta. Single Postgres, single Redis, single arq worker, no horizontal scaling, no load testing. For a typical Verkada deployment with a few hundred webhooks per day it's comfortable; for thousands per minute it isn't designed for that today. Bigger-deploy patterns (multi-worker, queue prioritisation, ingest backpressure) will arrive as the project matures.
+
+</details>
+
+<details>
+<summary><strong>Where do I file feature requests or bugs?</strong></summary>
+
+Open an issue on GitHub: **[github.com/PacketTrace/vFusion/issues](https://github.com/PacketTrace/vFusion/issues)**.
+
+- **Feature requests** — describe the use case: what you'd trigger on, what you want the flow to do, where it'd plug into the existing editor. A small concrete example is worth more than a vague wishlist item.
+- **Bugs** — include the backend log lines around the failure (`docker compose logs backend | tail -100`) plus the steps to reproduce. Screenshots of the flow / webhook payload help a lot.
+
+</details>
+
+<details>
+<summary><strong>Can I clone this and make my own?</strong></summary>
+
+Yes — vFusion is [MIT licensed](LICENSE), so you can fork it, modify it, run it commercially, repackage it, whatever you want. The one obligation MIT imposes is keeping the original copyright and license notice (the `LICENSE` file) in your fork or any redistribution. Crediting **Casey Keller / PacketTrace** in your README is appreciated but not legally required. If you build something interesting on top, I'd love to hear about it.
+
+</details>
+
 ## Author
 
 Built by **Casey Keller** ([GitHub](https://github.com/PacketTrace) · [LinkedIn](https://www.linkedin.com/in/casey-keller-b00246b6/)) — a Verkada SE. vFusion is a personal project and is not an official Verkada product.
