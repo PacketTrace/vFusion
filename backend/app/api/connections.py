@@ -181,6 +181,139 @@ async def trigger_door_sync(
     return result
 
 
+@router.post("/{conn_id}/test-streaming")
+async def test_streaming(
+    conn_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Probe the connection's streaming permissions by attempting a real
+    HLS pull against the first synced camera — one single live frame and
+    one short historical clip from ~5 minutes ago.
+
+    Verkada has two streaming permission tiers on API keys: "Streaming -
+    Live/Historical" grants both; "Streaming - Live Only" grants only the
+    live test. We run both probes and infer which tier (if any) the key
+    has, so the operator can see at a glance whether their key will work
+    for the gemini_analyze_camera / gemini_analyze_still_image actions
+    before they wire one into a flow.
+    """
+    import tempfile
+    import time
+    from pathlib import Path
+
+    from app.connectors.verkada.footage import (
+        FootageError,
+        grab_still_frame,
+        grab_video_clip,
+    )
+
+    conn = await session.get(Connection, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="not found")
+
+    # Pick the first synced camera for this connection — we need a real
+    # camera_id to test against, and the synced cache is the closest
+    # source of truth without a live API call.
+    cam = (
+        await session.execute(
+            select(VerkadaCamera)
+            .where(VerkadaCamera.connection_id == conn.id)
+            .order_by(VerkadaCamera.name.asc().nullslast())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if cam is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No cameras synced yet for this connection. Click "
+                '"Sync cameras" first so we have a camera_id to test against.'
+            ),
+        )
+
+    try:
+        secret = decrypt_secret(conn.encrypted_secret)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"could not decrypt secret: {e}"
+        )
+    api_key = secret.get("api_key")
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="connection has no api_key — finish setup first",
+        )
+    org_id = secret.get("org_id") or conn.external_id
+    if not org_id:
+        raise HTTPException(
+            status_code=400, detail="connection has no org_id"
+        )
+
+    def _clean(e: FootageError) -> str:
+        # FootageError messages often include URL-shaped detail; collapse
+        # to the short reason so the UI message reads cleanly.
+        msg = str(e)
+        if "stream-key fetch failed:" in msg:
+            return (
+                "Streaming auth was rejected — the API key likely has no "
+                'streaming permission. Grant "Streaming - Live/Historical" '
+                'or "Streaming - Live Only" in Verkada Command.'
+            )
+        return msg
+
+    result: dict[str, Any] = {
+        "camera_id": cam.camera_id,
+        "camera_name": cam.name,
+    }
+
+    # Live frame test.
+    live_path = Path(tempfile.mkstemp(suffix=".jpg")[1])
+    try:
+        await grab_still_frame(
+            api_key=api_key,
+            org_id=org_id,
+            camera_id=cam.camera_id,
+            out_path=live_path,
+            timeout_sec=30,
+        )
+        result["live"] = {"ok": True}
+    except FootageError as e:
+        result["live"] = {"ok": False, "error": _clean(e)}
+    finally:
+        live_path.unlink(missing_ok=True)
+
+    # Historical clip test — 5 minutes back, 2 seconds long. Far enough
+    # from "now" that HD backfill should be available on any active
+    # camera; short enough that ffmpeg finishes quickly.
+    hist_path = Path(tempfile.mkstemp(suffix=".mp4")[1])
+    try:
+        await grab_video_clip(
+            api_key=api_key,
+            org_id=org_id,
+            camera_id=cam.camera_id,
+            start_epoch=int(time.time()) - 300,
+            duration_sec=2.0,
+            out_path=hist_path,
+            buffer_sec=0.0,
+            timeout_sec=45,
+        )
+        result["historical"] = {"ok": True}
+    except FootageError as e:
+        result["historical"] = {"ok": False, "error": _clean(e)}
+    finally:
+        hist_path.unlink(missing_ok=True)
+
+    # Infer permission tier from the two probes.
+    if result["live"]["ok"] and result["historical"]["ok"]:
+        result["tier"] = "Streaming - Live/Historical"
+    elif result["live"]["ok"]:
+        result["tier"] = "Streaming - Live Only"
+    else:
+        result["tier"] = "None"
+
+    return result
+
+
 @router.post("/{conn_id}/sync-scenarios")
 async def trigger_scenario_sync(
     conn_id: UUID,

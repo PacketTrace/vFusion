@@ -284,6 +284,31 @@ function VerkadaRow({
     onError: (e: Error) =>
       setSyncStatus({ kind: "err", msg: errMsg("Scenarios", e) }),
   });
+
+  // Streaming-permission probe — fires a real live frame + historical
+  // clip pull against the first synced camera and reports which Verkada
+  // streaming permission tier the API key has.
+  const [streamingResult, setStreamingResult] = useState<{
+    camera_id: string;
+    camera_name: string | null;
+    live: { ok: boolean; error?: string };
+    historical: { ok: boolean; error?: string };
+    tier: string;
+  } | null>(null);
+  const testStreaming = useMutation({
+    mutationFn: () =>
+      apiPost<NonNullable<typeof streamingResult>>(
+        `/api/connections/${c.id}/test-streaming`,
+        {},
+      ),
+    onMutate: () => {
+      setSyncStatus(null);
+      setStreamingResult(null);
+    },
+    onSuccess: (d) => setStreamingResult(d),
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("Test streaming", e) }),
+  });
   return (
     <tr className={!c.setup_complete ? "bg-amber-950/30" : ""}>
       <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
@@ -325,6 +350,12 @@ function VerkadaRow({
                 onClick={() => syncScenarios.mutate()}
                 title="Pull Access scenarios from /access/v1/scenarios"
               />
+              <SyncBtn
+                label="Test streaming"
+                pending={testStreaming.isPending}
+                onClick={() => testStreaming.mutate()}
+                title="Probe Streaming - Live and Streaming - Live/Historical permissions via a real HLS pull"
+              />
             </>
           )}
           {!c.setup_complete && (
@@ -360,6 +391,36 @@ function VerkadaRow({
           >
             {syncStatus.kind === "err" ? "✗ " : "✓ "}
             {syncStatus.msg}
+          </div>
+        )}
+        {streamingResult && (
+          <div className="text-[11px] mt-1.5 text-right break-words space-y-0.5">
+            <div
+              className={
+                streamingResult.tier === "None"
+                  ? "text-rose-300"
+                  : "text-emerald-300"
+              }
+            >
+              {streamingResult.tier === "None" ? "✗" : "✓"}{" "}
+              {streamingResult.tier}
+              {streamingResult.camera_name && (
+                <span className="text-slate-500">
+                  {" "}· tested via {streamingResult.camera_name}
+                </span>
+              )}
+            </div>
+            {!streamingResult.live.ok && streamingResult.live.error && (
+              <div className="text-rose-300/90">
+                Live: {streamingResult.live.error}
+              </div>
+            )}
+            {!streamingResult.historical.ok &&
+              streamingResult.historical.error && (
+                <div className="text-rose-300/90">
+                  Historical: {streamingResult.historical.error}
+                </div>
+              )}
           </div>
         )}
       </td>
