@@ -31,10 +31,14 @@ def _auth_hint(operation: str, permission: str) -> str:
     """Friendly 401 message that tells the operator which Verkada API
     permission their key needs to be granted. Same generic 401 body
     ("Failed to authenticate request") comes back for both a bad key
-    and a key missing a scope, so we surface both possibilities."""
+    and a key missing a scope, so we surface both possibilities.
+
+    Verkada's permission scopes are all-or-nothing per category, so we
+    say "needs access to" rather than "needs Read on".
+    """
     return (
-        f"Verkada rejected the API key (HTTP 401). To {operation}, the key needs "
-        f'**Read** on "{permission}" in Verkada Command.'
+        f"Verkada rejected the API key (HTTP 401). To {operation}, the key "
+        f'needs access to "{permission}" in Verkada Command.'
     )
 
 
@@ -266,7 +270,7 @@ async def sync_scenarios_for_connection(connection_id) -> dict[str, Any]:
                 return {
                     "error": _auth_hint(
                         "list Access scenarios",
-                        "Access Scenario Management (or Access Control)",
+                        "Access Scenario Management",
                     )
                 }
             return {"error": str(e)}
