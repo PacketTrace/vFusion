@@ -303,11 +303,11 @@ The result lands in Verkada Command as a Helix event you can search and filter:
 
 **Animal detection** — a wildlife camera flags a "bear or coyote", and Verkada Command's notification rules fire a push alert on the Helix event vFusion posted.
 
-![Helix event — animal detection with a push alert](docs/images/helix-command-bear.png)
+<p align="center"><img src="docs/images/helix-command-bear.png" alt="Helix event — animal detection with a push alert" width="420"></p>
 
 **Delivery / package summary** — what Gemini saw at the front door.
 
-![Helix event — delivery](docs/images/helix-command-delivery.png)
+<p align="center"><img src="docs/images/helix-command-delivery.png" alt="Helix event — delivery" width="420"></p>
 
 **Text extraction (OCR)** — vFusion reads sign and label text off the frame…
 
@@ -315,7 +315,7 @@ The result lands in Verkada Command as a Helix event you can search and filter:
 
 …and writes it to a Helix attribute in Command.
 
-![Helix event — OCR](docs/images/helix-command-ocr.png)
+<p align="center"><img src="docs/images/helix-command-ocr.png" alt="Helix event — OCR" width="420"></p>
 
 ## Help expand the taxonomy
 
