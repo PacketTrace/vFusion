@@ -94,18 +94,17 @@ First build takes ~2–3 min (image pulls + npm install + alembic migrations). S
 
 ### 2. Wire it into Verkada Command
 
-The welcome modal in the dashboard shows your public webhook URL with a copy button. Before pasting it into Verkada Command, generate a shared secret — both sides compute HMAC-SHA256 against the same string so vFusion can verify each webhook came from your Verkada org. **Strongly recommended even in quick mode** — without it anyone who finds your trycloudflare URL could forge events.
+Open **http://localhost:15173**. On first run, the welcome modal walks you through it — both the **Generate signing secret** button and your public webhook URL live right in the modal. The signing secret is what lets vFusion verify each inbound webhook actually came from your org (both sides compute HMAC-SHA256 against the same string). **Strongly recommended even in quick mode** — without it, anyone who finds your trycloudflare URL could forge events.
 
-1. **vFusion → Connections** → open your Verkada org form → click **Generate** next to "Webhook signing secret" → click **Copy**.
-2. **Verkada Command** → **Settings** → **Webhooks** → **Create webhook**:
-   - **Endpoint URL**: paste your trycloudflare URL with `/hooks/verkada` appended
+1. **In the vFusion welcome modal** → click **Generate signing secret** → click **Copy**.
+2. **Verkada Command** → **Admin** → **API & Integrations** → **Webhooks** → **Add**:
+   - **Endpoint URL**: copy the trycloudflare URL from the welcome modal (it already includes `/hooks/verkada`)
    - **Shared secret**: paste the string you just generated
    - Pick the notification types you want
    - **Save**
-3. Back **in vFusion** → save the Connection form.
-4. **In Verkada Command** → click **Send test webhook**.
+3. **In Verkada Command** → click **Send test webhook**.
 
-The dashboard auto-unlocks the moment the real webhook arrives. In the inbox, the event should show a green **✓ verified** badge.
+The dashboard auto-unlocks the moment the real webhook arrives — vFusion auto-detects the org and creates a Connection for it. In the inbox, the event should show a green **✓ verified** badge. To finish, head to **Connections**, open the auto-created Verkada org, and paste in your **Verkada API key** so the action steps can act on cameras, doors, and Helix.
 
 ### What's exposed through the tunnel
 
@@ -158,8 +157,10 @@ You should see 2–4 lines (Cloudflare connects to multiple POPs for redundancy)
 
 ### 4. Configure the webhook in Verkada Command
 
-1. **vFusion → Connections** → open the Verkada org form → click **Generate** next to "Webhook signing secret" → click **Copy**. (Don't save yet — keep the form open.)
-2. **Verkada Command** → **All Products** → **Settings** → **Webhooks** → **Create webhook**:
+Open **http://localhost:15173**. The welcome modal walks you through it — the **Generate signing secret** button and your stable webhook URL are both in the modal.
+
+1. **In the vFusion welcome modal** → click **Generate signing secret** → click **Copy**.
+2. **Verkada Command** → **Admin** → **API & Integrations** → **Webhooks** → **Add**:
    - **Endpoint URL**: `https://hooks.yourdomain.com/hooks/verkada`
    - **Shared secret**: paste the string from step 1
    - **Events**: pick the notification types you want, or "all events"
@@ -168,10 +169,10 @@ You should see 2–4 lines (Cloudflare connects to multiple POPs for redundancy)
 
 ### 5. Finish setup in vFusion
 
-The test webhook lands in the inbox within a couple seconds. vFusion auto-detects the org. Back in the Connection form you left open in step 1:
+The test webhook lands in the inbox within a couple seconds — vFusion auto-detects the org and the welcome gate dismisses. Head to **Connections**, open the auto-created Verkada org, and supply:
 
-- Your **Verkada API key** (generate in Command → My Account → API Keys)
-- The **webhook signing secret** field already has the value from step 1 — leave it as-is
+- Your **Verkada API key** — generated in Verkada Command
+- The webhook signing secret field is already populated with the value from step 1; leave it as-is
 
 Save. The test webhook in the inbox should now show a green **✓ verified** badge.
 
