@@ -223,6 +223,29 @@ Be honest about the gaps so you don't deploy assuming things you shouldn't:
 - **Trust between Verkada and vFusion is webhook-secret-only.** With a configured signing secret, every webhook is HMAC-verified. Without one, anyone who knows your public URL can fire fake webhooks at `/hooks/verkada`. **Always set the signing secret on production deploys.**
 - **The Fernet key is the master key.** Anyone with read access to **both** the `vfusion_secrets` volume (or `FERNET_KEY` env var, if you've overridden it) **and** the database can decrypt every stored credential. Treat the volume + env like any other production secret: restrict host-level access, back up the volume, and rotate if a host is compromised.
 
+### Vault-backed secrets (recommended)
+
+`.env` is just plaintext on disk. For anything beyond a casual demo, don't keep real secret values there — render `.env` from a template at deploy time and keep the actual values in a password manager or KMS.
+
+A common pattern with the [1Password CLI](https://developer.1password.com/docs/cli/) (the same pattern works with AWS Secrets Manager, HashiCorp Vault, etc.):
+
+1. Keep a `.env.tpl` on the deploy host only (gitignored in this repo), with vault references instead of values:
+
+   ```
+   SECRET_KEY=op://YourVault/vFusion/SECRET_KEY
+   FERNET_KEY=op://YourVault/vFusion/FERNET_KEY
+   ```
+
+2. Render `.env` at deploy time, then start the stack:
+
+   ```bash
+   export OP_SERVICE_ACCOUNT_TOKEN="$(cat /etc/op-token)"
+   op inject -i .env.tpl -o .env && chmod 600 .env
+   docker compose --profile <quick|cloudflared> up --build -d
+   ```
+
+Rotating a secret = update the 1Password item once; the next deploy picks it up. Audit trail of every secret read stays in 1Password. The repo only ever sees `op://` references.
+
 ### Recovering a lost admin password
 
 There's no password-reset email or recovery flow by design — single-user, no email layer. To clear the password and re-trigger the first-run setup wizard, delete its row from `app_settings`:
