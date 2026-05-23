@@ -284,10 +284,11 @@ def classify(envelope: Envelope) -> Family:
 # and field-level filter pickers without hardcoding strings in JS.
 TAXONOMY: dict[str, dict[str, Any]] = {
     "camera": {
-        "label": "Camera AI Event",
+        "label": "Camera event",
         "webhook_type": "notification",
         "notification_types": sorted(CAMERA_EVENT_TYPES),
         "filter_fields": [
+            "objects",
             "person_label",
             "license_plate_number",
             "camera_id",

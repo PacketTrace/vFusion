@@ -47,23 +47,57 @@ def _flatten(value: Any, prefix: str, out: list[TriggerField]) -> None:
         )
 
 
+# Samples that carry no useful info — frontend hides these as filter
+# targets anyway, so we want a non-null sample to "win" over them if any
+# other recent webhook has one.
+_NULL_SAMPLES: tuple[Any, ...] = (None, "", "<array of 0>")
+
+
+def _useful_sample(f: TriggerField) -> bool:
+    return f.sample not in _NULL_SAMPLES
+
+
 @router.get("/sample-fields", response_model=list[TriggerField])
 async def sample_fields(
     family: str | None = Query(default=None),
     notification_type: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> list[TriggerField]:
+    """Return every field path seen across the last ~20 matching webhooks.
+
+    Verkada payloads vary inside a single notification_type — e.g.
+    ``data.objects`` is populated on some ``alert_rule_motion`` fires and
+    absent on others. Sampling only the most recent webhook would hide
+    those fields from the filter picker, so we merge across recent
+    events: any path that appears in any of them shows up, with the
+    newest non-null sample winning as the value preview.
+    """
     q = select(WebhookEvent).where(WebhookEvent.body_json.is_not(None))
     if family:
         q = q.where(WebhookEvent.family == family)
     if notification_type:
         q = q.where(WebhookEvent.notification_type == notification_type)
-    q = q.order_by(desc(WebhookEvent.received_at)).limit(1)
-    row = (await session.execute(q)).scalar_one_or_none()
-    if row is None or not isinstance(row.body_json, dict):
-        return []
-    out: list[TriggerField] = []
-    _flatten(row.body_json, "trigger", out)
+    q = q.order_by(desc(WebhookEvent.received_at)).limit(20)
+    rows = (await session.execute(q)).scalars().all()
+
+    # newest-first iteration → first non-null sample for each path wins.
+    by_path: dict[str, TriggerField] = {}
+    for row in rows:
+        if not isinstance(row.body_json, dict):
+            continue
+        flat: list[TriggerField] = []
+        _flatten(row.body_json, "trigger", flat)
+        for f in flat:
+            existing = by_path.get(f.path)
+            if existing is None:
+                by_path[f.path] = f
+                continue
+            # Upgrade a null/empty placeholder to a real value when we
+            # find one further back in the history.
+            if not _useful_sample(existing) and _useful_sample(f):
+                by_path[f.path] = f
+
+    out = list(by_path.values())
     # Sort: envelope fields first, then data.*, then everything else.
     def _rank(f: TriggerField) -> tuple[int, str]:
         p = f.path
