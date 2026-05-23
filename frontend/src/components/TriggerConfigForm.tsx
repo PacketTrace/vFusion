@@ -232,6 +232,16 @@ interface FilterFieldOption {
 }
 
 
+// Fields that *exist* on most Verkada webhook payloads but can't usefully
+// gate a flow — unique per event, opaque URLs with signed tokens, etc.
+// They'd just clutter the filter dropdown.
+const EXCLUDED_FILTER_FIELDS = new Set([
+  "event_id",
+  "image_url",
+  "video_url",
+]);
+
+
 function buildFilterFieldOptions(
   sample: TriggerField[],
   preferred: string[],
@@ -256,6 +266,7 @@ function buildFilterFieldOptions(
     if (!tail) continue;
     // Drop the synthetic ".0" entries — the parent array represents them.
     if (tail.endsWith(".0")) continue;
+    if (EXCLUDED_FILTER_FIELDS.has(tail)) continue;
     if (f.type === "array") {
       const elem = firstElems.get(f.path);
       if (elem === undefined || elem === null || elem === "") continue;

@@ -287,13 +287,7 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "label": "Camera event",
         "webhook_type": "notification",
         "notification_types": sorted(CAMERA_EVENT_TYPES),
-        "filter_fields": [
-            "objects",
-            "person_label",
-            "license_plate_number",
-            "camera_id",
-            "event_description",
-        ],
+        "filter_fields": ["objects", "camera_id"],
     },
     "access": {
         "label": "Access / Door Event",
