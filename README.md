@@ -23,15 +23,13 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 
 ## Example use cases
 
-Three flows that take advantage of vFusion's core loop — webhook or schedule → Gemini → post the result back into Verkada — and what's possible when you pair that loop with Verkada Command's built-in Helix alert rules.
+A few flows you can build with vFusion's core loop — **trigger → Gemini → Helix event in Verkada Command**:
 
-**Animal detection with push alerts.** Catch motion events from a wildlife or outdoor camera, ask Gemini *"what animal is in this frame?"*, and write the answer to a Helix attribute named `Animal`. In Verkada Command, set a Helix alert rule: *notify when `Animal` contains "bear"* — bear walks past the camera, the rule fires, your phone buzzes. (Screenshot of this exact flow lives in the [From analysis to Verkada Helix](#from-analysis-to-verkada-helix) section.)
-
-**Hourly empty-shelf / clothing-rack check.** No webhook source here — use the **schedule** trigger instead. Every hour, pull a still frame from a retail camera and ask Gemini *"how full is the rack, 0–100?"*. Post the answer as Helix attribute `Stock Level`. A Helix alert rule on `Stock Level < 30` pings floor staff. Zero humans involved, runs as long as the lights are on.
-
-**POI-detected lockdown.** Verkada already detects people of interest; vFusion lets you do something about it automatically. Webhook fires on the POI event → optional condition node filters by watchlist name → `verkada_api_call` hits the door-lockdown endpoint from the auto-synced API catalog, locking a single door or a whole site.
-
-The same pattern generalises: any **"if X is detected in the frame or webhook, do Y in Verkada"** automation — POI → lockdown, license plate → access grant, sound classifier → alarm acknowledge, package detected → notify, weather visible in frame → adjust temperature setpoint. Verkada provides the eyes and the actions; vFusion is the routing in between.
+| Use case | Trigger | What the flow does |
+|---|---|---|
+| **Animal detection alerts** | Motion webhook from a wildlife camera | Gemini identifies the animal, posts it to Helix as `Animal`. Command alerts when `Animal` contains "bear". |
+| **Hourly shelf-stock check** | Hourly schedule | Gemini scores shelf fullness 0–100, posts to Helix as `Stock Level`. Command alerts floor staff when below 30. |
+| **POI-triggered lockdown** | Verkada POI webhook | Optional watchlist filter, then `verkada_api_call` hits the door-lockdown endpoint from the API catalog. |
 
 ## Before you deploy
 
