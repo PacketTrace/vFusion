@@ -104,6 +104,7 @@ function FlowEditorInner() {
   // pre-pick the test-run sample. Falls back to recent matching events.
   const [sourceEventId, setSourceEventId] = useState<string | null>(null);
   const [testRunOpen, setTestRunOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
 
   const fromEventId = searchParams.get("from_event");
   useEffect(() => {
@@ -632,6 +633,18 @@ function FlowEditorInner() {
             Export
           </button>
           <button
+            onClick={() => setSaveAsTemplateOpen(true)}
+            disabled={isNew || save.isPending || nodes.length === 0}
+            title={
+              isNew
+                ? "Save the flow first to promote it to a template"
+                : "Save this flow as a reusable template (connections stripped)"
+            }
+            className="text-sm px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-slate-100 border border-white/15 disabled:opacity-50"
+          >
+            Save as template
+          </button>
+          <button
             onClick={handleSave}
             disabled={save.isPending}
             className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
@@ -688,6 +701,20 @@ function FlowEditorInner() {
                 setTestRunOpen(false);
                 navigate(`/runs?selected=${runId}`);
               }}
+            />
+          )}
+          {saveAsTemplateOpen && (
+            <SaveAsTemplateModal
+              defaultName={name}
+              triggerType={triggerType}
+              triggerConfig={
+                triggerType === "schedule"
+                  ? scheduleStateToConfig(schedule)
+                  : triggerStateToConfig(trigger)
+              }
+              nodes={nodes}
+              edges={edges}
+              onClose={() => setSaveAsTemplateOpen(false)}
             />
           )}
         </div>
@@ -1191,4 +1218,138 @@ function computeLayout(
     });
   }
   return positions;
+}
+
+
+/** Save-as-template modal — promotes the current flow body into the
+ *  user_flow_templates table. Connection IDs are stripped server-side
+ *  before persisting, so the saved template is portable. */
+function SaveAsTemplateModal({
+  defaultName,
+  triggerType,
+  triggerConfig,
+  nodes,
+  edges,
+  onClose,
+}: {
+  defaultName: string;
+  triggerType: string;
+  triggerConfig: Record<string, unknown>;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(defaultName || "");
+  const [category, setCategory] = useState("");
+  const [description, setDescription] = useState("");
+  const [summary, setSummary] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/flow-templates`, {
+        name: name.trim(),
+        category: category.trim() || null,
+        description: description.trim() || null,
+        summary: summary.trim() || null,
+        default_name: name.trim(),
+        flow: {
+          trigger_type: triggerType,
+          trigger_config: triggerConfig,
+          nodes,
+          edges,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["flow-templates"] });
+      onClose();
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-lg w-full max-w-xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Save as template</h2>
+          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+            Saves this flow's trigger and steps under <strong>Templates → Flow
+            templates → yours</strong>. Connection IDs and Helix event-type
+            UIDs are stripped automatically — applying the template re-picks
+            them from whatever deploy uses it.
+          </p>
+        </div>
+        <label className="block">
+          <div className="text-xs font-medium text-slate-300 mb-1">
+            Name <span className="text-rose-400">*</span>
+          </div>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm"
+            placeholder="e.g. Wildlife camera bear alert"
+          />
+        </label>
+        <label className="block">
+          <div className="text-xs font-medium text-slate-300 mb-1">
+            Category
+          </div>
+          <input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm"
+            placeholder="e.g. AI analytics / Access automation / Scheduled"
+          />
+        </label>
+        <label className="block">
+          <div className="text-xs font-medium text-slate-300 mb-1">
+            Short summary
+          </div>
+          <input
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm font-mono"
+            placeholder="e.g. Webhook → Gemini → Helix"
+          />
+        </label>
+        <label className="block">
+          <div className="text-xs font-medium text-slate-300 mb-1">
+            Description
+          </div>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 focus:outline-none focus:border-sky-500 text-sm"
+            placeholder="What this template builds and when you'd use it."
+          />
+        </label>
+        {err && (
+          <div className="text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
+            {err}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-md border border-white/15 text-sm text-slate-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              setErr(null);
+              if (!name.trim()) return setErr("Name is required.");
+              save.mutate();
+            }}
+            disabled={save.isPending}
+            className="px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-sm disabled:opacity-50"
+          >
+            {save.isPending ? "Saving…" : "Save template"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

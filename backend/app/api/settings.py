@@ -261,9 +261,11 @@ _RESET_TABLES: tuple[str, ...] = (
     "runs",
     "flows",
     "prompt_templates",
+    "user_flow_templates",
     "verkada_helix_event_types",
     "verkada_cameras",
     "verkada_doors",
+    "verkada_scenarios",
     "connections",
     "app_settings",
 )

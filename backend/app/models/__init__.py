@@ -5,6 +5,7 @@ from app.models.gemini_pricing import GeminiPricing
 from app.models.prompt_template import PromptTemplate
 from app.models.run import Run
 from app.models.run_event import RunEvent
+from app.models.user_flow_template import UserFlowTemplate
 from app.models.verkada_api import VerkadaApiEndpoint, VerkadaApiSpec
 from app.models.verkada_camera import VerkadaCamera
 from app.models.verkada_door import VerkadaDoor
@@ -21,6 +22,7 @@ __all__ = [
     "PromptTemplate",
     "Run",
     "RunEvent",
+    "UserFlowTemplate",
     "VerkadaApiEndpoint",
     "VerkadaApiSpec",
     "VerkadaCamera",

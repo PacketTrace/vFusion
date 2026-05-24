@@ -192,12 +192,16 @@ export interface Connection {
 
 export interface FlowTemplateListItem {
   id: string;
+  // "builtin" = JSON files in backend/app/data/flow_templates/ (read-only)
+  // "user" = saved from the editor, lives in user_flow_templates table
+  source: "builtin" | "user";
   name: string;
   category: string | null;
   description: string | null;
   summary: string | null;
   trigger_type: string;
   default_name: string;
+  created_at?: string | null;
 }
 
 export interface FlowTemplateNode {

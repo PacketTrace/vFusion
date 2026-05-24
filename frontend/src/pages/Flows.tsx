@@ -98,6 +98,13 @@ export default function Flows() {
             onChange={handleFileChange}
             className="hidden"
           />
+          <Link
+            to="/templates"
+            className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-200 hover:bg-white/10"
+            title="Start from a built-in or saved template"
+          >
+            Browse templates
+          </Link>
           <button
             onClick={handleImportClick}
             disabled={importMut.isPending}

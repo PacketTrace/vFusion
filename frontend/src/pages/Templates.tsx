@@ -11,8 +11,6 @@ import {
   apiGet,
   apiPost,
   apiPut,
-  Flow,
-  FlowTemplateDetail,
   FlowTemplateListItem,
   PromptTemplate,
 } from "../lib/api";
@@ -91,6 +89,7 @@ function TabButton({
 
 function FlowTemplatesPanel() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -103,20 +102,14 @@ function FlowTemplatesPanel() {
     setBusyId(id);
     setErr(null);
     try {
-      const tpl = await apiGet<FlowTemplateDetail>(`/api/flow-templates/${id}`);
-      // Imported / template-applied flows start disabled so the user can
-      // wire up connections before the trigger goes live. Strip any
-      // node positions so the editor's auto-arrange lays the template
-      // out cleanly on first load instead of whatever the template
-      // author hard-coded.
-      const created = await apiPost<Flow>("/api/flows", {
-        name: tpl.default_name || tpl.name,
-        enabled: false,
-        trigger_type: tpl.flow.trigger_type,
-        trigger_config: tpl.flow.trigger_config,
-        nodes: tpl.flow.nodes.map((n) => ({ ...n, position: null })),
-        edges: tpl.flow.edges,
-      });
+      // The apply endpoint strips positions + auto-rebinds obvious
+      // connection slots server-side, so the frontend stays a thin
+      // shell. Imported / template-applied flows start disabled — the
+      // user reviews + enables once they've wired everything up.
+      const created = await apiPost<{ id: string }>(
+        `/api/flow-templates/${id}/apply`,
+        {},
+      );
       navigate(`/flows/${created.id}/edit`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -124,6 +117,11 @@ function FlowTemplatesPanel() {
       setBusyId(null);
     }
   };
+
+  const deleteTemplate = useMutation({
+    mutationFn: (id: string) => apiDelete(`/api/flow-templates/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["flow-templates"] }),
+  });
 
   if (list.isLoading) {
     return <div className="text-sm text-slate-400">Loading…</div>;
@@ -169,6 +167,11 @@ function FlowTemplatesPanel() {
                 <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300">
                   {tpl.trigger_type === "schedule" ? "schedule" : "webhook"}
                 </span>
+                {tpl.source === "user" && (
+                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200">
+                    yours
+                  </span>
+                )}
               </div>
               {tpl.description && (
                 <div className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
@@ -181,7 +184,7 @@ function FlowTemplatesPanel() {
                 </div>
               )}
             </div>
-            <div className="mt-auto">
+            <div className="mt-auto flex items-center gap-2">
               <button
                 onClick={() => useTemplate(tpl.id)}
                 disabled={busyId !== null}
@@ -189,6 +192,19 @@ function FlowTemplatesPanel() {
               >
                 {busyId === tpl.id ? "Creating…" : "Use this template"}
               </button>
+              {tpl.source === "user" && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete template "${tpl.name}"?`)) {
+                      deleteTemplate.mutate(tpl.id);
+                    }
+                  }}
+                  disabled={deleteTemplate.isPending}
+                  className="text-xs px-2 py-1.5 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}

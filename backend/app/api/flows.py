@@ -276,19 +276,31 @@ async def import_flow(
 ) -> FlowOut:
     """Create a new flow from an exported JSON. Imported flows are
     disabled by default — the user reviews + picks their connections
-    before flipping the switch."""
+    before flipping the switch.
+
+    Connection slots that are null get auto-rebound when the deploy
+    has exactly one matching connection (same helper used by the
+    template-apply endpoint), so importers with one Verkada + one
+    Gemini connection land in the editor with nothing left to pick.
+    """
+    # Local import to avoid a module-init cycle (flow_templates imports
+    # from app.models, which transitively touches the flows router).
+    from app.api.flow_templates import _rebind_connections
+
     if payload.version != 1:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported flow export version: {payload.version!r}",
         )
     _validate_graph(payload.nodes, payload.edges)
+    node_dicts = [n.model_dump() for n in payload.nodes]
+    node_dicts = await _rebind_connections(node_dicts, session)
     flow = Flow(
         name=payload.name or "Imported flow",
         enabled=False,
         trigger_type=payload.trigger_type,
         trigger_config=payload.trigger_config,
-        nodes=[n.model_dump() for n in payload.nodes],
+        nodes=node_dicts,
         edges=[e.model_dump() for e in payload.edges],
     )
     session.add(flow)
