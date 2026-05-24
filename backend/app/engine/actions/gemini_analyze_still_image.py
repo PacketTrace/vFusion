@@ -103,6 +103,9 @@ SAMPLE_OUTPUT: dict[str, Any] = {
     "action": "gemini_analyze_still_image",
     "camera_id": "...",
     "text": "...",
+    # Populated when the prompt asks Gemini for JSON. Reference fields
+    # like {{ steps.<name>.output.json.stock_pct }} in downstream actions.
+    "json": {"example_field": "example_value"},
     "char_count": 199,
     "model_used": "gemini-3-flash-preview",
     "image_path": "/app/data/images/abc.jpg",
@@ -244,6 +247,9 @@ async def run(
         "action": "gemini_analyze_still_image",
         "camera_id": camera_id,
         "text": result["text"],
+        # Parsed JSON when the response was structured (None otherwise).
+        # See ``maybe_parse_json`` in gemini_analyze_video for the rules.
+        "json": result.get("json"),
         "char_count": len(result["text"]),
         "model_used": result["model_used"],
         "image_path": str(image_path),

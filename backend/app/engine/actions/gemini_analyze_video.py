@@ -9,7 +9,9 @@ step via ``{{ steps.<grab>.output.clip_path }}``.
 """
 
 import asyncio
+import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,45 @@ from app.models import Connection
 
 
 logger = logging.getLogger(__name__)
+
+
+# Matches an opening ```json (or just ```) fence and the closing fence.
+# Gemini often returns JSON wrapped in code fences even when asked not
+# to — we strip them transparently so prompts can stay loose.
+_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+
+
+def maybe_parse_json(text: str) -> Any | None:
+    """Best-effort JSON parse of a Gemini text response.
+
+    Returns the parsed object (dict, list, scalar) when ``text`` is a
+    well-formed JSON value, optionally wrapped in a ``` code fence.
+    Returns ``None`` for anything that doesn't parse — callers expose
+    this alongside the raw text so a flow can pick whichever shape is
+    convenient (e.g. ``output.json.animal`` vs ``output.text``).
+
+    This is intentionally untyped because Gemini might be asked to
+    return a string ("bear"), an integer (47), or a structured object —
+    all are valid and useful.
+    """
+    if not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    if not stripped:
+        return None
+    # Peel a ``` ... ``` wrapper if present so prompts asking for "just
+    # JSON" still work when the model wraps it anyway.
+    m = _FENCE_RE.match(stripped)
+    if m:
+        stripped = m.group(1).strip()
+    # Cheap rejection: JSON values start with one of these chars. Saves
+    # a try/except on the common natural-language case.
+    if not stripped or stripped[0] not in "{[\"-0123456789tfn":
+        return None
+    try:
+        return json.loads(stripped)
+    except (ValueError, TypeError):
+        return None
 
 
 _DEFAULT_MODELS = "gemini-3.1-pro-preview,gemini-2.5-pro,gemini-2.5-flash"
@@ -107,6 +148,8 @@ SCHEMA: dict[str, Any] = {
 SAMPLE_OUTPUT: dict[str, Any] = {
     "action": "gemini_analyze_video",
     "text": "...",
+    # Populated when the prompt asks Gemini for JSON.
+    "json": {"example_field": "example_value"},
     "char_count": 199,
     "model_used": "gemini-2.5-pro",
     "clip_path": "/app/data/clips/abc.mp4",
@@ -323,6 +366,11 @@ async def analyze_clip(
     tokens_out = int(getattr(usage, "candidates_token_count", 0) or 0)
     return {
         "text": text,
+        # Auto-parse JSON responses so flows can reference structured
+        # fields without a separate parsing step. ``None`` when the text
+        # isn't valid JSON — templates that don't ask for JSON just
+        # ignore this field.
+        "json": maybe_parse_json(text),
         "model_used": used,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
@@ -365,6 +413,7 @@ async def run(
     return {
         "action": "gemini_analyze_video",
         "text": result["text"],
+        "json": result.get("json"),
         "char_count": len(result["text"]),
         "model_used": result["model_used"],
         "clip_path": str(clip_path),

@@ -2,8 +2,8 @@
   "id": "animal-detection-alerts",
   "name": "Animal detection alerts",
   "category": "AI analytics",
-  "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal is in the frame, and post the result to Helix so Verkada Command can alert when it sees a specific species (e.g. bear).",
-  "summary": "Webhook → Gemini analyze → condition on \"bear\" → Helix event",
+  "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal is in the frame and what it's doing, and post the result to Helix so Verkada Command can alert when it sees a specific species (e.g. bear).",
+  "summary": "Webhook → Gemini analyze (JSON) → condition on \"bear\" → Helix event with Animal + Behavior",
   "default_name": "Animal detection alerts",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -14,6 +14,16 @@
         "objects": "animal"
       }
     },
+    "helix_event_types": [
+      {
+        "event_type_uid": "tpl:animals",
+        "name": "Animals",
+        "event_schema": {
+          "Animal": "string",
+          "Behavior": "string"
+        }
+      }
+    ],
     "nodes": [
       {
         "id": "analyze",
@@ -28,7 +38,7 @@
           "duration_sec": "10",
           "pre_roll_sec": "2",
           "model": "gemini-2.5-flash",
-          "prompt": "What animal is in this video? Respond with just the species name (e.g. 'bear', 'deer', 'coyote'), or 'none' if no animal is clearly visible."
+          "prompt": "Identify the animal in this security camera video and describe what it is doing. Respond with ONLY a JSON object — no prose, no code fence — with exactly two string keys:\n  \"animal\":   the species in lowercase (e.g. \"bear\", \"deer\", \"coyote\", \"raccoon\"), or \"none\" if no animal is clearly visible.\n  \"behavior\": a 1-4 word verb phrase describing what the animal is doing (e.g. \"walking\", \"feeding\", \"climbing fence\", \"investigating trash\"). Use \"unknown\" if the animal is too brief or unclear to tell.\n\nExample: {\"animal\": \"bear\", \"behavior\": \"walking\"}"
         },
         "position": {"x": 220, "y": 0}
       },
@@ -37,7 +47,7 @@
         "name": "is_bear",
         "kind": "condition",
         "config": {
-          "left": "{{ steps.analyze.output.text }}",
+          "left": "{{ steps.analyze.output.json.animal }}",
           "operator": "contains",
           "right": "bear"
         },
@@ -51,8 +61,11 @@
         "config": {
           "connection_id": null,
           "camera_id": "{{ trigger.data.camera_id }}",
-          "event_type_uid": null,
-          "attributes": {},
+          "event_type_uid": "tpl:animals",
+          "attributes": {
+            "Animal": "{{ steps.analyze.output.json.animal }}",
+            "Behavior": "{{ steps.analyze.output.json.behavior }}"
+          },
           "time_ms": "{{ trigger.data.created }}000"
         },
         "position": {"x": 220, "y": 460}
