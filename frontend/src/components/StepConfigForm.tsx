@@ -12,6 +12,7 @@ import {
   KnownScenario,
   PromptTemplate,
   TriggerField,
+  VerkadaCamera,
 } from "../lib/api";
 import { useCameras } from "../lib/cameras";
 import EndpointPicker from "./EndpointPicker";
@@ -248,6 +249,7 @@ export default function StepConfigForm({
           connections.data ?? [],
           doors.data ?? [],
           scenarios.data ?? [],
+          cameras.data ?? [],
           triggerFamily,
           triggerNotificationType,
           priorSteps,
@@ -285,6 +287,7 @@ function renderControl(
   connections: Connection[],
   doors: KnownDoor[],
   scenariosList: KnownScenario[],
+  camerasList: VerkadaCamera[],
   triggerFamily: string | undefined,
   triggerNotificationType: string | undefined,
   priorSteps: PriorStep[],
@@ -333,6 +336,47 @@ function renderControl(
           className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
           placeholder="or paste door_id UUID"
         />
+      </>
+    );
+  }
+  if (f.type === "camera_ref") {
+    // Filter by the picked Verkada connection when one is set on the
+    // same step. Stops the dropdown from showing cameras from orgs
+    // that aren't authorized to act on this flow.
+    const connId =
+      typeof config.connection_id === "string" ? config.connection_id : "";
+    const visible = connId
+      ? camerasList.filter((c) => c.connection_id === connId)
+      : camerasList;
+    return (
+      <>
+        <select
+          value={(config[f.name] as string) ?? ""}
+          onChange={(e) => setOne(f.name, e.target.value)}
+          className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+        >
+          <option value="">— pick a camera —</option>
+          {visible.map((c) => (
+            <option key={c.camera_id} value={c.camera_id}>
+              {c.name ?? "(unnamed)"}
+              {c.site ? ` — ${c.site}` : ""}
+              {c.model ? ` · ${c.model}` : ""}
+            </option>
+          ))}
+        </select>
+        <input
+          value={(config[f.name] as string) ?? ""}
+          onChange={(e) => setOne(f.name, e.target.value)}
+          className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
+          placeholder="or paste camera_id / template ref like {{ trigger.data.camera_id }}"
+        />
+        {visible.length === 0 && (
+          <div className="text-[11px] text-amber-300/80 mt-1">
+            {connId
+              ? "No cameras synced for this connection yet — click Sync cameras on the Connections page."
+              : "Pick a Verkada connection above to populate the camera list."}
+          </div>
+        )}
       </>
     );
   }

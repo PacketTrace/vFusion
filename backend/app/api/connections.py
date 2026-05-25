@@ -53,7 +53,7 @@ CONNECTION_TYPES: dict[str, dict[str, Any]] = {
         "description": "API key for OpenWeatherMap — used by the weather_fetch action to pull real atmospheric conditions for a lat/lon or zip code.",
         "required_for_setup": "api_key",
         "fields": [
-            {"name": "api_key", "label": "OpenWeatherMap API key", "type": "secret", "required": True, "help": "Free tier is fine for most flows. From https://home.openweathermap.org/api_keys after signing up."},
+            {"name": "api_key", "label": "OpenWeatherMap API key", "type": "secret", "required": True, "help": "Free tier is plenty for most flows. Sign up at https://home.openweathermap.org/users/sign_up , then grab a key from https://home.openweathermap.org/api_keys . New keys take a few minutes to activate."},
         ],
     },
     "verkada": {

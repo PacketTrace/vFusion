@@ -39,10 +39,10 @@ SCHEMA: dict[str, Any] = {
         },
         {
             "name": "camera_id",
-            "label": "Camera ID",
-            "type": "text",
+            "label": "Camera",
+            "type": "camera_ref",
             "required": True,
-            "help": "Auto-fills from {{ trigger.data.camera_id }} when present.",
+            "help": "Pick from synced cameras, or paste a UUID / template ref like {{ trigger.data.camera_id }} for webhook-triggered flows.",
         },
         {
             "name": "event_type_uid",

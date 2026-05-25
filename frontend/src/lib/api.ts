@@ -399,6 +399,7 @@ export interface ActionFieldSpec {
     | "connection_ref"
     | "door_ref"
     | "scenario_ref"
+    | "camera_ref"
     | "verkada_endpoint_ref"
     | "verkada_request_params"
     | "json"

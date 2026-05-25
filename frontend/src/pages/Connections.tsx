@@ -795,7 +795,46 @@ function Field({
         {required && <span className="text-rose-400 ml-1">*</span>}
       </div>
       {children}
-      {help && <div className="text-xs text-slate-500 mt-1">{help}</div>}
+      {help && (
+        <div className="text-xs text-slate-500 mt-1">{renderHelpWithLinks(help)}</div>
+      )}
     </label>
   );
+}
+
+
+// Auto-linkify ``https://...`` URLs in field help text so the
+// OpenWeatherMap / Gemini AI Studio sign-up links the connection
+// specs reference are clickable. Anything that isn't a URL renders as
+// plain text — kept inside the same parent so styling cascades cleanly.
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+
+function renderHelpWithLinks(text: string): React.ReactNode {
+  const parts = text.split(URL_RE);
+  return parts.map((part, i) => {
+    if (URL_RE.test(part)) {
+      // .test() leaves lastIndex on the regex; reset so subsequent
+      // .test() / .split() calls behave predictably.
+      URL_RE.lastIndex = 0;
+      // Drop a trailing punctuation char (period, comma, paren, etc.)
+      // that the URL_RE greedy match likely swallowed.
+      const trailing = part.match(/[.,;:!?)\]]+$/);
+      const url = trailing ? part.slice(0, part.length - trailing[0].length) : part;
+      const tail = trailing ? trailing[0] : "";
+      return (
+        <span key={i}>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:underline"
+          >
+            {url}
+          </a>
+          {tail}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }
