@@ -341,44 +341,13 @@ function renderControl(
     );
   }
   if (f.type === "camera_ref") {
-    // Filter by the picked Verkada connection when one is set on the
-    // same step. Stops the dropdown from showing cameras from orgs
-    // that aren't authorized to act on this flow.
-    const connId =
-      typeof config.connection_id === "string" ? config.connection_id : "";
-    const visible = connId
-      ? camerasList.filter((c) => c.connection_id === connId)
-      : camerasList;
     return (
-      <>
-        <select
-          value={(config[f.name] as string) ?? ""}
-          onChange={(e) => setOne(f.name, e.target.value)}
-          className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-        >
-          <option value="">— pick a camera —</option>
-          {visible.map((c) => (
-            <option key={c.camera_id} value={c.camera_id}>
-              {c.name ?? "(unnamed)"}
-              {c.site ? ` — ${c.site}` : ""}
-              {c.model ? ` · ${c.model}` : ""}
-            </option>
-          ))}
-        </select>
-        <input
-          value={(config[f.name] as string) ?? ""}
-          onChange={(e) => setOne(f.name, e.target.value)}
-          className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
-          placeholder="or paste camera_id / template ref like {{ trigger.data.camera_id }}"
-        />
-        {visible.length === 0 && (
-          <div className="text-[11px] text-amber-300/80 mt-1">
-            {connId
-              ? "No cameras synced for this connection yet — click Sync cameras on the Connections page."
-              : "Pick a Verkada connection above to populate the camera list."}
-          </div>
-        )}
-      </>
+      <CameraRefField
+        f={f}
+        config={config}
+        setOne={setOne}
+        camerasList={camerasList}
+      />
     );
   }
   if (f.type === "scenario_ref") {
@@ -646,6 +615,104 @@ function renderControl(
 // When the user picks one, we set this field to the event_type_uid AND
 // seed the sibling "attributes" field with one empty entry per schema key,
 // so the user lands in a structured editor pre-keyed by the event schema.
+
+// ---- Camera picker ----------------------------------------------------------
+//
+// Dropdown of synced cameras for the picked Verkada connection + a paste
+// fallback that doubles as a template-ref input (e.g.
+// {{ trigger.data.camera_id }} for webhook flows). Mirrors the BYOA
+// camera picker — defaults to online-only since that's what an operator
+// actually wants to act on; uncheck to surface offline / pending cameras
+// for setup-time work.
+
+function CameraRefField({
+  f,
+  config,
+  setOne,
+  camerasList,
+}: {
+  f: ActionFieldSpec;
+  config: Record<string, unknown>;
+  setOne: (name: string, value: unknown) => void;
+  camerasList: VerkadaCamera[];
+}) {
+  const connId =
+    typeof config.connection_id === "string" ? config.connection_id : "";
+  // Online-only toggle defaults to ON — matches the BYOA experience and
+  // keeps the dropdown short. Persists across re-renders within this
+  // field instance.
+  const [onlineOnly, setOnlineOnly] = useState(true);
+
+  // Same heuristic the BYOA picker uses — treat anything not literally
+  // "Offline" as online. Catches "Live" + any future status the API
+  // adds for healthy cameras.
+  const isOnline = (s: string | null | undefined) =>
+    !!s && s.toLowerCase() !== "offline";
+
+  const forConn = connId
+    ? camerasList.filter((c) => c.connection_id === connId)
+    : camerasList;
+  const onlineCount = forConn.filter((c) => isOnline(c.status)).length;
+  const offlineCount = forConn.length - onlineCount;
+  const visible = onlineOnly
+    ? forConn.filter((c) => isOnline(c.status))
+    : forConn;
+  const sorted = [...visible].sort((a, b) =>
+    (a.name ?? "").localeCompare(b.name ?? ""),
+  );
+
+  return (
+    <>
+      {forConn.length > 0 && (
+        <div className="flex items-center gap-2 mb-1.5 text-[11px]">
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={onlineOnly}
+              onChange={(e) => setOnlineOnly(e.target.checked)}
+            />
+            Online cameras only
+          </label>
+          <span className="text-slate-500">
+            {onlineCount} online
+            {offlineCount > 0 &&
+              ` · ${offlineCount} offline ${onlineOnly ? "hidden" : ""}`.trim()}
+          </span>
+        </div>
+      )}
+      <select
+        value={(config[f.name] as string) ?? ""}
+        onChange={(e) => setOne(f.name, e.target.value)}
+        className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+      >
+        <option value="">— pick a camera —</option>
+        {sorted.map((c) => (
+          <option key={c.camera_id} value={c.camera_id}>
+            {c.name ?? "(unnamed)"}
+            {c.site ? ` — ${c.site}` : ""}
+            {c.model ? ` · ${c.model}` : ""}
+          </option>
+        ))}
+      </select>
+      <input
+        value={(config[f.name] as string) ?? ""}
+        onChange={(e) => setOne(f.name, e.target.value)}
+        className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
+        placeholder="or paste camera_id / template ref like {{ trigger.data.camera_id }}"
+      />
+      {visible.length === 0 && (
+        <div className="text-[11px] text-amber-300/80 mt-1">
+          {!connId
+            ? "Pick a Verkada connection above to populate the camera list."
+            : forConn.length === 0
+              ? "No cameras synced for this connection yet — click Sync cameras on the Connections page."
+              : "All synced cameras are offline. Uncheck the online filter to see them anyway."}
+        </div>
+      )}
+    </>
+  );
+}
+
 
 function HelixEventRefField({
   f,
