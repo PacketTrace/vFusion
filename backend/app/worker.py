@@ -17,10 +17,14 @@ Each ``run_flow`` job:
    ``failed``, the run is ``failed``; else ``success``.
 """
 
+import logging
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
+
+
+logger = logging.getLogger(__name__)
 
 from arq.connections import RedisSettings
 from arq.cron import cron
@@ -366,6 +370,10 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             run.output = analyze_output
             await session.commit()
         except Exception as e:  # noqa: BLE001 — surface anything to the UI
+            # Full traceback to container logs so root-cause is debuggable
+            # — ``str(e)`` (what lands in the UI) often drops the line
+            # number / library frame that actually matters.
+            logger.exception("byoa action failed: %s", e)
             record["status"] = "failed"
             record["error"] = str(e)
             record["finished_at"] = _utcnow().isoformat()
