@@ -416,6 +416,11 @@ function EventDetail({
 }) {
   const navigate = useNavigate();
   const cameras = useCameraLookup();
+  // Lightbox state for asset previews. ``null`` = no overlay; otherwise
+  // the modal renders the asset at near-full-screen with an X to close
+  // (and Esc / backdrop click as escape hatches). Lifted up here so
+  // both the header preview and the body gallery share one modal.
+  const [zoomed, setZoomed] = useState<{ url: string; alt: string } | null>(null);
   const cameraId =
     event.body_json &&
     typeof event.body_json === "object" &&
@@ -479,7 +484,7 @@ function EventDetail({
             *what* the event was about without scrolling. The full-resolution
             gallery in the body section remains for events that carry
             multiple assets. */}
-        <AssetHeaderPreview eventId={event.id} />
+        <AssetHeaderPreview eventId={event.id} onZoom={setZoomed} />
         <div className="flex flex-col gap-1.5 shrink-0">
           {event.family && event.family !== "unknown" && (
             <button
@@ -534,8 +539,15 @@ function EventDetail({
           <div className="bg-slate-950 rounded p-3 overflow-x-auto">{bodyView}</div>
         </Section>
 
-        <AssetGallery eventId={event.id} />
+        <AssetGallery eventId={event.id} onZoom={setZoomed} />
       </div>
+      {zoomed && (
+        <Lightbox
+          src={zoomed.url}
+          alt={zoomed.alt}
+          onClose={() => setZoomed(null)}
+        />
+      )}
     </div>
   );
 }
@@ -581,7 +593,17 @@ function formatTime(iso: string): string {
 }
 
 
-function AssetGallery({ eventId }: { eventId: string }) {
+type ZoomTarget = { url: string; alt: string };
+type OnZoom = (target: ZoomTarget) => void;
+
+
+function AssetGallery({
+  eventId,
+  onZoom,
+}: {
+  eventId: string;
+  onZoom: OnZoom;
+}) {
   // Verkada signs the source URLs for a short window — we download
   // them server-side immediately and serve them back via /assets/{id}/file.
   // Status flips from "pending" → "ready" (or "failed") within a second or
@@ -601,7 +623,7 @@ function AssetGallery({ eventId }: { eventId: string }) {
     <Section title={`Media (${list.length})`}>
       <div className="grid grid-cols-2 gap-2 items-start">
         {list.map((a) => (
-          <AssetTile key={a.id} asset={a} />
+          <AssetTile key={a.id} asset={a} onZoom={onZoom} />
         ))}
       </div>
     </Section>
@@ -613,7 +635,13 @@ function AssetGallery({ eventId }: { eventId: string }) {
  *  so the operator sees the camera frame next to the event metadata
  *  instead of having to scroll. Shares the polling query key with
  *  ``AssetGallery`` so they don't double-fetch. */
-function AssetHeaderPreview({ eventId }: { eventId: string }) {
+function AssetHeaderPreview({
+  eventId,
+  onZoom,
+}: {
+  eventId: string;
+  onZoom: OnZoom;
+}) {
   const assets = useQuery({
     queryKey: ["webhook-assets", eventId],
     queryFn: () => apiGet<WebhookAsset[]>(`/api/webhook-events/${eventId}/assets`),
@@ -634,14 +662,19 @@ function AssetHeaderPreview({ eventId }: { eventId: string }) {
     <div className="shrink-0 border border-slate-800 rounded overflow-hidden bg-slate-950 w-40">
       <div className="bg-black flex items-center justify-center min-h-[80px] max-h-[120px]">
         {a.status === "ready" && isImage ? (
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="block">
+          <button
+            type="button"
+            onClick={() => onZoom({ url: fileUrl, alt: a.source_field })}
+            className="block cursor-zoom-in"
+            title="Click to enlarge"
+          >
             <img
               src={fileUrl}
               alt={a.source_field}
               className="block max-h-[120px] w-auto"
               loading="lazy"
             />
-          </a>
+          </button>
         ) : a.status === "ready" ? (
           <a
             href={fileUrl}
@@ -672,7 +705,13 @@ function AssetHeaderPreview({ eventId }: { eventId: string }) {
 }
 
 
-function AssetTile({ asset }: { asset: WebhookAsset }) {
+function AssetTile({
+  asset,
+  onZoom,
+}: {
+  asset: WebhookAsset;
+  onZoom: OnZoom;
+}) {
   const fileUrl = `${API_BASE}/api/webhook-events/assets/${asset.id}/file`;
   const isImage =
     !asset.content_type || asset.content_type.startsWith("image/");
@@ -684,14 +723,19 @@ function AssetTile({ asset }: { asset: WebhookAsset }) {
           // images, and full-frame snapshots all have wildly different
           // shapes. Let the image dictate its own height so nothing is
           // letterboxed or cropped.
-          <a href={fileUrl} target="_blank" rel="noreferrer" className="block w-full">
+          <button
+            type="button"
+            onClick={() => onZoom({ url: fileUrl, alt: asset.source_field })}
+            className="block w-full cursor-zoom-in"
+            title="Click to enlarge"
+          >
             <img
               src={fileUrl}
               alt={asset.source_field}
               className="w-full h-auto block"
               loading="lazy"
             />
-          </a>
+          </button>
         ) : asset.status === "ready" ? (
           <a
             href={fileUrl}
@@ -729,6 +773,53 @@ function AssetTile({ asset }: { asset: WebhookAsset }) {
     </div>
   );
 }
+
+/** Fullscreen overlay that shows an asset at near-window size. Esc and
+ *  backdrop clicks dismiss; the X button is the explicit close. We pin
+ *  the image to the viewport bounds so a wide LPR crop and a tall
+ *  portrait frame both render cleanly without overflow. */
+function Lightbox({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6 cursor-zoom-out"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl flex items-center justify-center"
+        title="Close (Esc)"
+      >
+        ×
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        // Stop the inner click from bubbling to the backdrop — clicking
+        // *on* the image shouldn't dismiss, only the backdrop does.
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-[95vw] max-h-[90vh] object-contain cursor-default"
+      />
+    </div>
+  );
+}
+
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
