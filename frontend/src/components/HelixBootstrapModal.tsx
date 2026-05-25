@@ -31,10 +31,19 @@ import {
  */
 export default function HelixBootstrapModal({
   defs,
+  intent = "import",
   onCancel,
   onConfirm,
 }: {
   defs: HelixEventTypeDef[];
+  /**
+   * What the caller does after the bootstrap finishes. Drives the
+   * button copy + body text so operators read "create the type and
+   * apply the template" instead of "...and import" when they came in
+   * from the Templates page. ``insert`` is for the in-editor "+ Add
+   * Helix logging step" affordance.
+   */
+  intent?: "import" | "apply" | "insert";
   onCancel: () => void;
   // Called with the uid rewrite map (empty when the operator skipped).
   onConfirm: (uidMap: Record<string, string>) => void;
@@ -155,6 +164,18 @@ export default function HelixBootstrapModal({
   const probeLoading = !!effectiveTarget && existing.isLoading;
   const missingCount = matches.filter((m) => m === null).length;
 
+  // Verb the operator sees on the primary button — depends on what
+  // the caller is about to do after bootstrap completes. ``apply``
+  // is used by the Templates page, ``import`` by the Flows page's
+  // JSON import, and ``insert`` by the in-editor paired-prompt
+  // affordance that drops a Helix step into the current flow.
+  const verbBody = {
+    apply: "apply the template",
+    import: "import the flow",
+    insert: "insert the Helix step",
+  }[intent];
+  const verbButton = { apply: "apply", import: "import", insert: "insert" }[intent];
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -166,10 +187,10 @@ export default function HelixBootstrapModal({
             {probeLoading
               ? "Checking your Verkada org for existing types…"
               : !effectiveTarget
-                ? "Pick the Verkada connection where these Helix types should live, then review what gets created."
+                ? `Pick the Verkada connection where these Helix event types should live, then review what gets created. We'll create the ${defs.length === 1 ? "type" : "types"} on your Verkada org (visible in Command → Devices → Helix) and then ${verbBody}.`
                 : allExist
-                  ? `Everything this flow needs is already on your Verkada org. Click "Looks good — import" to wire the flow up to the existing ${defs.length === 1 ? "type" : "types"}.`
-                  : `This import uses ${defs.length === 1 ? "a Helix event type" : "Helix event types"} that may not exist on your Verkada org yet. Recommended: let us create the missing ${missingCount === 1 ? "one" : "ones"} now so the flow works on first run.`}
+                  ? `Everything this flow needs is already on your Verkada org — no new event types to create. Click below to ${verbBody} using the existing ${defs.length === 1 ? "type" : "types"}.`
+                  : `We'll create ${missingCount === 1 ? "a new Helix event type" : `${missingCount} new Helix event types`} on your Verkada org so this flow's results land somewhere structured. ${missingCount === 1 ? "It" : "They"} will be visible in Command → Devices → Helix once created. Then we'll ${verbBody}.`}
           </p>
         </div>
 
@@ -265,10 +286,10 @@ export default function HelixBootstrapModal({
               type="button"
               onClick={handleSkip}
               disabled={bootstrapMut.isPending}
-              title="Import without creating any missing types — runs will fail on missing types until the operator sets them up by hand."
+              title={`Skip creating the Helix ${missingCount === 1 ? "type" : "types"} — flow runs will fail until you create them by hand on Verkada Command.`}
               className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-300 hover:bg-white/10 disabled:opacity-50"
             >
-              Skip &amp; import anyway
+              Skip &amp; {verbButton} anyway
             </button>
             <button
               type="button"
@@ -290,12 +311,12 @@ export default function HelixBootstrapModal({
               className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
             >
               {bootstrapMut.isPending
-                ? "Creating…"
+                ? `Creating in Verkada…`
                 : allExist
-                  ? "Looks good — import"
+                  ? `Looks good — ${verbButton}`
                   : missingCount > 0
-                    ? `Create ${missingCount} & import`
-                    : "Import"}
+                    ? `Create ${missingCount === 1 ? "Helix type" : `${missingCount} Helix types`} in Verkada & ${verbButton}`
+                    : verbButton.charAt(0).toUpperCase() + verbButton.slice(1)}
             </button>
           </div>
         </div>

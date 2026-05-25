@@ -938,6 +938,7 @@ function FlowEditorInner() {
           {pendingPairedHelix && (
             <HelixBootstrapModal
               defs={[pendingPairedHelix.def]}
+              intent="insert"
               onCancel={() => setPendingPairedHelix(null)}
               onConfirm={(uidMap) => {
                 insertPairedHelixStep(

@@ -292,6 +292,7 @@ function FlowTemplatesPanel() {
       {pendingApply && (
         <HelixBootstrapModal
           defs={pendingApply.defs}
+          intent="apply"
           onCancel={() => setPendingApply(null)}
           onConfirm={(uidMap) => finalizeApply(pendingApply.id, uidMap)}
         />
