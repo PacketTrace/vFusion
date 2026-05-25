@@ -94,11 +94,12 @@ export interface SettingsResponse {
 // ---- Webhook events ----
 
 export type Family = "camera" | "access" | "lpr" | "sensor" | "intercom" | "credential" | "alarm" | "unknown";
-export type SignatureStatus =
-  | "verified"
-  | "bad_signature"
-  | "unverified"
-  | "missing_header";
+// Verification result is intentionally binary at the UI layer:
+//   - "verified"       — HMAC matched, timestamp recent
+//   - "unverified"     — anything else (stale retry, HMAC mismatch, etc.)
+//   - "missing_header" — request had no Verkada-Signature header
+// Detail lives in backend logs. See backend/.../signature.py for why.
+export type SignatureStatus = "verified" | "unverified" | "missing_header";
 
 export interface WebhookEventListItem {
   id: string;

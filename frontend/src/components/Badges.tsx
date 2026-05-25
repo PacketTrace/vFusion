@@ -23,16 +23,20 @@ export function FamilyBadge({ family }: { family: Family | null }) {
   );
 }
 
+// Verification is binary at this layer — see SignatureStatus in lib/api.ts
+// for why we deliberately don't show a loud "bad sig" chip. The
+// "verified" badge is the only positive signal; everything else falls
+// back to no chip (or a faint "unsigned" when the request had no header
+// at all so an operator can still distinguish "no secret configured"
+// from "we have a secret but couldn't match").
 const SIG_STYLE: Record<SignatureStatus, string> = {
   verified: "bg-emerald-900 text-emerald-200",
-  bad_signature: "bg-rose-900 text-rose-200",
   unverified: "bg-slate-800 text-slate-400",
   missing_header: "bg-slate-800 text-slate-400",
 };
 
 const SIG_LABEL: Record<SignatureStatus, string> = {
   verified: "✓ verified",
-  bad_signature: "✗ bad sig",
   unverified: "unverified",
   missing_header: "unsigned",
 };
@@ -43,18 +47,19 @@ export function SignatureBadge({
   status: SignatureStatus | null;
 }) {
   if (!status) return null;
-  if (status === "unverified" || status === "missing_header") return null;
+  // "missing_header" stays hidden (every request without a header
+  // looks the same — no signal worth surfacing). "verified" gets the
+  // green chip. "unverified" gets a small gray chip with no alarm
+  // copy — operators see "this didn't verify" but don't get a red
+  // siren on every Verkada retry.
+  if (status === "missing_header") return null;
   return (
     <span
       className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${SIG_STYLE[status]}`}
       title={
         status === "verified"
           ? "HMAC verified against the stored signing secret."
-          : status === "bad_signature"
-            ? "Signature didn't verify — either wrong secret, replay, or spoof."
-            : status === "unverified"
-              ? "No webhook signing secret stored for this org — can't HMAC-verify. Add one on the Connections page to enable verification."
-              : "No verkada-signature header on the request."
+          : "Couldn't HMAC-verify against the stored signing secret. Most often a legitimate Verkada retry past the timestamp window — see `docker compose logs backend | grep \"verkada signature\"` for the specific reason."
       }
     >
       {SIG_LABEL[status]}
