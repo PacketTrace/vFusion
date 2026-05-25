@@ -1,6 +1,7 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
 
 import { FlowNode } from "../../lib/api";
+import { conditionIcon } from "./icons";
 
 
 export interface ConditionNodeData extends Record<string, unknown> {
@@ -17,6 +18,8 @@ export default function ConditionNode({ data, selected }: NodeProps) {
   const left = (cfg.left as string) ?? "";
   const op = (cfg.operator as string) ?? "equals";
   const right = (cfg.right as string) ?? "";
+  const display = (d.node.label ?? "").trim() || d.node.name;
+  const showIdSubline = !!(d.node.label ?? "").trim() && d.node.label!.trim() !== d.node.name;
 
   return (
     <div
@@ -26,12 +29,19 @@ export default function ConditionNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-2 !h-2" />
       <div className="px-3 py-2 bg-amber-950/60 border-b border-slate-700 rounded-t-md flex items-center gap-2">
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-900 text-amber-200">
-          IF
+        <span className="text-xl leading-none shrink-0" aria-hidden>
+          {conditionIcon()}
         </span>
-        <span className="text-sm font-mono text-slate-100 truncate flex-1">
-          {d.node.name}
-        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-slate-100 truncate">
+            {display}
+          </div>
+          {showIdSubline && (
+            <div className="text-[10px] font-mono text-slate-500 truncate">
+              {d.node.name}
+            </div>
+          )}
+        </div>
         <button
           className="nodrag text-xs px-1 text-slate-400 hover:text-rose-300 disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={!d.canRemove}
@@ -44,16 +54,8 @@ export default function ConditionNode({ data, selected }: NodeProps) {
           ×
         </button>
       </div>
-      <div className="px-3 py-2 text-xs space-y-1">
-        <div className="font-mono text-slate-300 truncate" title={left}>
-          {left || <span className="text-slate-600">(no left value)</span>}
-        </div>
-        <div className="font-mono text-slate-400">{op}</div>
-        {!IS_UNARY[op] && (
-          <div className="font-mono text-slate-300 truncate" title={right}>
-            {right || <span className="text-slate-600">(no right value)</span>}
-          </div>
-        )}
+      <div className="px-3 py-2 text-xs">
+        <ExpressionPretty left={left} op={op} right={right} />
       </div>
       <div className="flex justify-around items-center px-1 pb-1 pt-0 text-[10px] text-slate-400">
         <BranchHandle
@@ -75,6 +77,87 @@ export default function ConditionNode({ data, selected }: NodeProps) {
 
 
 const IS_UNARY: Record<string, boolean> = { exists: true, not_exists: true };
+
+/** English-ish names for the condition operators, so the card reads
+ *  like a sentence ("if animal contains \"bear\"") instead of a code
+ *  fragment ("contains"). */
+const OP_WORDS: Record<string, string> = {
+  equals: "equals",
+  not_equals: "is not",
+  contains: "contains",
+  not_contains: "doesn't contain",
+  starts_with: "starts with",
+  ends_with: "ends with",
+  greater_than: ">",
+  less_than: "<",
+  greater_or_equal: "≥",
+  less_or_equal: "≤",
+  exists: "exists",
+  not_exists: "is empty",
+};
+
+
+/** Render the condition expression as ``if <pill> <op> <pill>`` instead
+ *  of dumping the raw template literal. Falls back to the raw string in
+ *  a tooltip so the path is still discoverable. */
+function ExpressionPretty({
+  left,
+  op,
+  right,
+}: {
+  left: string;
+  op: string;
+  right: string;
+}) {
+  const opWord = OP_WORDS[op] ?? op;
+  const unary = !!IS_UNARY[op];
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap text-[12px]">
+      <span className="text-slate-500">if</span>
+      <ValuePill raw={left} />
+      <span className="text-amber-200/90 font-medium">{opWord}</span>
+      {!unary && <ValuePill raw={right} />}
+    </div>
+  );
+}
+
+
+/** Render a single value as either:
+ *   - a styled template-variable pill (when the raw text looks like
+ *     ``{{ steps.x.output.y.z }}`` — we surface just the last segment
+ *     for readability, full path stays as a tooltip), or
+ *   - a quoted literal chip for everything else.
+ */
+function ValuePill({ raw }: { raw: string }) {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) {
+    return (
+      <span className="text-slate-600 italic">(empty)</span>
+    );
+  }
+  const tplMatch = trimmed.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+  if (tplMatch) {
+    const path = tplMatch[1];
+    const parts = path.split(".");
+    const last = parts[parts.length - 1] || path;
+    return (
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-900/60 border border-sky-800 text-sky-100 font-mono text-[11px]"
+        title={`{{ ${path} }}`}
+      >
+        {last}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[11px] max-w-[10rem] truncate"
+      title={trimmed}
+    >
+      "{trimmed}"
+    </span>
+  );
+}
 
 
 function BranchHandle({

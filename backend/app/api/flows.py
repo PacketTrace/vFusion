@@ -30,6 +30,12 @@ class NodePosition(BaseModel):
 class FlowNode(BaseModel):
     id: str
     name: str
+    # Friendly display name shown on the canvas. ``name`` stays the
+    # identifier (used in ``{{ steps.<name>.output.* }}`` template
+    # substitution); ``label`` is purely cosmetic and falls back to
+    # ``name`` when blank. Templates set this so the canvas reads like
+    # English instead of like Python variables.
+    label: str | None = None
     kind: Literal["action", "condition"] = "action"
     action_type: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)

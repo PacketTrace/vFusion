@@ -16,6 +16,7 @@
       {
         "id": "lockdown",
         "name": "lockdown",
+        "label": "Lock it down",
         "kind": "action",
         "action_type": "verkada_api_call",
         "config": {

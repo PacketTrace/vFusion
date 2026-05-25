@@ -15,6 +15,7 @@
       {
         "id": "ocr",
         "name": "ocr",
+        "label": "Read the text",
         "kind": "action",
         "action_type": "gemini_analyze_still_image",
         "config": {
@@ -28,6 +29,7 @@
       {
         "id": "matches_target",
         "name": "matches_target",
+        "label": "Does it match?",
         "kind": "condition",
         "config": {
           "left": "{{ steps.ocr.output.text }}",
@@ -38,6 +40,7 @@
       {
         "id": "unlock",
         "name": "unlock",
+        "label": "Unlock the door",
         "kind": "action",
         "action_type": "verkada_unlock_door",
         "config": {

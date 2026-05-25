@@ -28,6 +28,7 @@
       {
         "id": "analyze",
         "name": "analyze",
+        "label": "Watch the video",
         "kind": "action",
         "action_type": "gemini_analyze_camera",
         "config": {
@@ -45,6 +46,7 @@
       {
         "id": "is_bear",
         "name": "is_bear",
+        "label": "Is it a bear?",
         "kind": "condition",
         "config": {
           "left": "{{ steps.analyze.output.json.animal }}",
@@ -56,6 +58,7 @@
       {
         "id": "post_helix",
         "name": "post_helix",
+        "label": "Tell Verkada",
         "kind": "action",
         "action_type": "verkada_helix_event",
         "config": {

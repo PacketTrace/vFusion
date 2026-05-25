@@ -207,6 +207,7 @@ export interface FlowTemplateListItem {
 export interface FlowTemplateNode {
   id: string;
   name: string;
+  label?: string | null;
   kind: "action" | "condition";
   action_type: string | null;
   config: Record<string, unknown>;
@@ -442,7 +443,12 @@ export interface ActionSpec {
 
 export interface FlowNode {
   id: string;
+  // Identifier used in {{ steps.<name>.output.* }} template substitution.
   name: string;
+  // Optional friendly display label rendered on the canvas. Falls back
+  // to ``name`` when blank. Templates set this so the canvas reads like
+  // English instead of like Python variables.
+  label?: string | null;
   kind: "action" | "condition";
   action_type: string | null;
   config: Record<string, unknown>;

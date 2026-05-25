@@ -784,6 +784,9 @@ function FlowEditorInner() {
                   existing.data?.node_samples,
                 )}
                 onChangeName={(n) => updateNode(selectedNode.id, { name: n })}
+                onChangeLabel={(l) =>
+                  updateNode(selectedNode.id, { label: l || null })
+                }
                 onChangeActionType={(t) => {
                   // If the current name still matches a known default
                   // (e.g. "analyze", "post_helix", possibly suffixed _2),
@@ -907,6 +910,7 @@ function NodeEditor({
   triggerNotificationType,
   priorSteps,
   onChangeName,
+  onChangeLabel,
   onChangeActionType,
   onChangeConfig,
   flowId,
@@ -919,6 +923,7 @@ function NodeEditor({
   triggerNotificationType?: string;
   priorSteps: Array<{ name: string; output_sample: unknown }>;
   onChangeName: (n: string) => void;
+  onChangeLabel: (l: string) => void;
   onChangeActionType: (t: string) => void;
   onChangeConfig: (c: Record<string, unknown>) => void;
   flowId: string | null;
@@ -958,7 +963,18 @@ function NodeEditor({
   });
   return (
     <div className="space-y-4">
-      <Field label="Name" required help="Used in templates: {{ steps.<name>.output.* }}">
+      <Field
+        label="Display label"
+        help="Shown on the canvas. Leave blank to fall back to the identifier name below."
+      >
+        <input
+          value={node.label ?? ""}
+          onChange={(e) => onChangeLabel(e.target.value)}
+          placeholder={node.name}
+          className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+        />
+      </Field>
+      <Field label="Name" required help="Identifier used in templates: {{ steps.<name>.output.* }}">
         <input
           value={node.name}
           onChange={(e) => onChangeName(e.target.value)}

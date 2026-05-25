@@ -1,6 +1,7 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
 
 import { Flow } from "../../lib/api";
+import { triggerIcon } from "./icons";
 
 
 export interface TriggerNodeData extends Record<string, unknown> {
@@ -17,6 +18,7 @@ export default function TriggerNode({ data, selected }: NodeProps) {
   const d = data as TriggerNodeData;
   const isSchedule = d.trigger_type === "schedule";
   const cfg = d.trigger_config ?? {};
+  const icon = triggerIcon(d.trigger_type);
 
   return (
     <div
@@ -25,12 +27,17 @@ export default function TriggerNode({ data, selected }: NodeProps) {
       }`}
     >
       <div className="px-3 py-2 bg-sky-950/60 border-b border-slate-700 rounded-t-md flex items-center gap-2">
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-900 text-sky-200">
-          TRIGGER
+        <span className="text-xl leading-none shrink-0" aria-hidden>
+          {icon}
         </span>
-        <span className="text-sm font-medium text-slate-100">
-          {isSchedule ? "Schedule" : "Verkada webhook"}
-        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-slate-100 truncate">
+            {isSchedule ? "Schedule" : "Verkada webhook"}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-sky-300/80">
+            Trigger
+          </div>
+        </div>
       </div>
       {isSchedule ? (
         <ScheduleSummary cfg={cfg} />
@@ -65,9 +72,9 @@ function ScheduleSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
   if (kind === "interval") {
     const every = Number((cfg as Record<string, unknown>).every_minutes) || 0;
     return (
-      <div className="px-3 py-2 text-xs space-y-1">
-        <div className="text-slate-400">
-          every <span className="text-slate-100 font-mono">{every} min</span>
+      <div className="px-3 py-2 text-xs">
+        <div className="text-slate-300">
+          Runs <span className="font-semibold text-slate-100">every {every} min</span>
         </div>
       </div>
     );
@@ -77,21 +84,23 @@ function ScheduleSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
     const minute = Number((cfg as Record<string, unknown>).minute) || 0;
     const weekday = Number((cfg as Record<string, unknown>).weekday) || 0;
     return (
-      <div className="px-3 py-2 text-xs space-y-1">
-        <div className="text-slate-400">
-          {kind === "weekly" && (
+      <div className="px-3 py-2 text-xs">
+        <div className="text-slate-300">
+          {kind === "weekly" ? (
             <>
-              weekly on{" "}
-              <span className="text-slate-100 font-mono">
-                {WEEKDAYS[weekday]}
+              Runs <span className="font-semibold text-slate-100">{WEEKDAYS[weekday]}</span> at{" "}
+              <span className="font-semibold text-slate-100">
+                {pad(hour)}:{pad(minute)} UTC
               </span>
-              {" at "}
+            </>
+          ) : (
+            <>
+              Runs daily at{" "}
+              <span className="font-semibold text-slate-100">
+                {pad(hour)}:{pad(minute)} UTC
+              </span>
             </>
           )}
-          {kind === "daily" && "daily at "}
-          <span className="text-slate-100 font-mono">
-            {pad(hour)}:{pad(minute)} UTC
-          </span>
         </div>
       </div>
     );
@@ -104,33 +113,76 @@ function ScheduleSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
 }
 
 
+/** Maps Verkada event families to a small emoji + a friendly label.
+ *  Just a UX layer — server matching still uses the raw family string. */
+const FAMILY_PRETTY: Record<string, { emoji: string; label: string }> = {
+  camera: { emoji: "📹", label: "Camera" },
+  access: { emoji: "🚪", label: "Access" },
+  lpr: { emoji: "🚗", label: "LPR" },
+  sensor: { emoji: "🌡️", label: "Sensor" },
+  intercom: { emoji: "🔔", label: "Intercom" },
+  credential: { emoji: "🪪", label: "Credential" },
+  alarm: { emoji: "🚨", label: "Alarm" },
+};
+
+
 function WebhookSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
-  const family = (cfg as Record<string, unknown>).family ?? "(any)";
-  const nt = (cfg as Record<string, unknown>).notification_type;
+  const family = String((cfg as Record<string, unknown>).family ?? "");
+  const nt = String((cfg as Record<string, unknown>).notification_type ?? "");
   const filters = (cfg as Record<string, unknown>).filters ?? {};
   const filterEntries = Object.entries(filters as Record<string, unknown>);
+  const fp = FAMILY_PRETTY[family];
+
   return (
-    <div className="px-3 py-2 text-xs space-y-1">
-      <div className="text-slate-400">
-        family <span className="text-slate-100 font-mono">{String(family)}</span>
+    <div className="px-3 py-2 text-xs space-y-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {fp ? (
+          <Pill>
+            <span aria-hidden>{fp.emoji}</span> {fp.label}
+          </Pill>
+        ) : (
+          <Pill>{family || "any"}</Pill>
+        )}
+        {nt && <Pill subtle>{prettifyNotificationType(nt)}</Pill>}
       </div>
-      {typeof nt === "string" && nt && (
-        <div className="text-slate-400">
-          type <span className="text-slate-100 font-mono">{nt}</span>
-        </div>
-      )}
       {filterEntries.length > 0 && (
-        <div className="text-slate-400">
-          filters:
-          <ul className="ml-2 mt-0.5 space-y-0.5">
-            {filterEntries.map(([k, v]) => (
-              <li key={k} className="font-mono text-slate-300">
-                {k} == "{String(v)}"
-              </li>
-            ))}
-          </ul>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {filterEntries.map(([k, v]) => (
+            <Pill key={k} subtle>
+              {k} = <span className="font-medium">{String(v)}</span>
+            </Pill>
+          ))}
         </div>
       )}
     </div>
   );
+}
+
+
+function Pill({
+  children,
+  subtle,
+}: {
+  children: React.ReactNode;
+  subtle?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
+        subtle
+          ? "bg-slate-800 text-slate-300 border border-slate-700"
+          : "bg-sky-900/60 text-sky-100 border border-sky-800"
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+
+/** Strip the noisy ``alert_rule_`` prefix and underscore-to-space the
+ *  rest so things like ``alert_rule_motion`` read as ``motion`` in the
+ *  pill. Original string is preserved for tooltips elsewhere. */
+function prettifyNotificationType(nt: string): string {
+  return nt.replace(/^alert_rule_/, "").replace(/_/g, " ");
 }

@@ -1,6 +1,7 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
 
 import { ActionSpec, FlowNode } from "../../lib/api";
+import { actionIcon } from "./icons";
 
 
 export interface ActionNodeData extends Record<string, unknown> {
@@ -17,7 +18,14 @@ export interface ActionNodeData extends Record<string, unknown> {
 export default function ActionNode({ data, selected }: NodeProps) {
   const d = data as ActionNodeData;
   const { node, spec } = d;
+  // Prefer the friendly label; only fall back to the identifier when
+  // no label was set. The identifier still shows as a small caption
+  // when it differs so power users can still see what {{ steps.X }}
+  // would reference.
+  const display = (node.label ?? "").trim() || node.name;
+  const showIdSubline = !!(node.label ?? "").trim() && node.label!.trim() !== node.name;
   const summary = summarize(node);
+  const icon = actionIcon(node.action_type);
 
   return (
     <div
@@ -27,12 +35,19 @@ export default function ActionNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-2 !h-2" />
       <div className="px-3 py-2 bg-slate-900/80 border-b border-slate-700 rounded-t-md flex items-center gap-2">
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-          ACT
+        <span className="text-xl leading-none shrink-0" aria-hidden>
+          {icon}
         </span>
-        <span className="text-sm font-mono text-slate-100 truncate flex-1">
-          {node.name}
-        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-slate-100 truncate">
+            {display}
+          </div>
+          {showIdSubline && (
+            <div className="text-[10px] font-mono text-slate-500 truncate">
+              {node.name}
+            </div>
+          )}
+        </div>
         <button
           className="nodrag text-xs px-1 text-slate-400 hover:text-rose-300 disabled:opacity-30 disabled:cursor-not-allowed"
           disabled={!d.canRemove}
@@ -47,12 +62,9 @@ export default function ActionNode({ data, selected }: NodeProps) {
       </div>
       <div className="px-3 py-2 text-xs space-y-1">
         <div className="text-slate-400">
-          action{" "}
-          <span className="text-slate-100">
-            {spec?.label ?? (
-              <span className="text-rose-300">{node.action_type}</span>
-            )}
-          </span>
+          {spec?.label ?? (
+            <span className="text-rose-300">{node.action_type}</span>
+          )}
         </div>
         {summary && (
           <div className="text-slate-300 font-mono truncate">{summary}</div>
