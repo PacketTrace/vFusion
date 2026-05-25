@@ -75,10 +75,31 @@ _DEFAULT_PROMPT = (
 # Picker presets exposed via the field's ``templates`` metadata. All caps
 # response length at <200 chars so the result fits in a single Verkada
 # Helix attribute (Helix limits attribute values to 200 chars).
-PROMPT_TEMPLATES: list[dict[str, str]] = [
+#
+# Each entry optionally declares a **paired Helix event type** — when an
+# operator picks the prompt in a Gemini analyze step, the canvas can
+# offer a one-click "Add Helix logging step" affordance that inserts a
+# pre-wired ``verkada_helix_event`` node downstream. The
+# ``helix_attribute_mapping`` says how each Helix attribute should be
+# populated from the analyze step's output; ``{{ output.* }}`` is a
+# step-local shorthand that the inserter rewrites to
+# ``{{ steps.<analyze-step-name>.output.* }}`` once the inserter knows
+# which step is upstream.
+#
+# Without a paired type, the prompt is still selectable — operators just
+# wire Helix themselves.
+PROMPT_TEMPLATES: list[dict[str, Any]] = [
     {
         "name": "Security camera description (default)",
         "value": _DEFAULT_PROMPT,
+        "helix_event_type": {
+            "event_type_uid": "tpl:ai-camera-summary",
+            "name": "AI Camera Summary",
+            "event_schema": {"Description": "string"},
+        },
+        "helix_attribute_mapping": {
+            "Description": "{{ output.text }}",
+        },
     },
     {
         "name": "Animal detection (outdoor)",
@@ -88,17 +109,33 @@ PROMPT_TEMPLATES: list[dict[str, str]] = [
             "If no animals are visible, say 'no animals detected'. Do not invent "
             "details that are not visible. Limit response to 190-199 characters."
         ),
+        "helix_event_type": {
+            "event_type_uid": "tpl:animal-sighting",
+            "name": "🦌 Animal Sighting",
+            "event_schema": {"Sighting": "string"},
+        },
+        "helix_attribute_mapping": {
+            "Sighting": "{{ output.text }}",
+        },
     },
     {
-        "name": "OCR — extract visible text",
+        "name": "OCR - extract visible text",
         "value": (
             "Extract every piece of legible text visible in this footage. "
-            "Include sign text, license plates, screens, labels, papers — "
+            "Include sign text, license plates, screens, labels, papers - "
             "anything readable. Return each piece on its own line, no quotes. "
             "Do not invent text; if you cannot clearly read a character, omit "
             "it. If no text is visible, respond with 'no text visible'. Limit "
             "response to 190-199 characters."
         ),
+        "helix_event_type": {
+            "event_type_uid": "tpl:ocr-capture",
+            "name": "OCR Capture",
+            "event_schema": {"Text": "string"},
+        },
+        "helix_attribute_mapping": {
+            "Text": "{{ output.text }}",
+        },
     },
     {
         # Returns structured JSON so a downstream condition + Helix step
@@ -153,6 +190,20 @@ PROMPT_TEMPLATES: list[dict[str, str]] = [
             "  {\"status\": \"ok\", \"issue\": null, \"severity\": null, "
             "\"reasoning\": \"Normal parking lot view, daytime, clear focus.\"}"
         ),
+        "helix_event_type": {
+            "event_type_uid": "tpl:camera-health",
+            "name": "🩺 Camera Health",
+            "event_schema": {
+                "Issue": "string",
+                "Severity": "string",
+                "Reasoning": "string",
+            },
+        },
+        "helix_attribute_mapping": {
+            "Issue": "{{ output.json.issue }}",
+            "Severity": "{{ output.json.severity }}",
+            "Reasoning": "{{ output.json.reasoning }}",
+        },
     },
 ]
 

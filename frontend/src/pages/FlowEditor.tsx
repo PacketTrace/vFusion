@@ -23,10 +23,12 @@ import {
   FlowEdge,
   FlowExportFormat,
   FlowNode,
+  HelixEventTypeDef,
   RunDetail,
   RunStep,
   WebhookEvent,
 } from "../lib/api";
+import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import ActionNode from "../components/flow-canvas/ActionNode";
 import ConditionNode from "../components/flow-canvas/ConditionNode";
 import TriggerNode from "../components/flow-canvas/TriggerNode";
@@ -107,6 +109,19 @@ function FlowEditorInner() {
   const [sourceEventId, setSourceEventId] = useState<string | null>(null);
   const [testRunOpen, setTestRunOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+
+  // When the operator clicks "+ Add Helix logging step" under a paired
+  // prompt, we open the existing bootstrap modal to create the helix
+  // type on their Verkada org and then insert a downstream
+  // verkada_helix_event node wired with whatever uid the bootstrap
+  // returned. Holds the pending def + mapping + source step until the
+  // modal closes.
+  const [pendingPairedHelix, setPendingPairedHelix] = useState<{
+    def: HelixEventTypeDef;
+    mapping: Record<string, string>;
+    sourceStepId: string;
+    sourceStepName: string;
+  } | null>(null);
 
   // When the operator hits "Run" on the trigger card we keep them on
   // the canvas and poll the run so the nodes + edges can light up as
@@ -313,6 +328,70 @@ function FlowEditorInner() {
     if (newEdge) setEdges([...edges, newEdge]);
     setSelected({ kind: "node", id });
     return id;
+  };
+
+  /**
+   * Insert a ``verkada_helix_event`` node downstream of ``sourceStepId``,
+   * pre-wired with the paired-prompt's helix metadata. The ``uidMap``
+   * comes from the bootstrap modal — it rewrites the export-side
+   * placeholder uid (``tpl:X``) to whatever the target Verkada org
+   * actually assigned (or reused, for name matches). When the operator
+   * skipped bootstrap the map is empty and the placeholder stays
+   * (runtime will fail until they fix it, same as a normal template
+   * import).
+   *
+   * The mapping's ``{{ output.* }}`` step-local refs get rewritten to
+   * ``{{ steps.<sourceStepName>.output.* }}`` here so the new step's
+   * attributes pull from the correct upstream output.
+   */
+  const insertPairedHelixStep = (
+    def: HelixEventTypeDef,
+    mapping: Record<string, string>,
+    sourceStepId: string,
+    sourceStepName: string,
+    uidMap: Record<string, string>,
+  ): void => {
+    const resolvedUid = uidMap[def.event_type_uid] ?? def.event_type_uid;
+    const attributes: Record<string, string> = {};
+    for (const [k, v] of Object.entries(mapping)) {
+      attributes[k] = v.replace(
+        /\{\{\s*output\./g,
+        `{{ steps.${sourceStepName}.output.`,
+      );
+    }
+    const id = uuid();
+    const newName = uniqueName("post_helix");
+    const newNode: FlowNode = {
+      id,
+      name: newName,
+      label: "Tell Verkada",
+      kind: "action",
+      action_type: "verkada_helix_event",
+      config: {
+        connection_id: null,
+        camera_id: "{{ trigger.data.camera_id }}",
+        event_type_uid: resolvedUid,
+        attributes,
+        time_ms: "{{ trigger.data.created }}000",
+        // Embed the helix def inline so the export collector picks it
+        // up — without this, a downstream importer wouldn't see the
+        // type and the bootstrap modal would have nothing to recreate.
+        _inline_helix_def: {
+          event_type_uid: def.event_type_uid,
+          name: def.name,
+          event_schema: def.event_schema,
+        },
+      },
+    };
+    const newEdge: FlowEdge = {
+      id: uuid(),
+      source: sourceStepId,
+      target: id,
+      branch: null,
+    };
+    setNodes([...nodes, newNode]);
+    setEdges([...edges, newEdge]);
+    setSelected({ kind: "node", id });
   };
 
   const removeNode = (id: string) => {
@@ -846,6 +925,22 @@ function FlowEditorInner() {
               onClose={() => setSaveAsTemplateOpen(false)}
             />
           )}
+          {pendingPairedHelix && (
+            <HelixBootstrapModal
+              defs={[pendingPairedHelix.def]}
+              onCancel={() => setPendingPairedHelix(null)}
+              onConfirm={(uidMap) => {
+                insertPairedHelixStep(
+                  pendingPairedHelix.def,
+                  pendingPairedHelix.mapping,
+                  pendingPairedHelix.sourceStepId,
+                  pendingPairedHelix.sourceStepName,
+                  uidMap,
+                );
+                setPendingPairedHelix(null);
+              }}
+            />
+          )}
         </div>
 
         <aside className="w-[28rem] border-l border-white/10 bg-black/40 backdrop-blur-md flex flex-col min-h-0">
@@ -914,6 +1009,22 @@ function FlowEditorInner() {
                 onChangeName={(n) => updateNode(selectedNode.id, { name: n })}
                 onChangeLabel={(l) =>
                   updateNode(selectedNode.id, { label: l || null })
+                }
+                onAddPairedHelixStep={({
+                  helix_event_type,
+                  helix_attribute_mapping,
+                  sourceStepName,
+                }) =>
+                  setPendingPairedHelix({
+                    def: {
+                      event_type_uid: helix_event_type.event_type_uid,
+                      name: helix_event_type.name,
+                      event_schema: helix_event_type.event_schema,
+                    },
+                    mapping: helix_attribute_mapping,
+                    sourceStepId: selectedNode.id,
+                    sourceStepName,
+                  })
                 }
                 onChangeActionType={(t) => {
                   // If the current name still matches a known default
@@ -1041,6 +1152,7 @@ function NodeEditor({
   onChangeLabel,
   onChangeActionType,
   onChangeConfig,
+  onAddPairedHelixStep,
   flowId,
   flowSaved,
   sampleOutput,
@@ -1054,6 +1166,7 @@ function NodeEditor({
   onChangeLabel: (l: string) => void;
   onChangeActionType: (t: string) => void;
   onChangeConfig: (c: Record<string, unknown>) => void;
+  onAddPairedHelixStep?: React.ComponentProps<typeof StepConfigForm>["onAddPairedHelixStep"];
   flowId: string | null;
   flowSaved: boolean;
   sampleOutput?: unknown;
@@ -1139,6 +1252,8 @@ function NodeEditor({
           triggerNotificationType={triggerNotificationType}
           priorSteps={priorSteps}
           operators={spec.operators ?? []}
+          currentStepName={node.name}
+          onAddPairedHelixStep={onAddPairedHelixStep}
         />
       )}
 

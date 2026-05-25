@@ -404,7 +404,22 @@ export interface ActionFieldSpec {
   help?: string;
   connection_type?: string;
   default_template?: string;
-  templates?: { name: string; value: string }[];
+  templates?: {
+    name: string;
+    value: string;
+    // Optional pairing — when the operator picks this template the UI
+    // can offer a one-click "Add Helix logging step" affordance that
+    // inserts a pre-wired verkada_helix_event node downstream. The
+    // mapping uses ``{{ output.* }}`` step-local refs that get
+    // rewritten to ``{{ steps.<analyze-step-name>.output.* }}`` at
+    // insertion time.
+    helix_event_type?: {
+      event_type_uid: string;
+      name: string;
+      event_schema: Record<string, string>;
+    };
+    helix_attribute_mapping?: Record<string, string>;
+  }[];
   options?: {
     value: string;
     label: string;

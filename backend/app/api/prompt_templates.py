@@ -7,6 +7,7 @@ are merged with these DB rows by the frontend.
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -43,17 +44,50 @@ class PromptTemplateUpdate(BaseModel):
     value: str | None = None
 
 
+class PairedHelixType(BaseModel):
+    """Helix event-type definition a prompt is designed to populate.
+
+    When present, the canvas can offer a one-click "+ Add Helix logging
+    step" affordance that inserts a ``verkada_helix_event`` node
+    downstream, pre-wired with the right ``event_type_uid`` placeholder
+    and attribute mapping. The existing bootstrap modal then handles
+    creating the type on the operator's Verkada org if it doesn't
+    already exist.
+    """
+
+    event_type_uid: str
+    name: str
+    event_schema: dict[str, str]
+
+
 class BuiltinTemplate(BaseModel):
     name: str
     value: str
+    # Optional Helix pairing — see PairedHelixType / the registry in
+    # gemini_analyze_video.PROMPT_TEMPLATES.
+    helix_event_type: PairedHelixType | None = None
+    helix_attribute_mapping: dict[str, str] | None = None
 
 
 @router.get("/builtins", response_model=list[BuiltinTemplate])
 async def list_builtin_templates() -> list[BuiltinTemplate]:
     """The hard-coded default prompts shipped with the gemini_analyze action.
     Shown on the Templates page as read-only starting points users can
-    duplicate."""
-    return [BuiltinTemplate(name=t["name"], value=t["value"]) for t in PROMPT_TEMPLATES]
+    duplicate. Surfaces Helix pairing metadata so the UI can render
+    "this prompt pairs with X Helix type" hints and offer one-click
+    Helix-step insertion when the prompt is picked in a flow."""
+    out: list[BuiltinTemplate] = []
+    for t in PROMPT_TEMPLATES:
+        het = t.get("helix_event_type")
+        out.append(
+            BuiltinTemplate(
+                name=t["name"],
+                value=t["value"],
+                helix_event_type=PairedHelixType(**het) if het else None,
+                helix_attribute_mapping=t.get("helix_attribute_mapping"),
+            )
+        )
+    return out
 
 
 @router.get("", response_model=list[PromptTemplateOut])

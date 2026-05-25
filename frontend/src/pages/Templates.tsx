@@ -22,6 +22,14 @@ import HelixBootstrapModal from "../components/HelixBootstrapModal";
 interface BuiltinTemplate {
   name: string;
   value: string;
+  // Optional Helix pairing — surfaced on the prompt card so operators
+  // see "this prompt is designed for X Helix type" at a glance.
+  helix_event_type?: {
+    event_type_uid: string;
+    name: string;
+    event_schema: Record<string, string>;
+  };
+  helix_attribute_mapping?: Record<string, string>;
 }
 
 
@@ -359,6 +367,29 @@ function PromptTemplatesPanel() {
                     </span>
                   </div>
                 </div>
+                {/* Helix pairing badge — surfaces "this prompt is
+                    designed to populate the X Helix type" so the
+                    operator doesn't have to figure out how to wire
+                    the analysis output into Helix Command. */}
+                {t.helix_event_type && (
+                  <div className="mt-2 text-[11px] bg-emerald-950/40 border border-emerald-900/60 rounded px-2 py-1.5 flex flex-col gap-0.5">
+                    <div className="text-slate-300">
+                      <span className="text-emerald-300">Pairs with Helix:</span>{" "}
+                      <span className="text-slate-100 font-medium">
+                        {t.helix_event_type.name}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      {Object.entries(t.helix_event_type.event_schema)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(" · ")}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      Pick this prompt in any Gemini analyze step and the
+                      editor offers a one-click "Add Helix logging step".
+                    </div>
+                  </div>
+                )}
                 <pre className="mt-2 text-xs text-slate-300 whitespace-pre-wrap line-clamp-4 font-sans">
                   {t.value}
                 </pre>

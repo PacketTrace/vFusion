@@ -31,6 +31,31 @@ interface Props {
   priorSteps?: PriorStep[];
   /** For condition nodes — populates the operator dropdown. */
   operators?: string[];
+  /**
+   * Optional callback wired by the FlowEditor. When the operator picks
+   * a paired-prompt template (one with embedded Helix metadata), the
+   * editor renders a "+ Add Helix logging step" button under the
+   * prompt field. Clicking calls this with the helix def + attribute
+   * mapping + the current step's name so the editor can insert a
+   * pre-wired ``verkada_helix_event`` node downstream.
+   */
+  onAddPairedHelixStep?: (args: {
+    helix_event_type: {
+      event_type_uid: string;
+      name: string;
+      event_schema: Record<string, string>;
+    };
+    helix_attribute_mapping: Record<string, string>;
+    sourceStepName: string;
+  }) => void;
+  /**
+   * The current step's name — needed to rewrite the prompt's
+   * ``{{ output.* }}`` step-local refs into
+   * ``{{ steps.<sourceStepName>.output.* }}`` at insertion time.
+   * Omitted when the editor doesn't yet know the name (e.g. a
+   * brand-new unsaved node).
+   */
+  currentStepName?: string;
 }
 
 /** Renders one action step's config form based on its ActionSpec schema. */
@@ -42,6 +67,8 @@ export default function StepConfigForm({
   triggerNotificationType,
   priorSteps = [],
   operators = [],
+  onAddPairedHelixStep,
+  currentStepName,
 }: Props) {
   const connections = useQuery({
     queryKey: ["connections"],
@@ -225,6 +252,8 @@ export default function StepConfigForm({
           triggerNotificationType,
           priorSteps,
           operators,
+          onAddPairedHelixStep,
+          currentStepName,
         )}
       </Field>
     );
@@ -260,6 +289,8 @@ function renderControl(
   triggerNotificationType: string | undefined,
   priorSteps: PriorStep[],
   operators: string[],
+  onAddPairedHelixStep: Props["onAddPairedHelixStep"],
+  currentStepName: Props["currentStepName"],
 ): JSX.Element {
   if (f.type === "connection_ref") {
     return (
@@ -467,6 +498,20 @@ function renderControl(
   // text without templates, single-line input + variable picker.
   const hasTemplates = f.templates && f.templates.length > 0;
   const currentValue = (config[f.name] as string) ?? "";
+  // When the current value exactly matches a paired-prompt template,
+  // surface the Helix pairing affordance. Comparing on full value keeps
+  // the button hidden after the operator edits the prompt — at that
+  // point the mapping might not match what Gemini will actually
+  // return, so we don't want to mis-suggest a Helix step.
+  const matchedPairedTemplate =
+    hasTemplates && onAddPairedHelixStep
+      ? f.templates!.find(
+          (t) =>
+            t.value === currentValue &&
+            !!t.helix_event_type &&
+            !!t.helix_attribute_mapping,
+        )
+      : undefined;
   return (
     <div className="space-y-2">
       {hasTemplates && (
@@ -514,6 +559,38 @@ function renderControl(
           />
         )}
       </div>
+      {matchedPairedTemplate && currentStepName && (
+        <div className="bg-emerald-950/30 border border-emerald-900/60 rounded px-3 py-2 text-xs flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-emerald-300 font-medium">
+              Pairs with Helix:{" "}
+              <span className="text-slate-100">
+                {matchedPairedTemplate.helix_event_type!.name}
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+              {Object.entries(matchedPairedTemplate.helix_event_type!.event_schema)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(" · ")}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              onAddPairedHelixStep!({
+                helix_event_type: matchedPairedTemplate.helix_event_type!,
+                helix_attribute_mapping:
+                  matchedPairedTemplate.helix_attribute_mapping!,
+                sourceStepName: currentStepName,
+              })
+            }
+            className="shrink-0 text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-semibold"
+            title="Insert a downstream Helix event step pre-wired with the right attributes."
+          >
+            + Add Helix logging step
+          </button>
+        </div>
+      )}
     </div>
   );
 }

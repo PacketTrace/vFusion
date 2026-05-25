@@ -262,18 +262,42 @@ async def _collect_helix_event_type_defs(
     type even if two nodes happened to point at different connections.
     We look up against the source flow's connection_ids so the name +
     schema we embed reflect what the *author* actually used at export
-    time. When the source connection has been deleted (or the type was
-    never synced), we still emit the uid with empty name/schema so the
-    importer at least sees what was referenced.
+    time.
+
+    Three sources, in priority order:
+
+      1. ``config._inline_helix_def`` — the paired-prompt insertion
+         path stuffs the full def into the new node so a downstream
+         importer can recreate the type even if it was never synced
+         from Verkada (e.g. the inserter created it on a brand-new org
+         and the export goes to a different deploy).
+      2. ``verkada_helix_event_types`` table — looked up by
+         ``(connection_id, event_type_uid)``.
+      3. Stub (uid only, no name/schema) — last-resort fallback.
     """
     pairs: list[tuple[str, str]] = []  # (connection_id, event_type_uid)
     seen_uids: set[str] = set()
+    # ``inline_overrides[uid]`` wins over DB lookup for the same uid —
+    # the inline def is what the operator just configured locally.
+    inline_overrides: dict[str, HelixEventTypeDef] = {}
     for n in nodes:
         cfg = n.get("config") or {}
         uid = cfg.get("event_type_uid")
         conn = cfg.get("connection_id")
+        inline = cfg.get("_inline_helix_def")
         if not isinstance(uid, str) or not uid:
             continue
+        # Record the inline def even if we've seen the uid — first-write
+        # wins, mirroring the seen_uids guard below.
+        if isinstance(inline, dict) and uid not in inline_overrides:
+            try:
+                inline_overrides[uid] = HelixEventTypeDef(
+                    event_type_uid=str(inline.get("event_type_uid") or uid),
+                    name=inline.get("name"),
+                    event_schema=inline.get("event_schema"),
+                )
+            except Exception:  # noqa: BLE001 — malformed inline blob falls back to DB lookup
+                pass
         if uid in seen_uids:
             continue
         seen_uids.add(uid)
@@ -289,6 +313,13 @@ async def _collect_helix_event_type_defs(
 
     defs: "list[HelixEventTypeDef]" = []
     for conn_str, uid in pairs:
+        # Inline def wins if present — see priority order in the
+        # docstring. The node carries the full type schema, which is
+        # what a downstream importer needs to recreate it.
+        inline = inline_overrides.get(uid)
+        if inline is not None:
+            defs.append(inline)
+            continue
         row = None
         if conn_str:
             try:
