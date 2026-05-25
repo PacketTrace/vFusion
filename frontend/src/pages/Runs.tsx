@@ -428,12 +428,44 @@ function StepCard({
 // a collapsed "Details" toggle. Outputs without text fall through to the
 // raw JSON view as before — keeps existing behavior for helix-event,
 // unlock-door, api-call, etc.
+//
+// When the Gemini step asked for JSON the ``text`` field IS a stringified
+// JSON blob (``{"status":"ok","issue":null,...}``). Showing that as a
+// single wrapped line is ugly; the action also exposes ``output.json``
+// (the same content already parsed) so we render that pretty-printed
+// when present, with the raw text under Details for the curious.
 function OutputSection({ output }: { output: unknown }) {
   const obj =
     output && typeof output === "object" && !Array.isArray(output)
       ? (output as Record<string, unknown>)
       : null;
   const text = obj && typeof obj.text === "string" ? obj.text : null;
+  // ``json`` is set by the Gemini actions when their text response
+  // parses as JSON. Prefer that when present — it's the same content,
+  // just structured for syntax-highlighted display.
+  const parsedJson = obj && obj.json !== undefined && obj.json !== null
+    ? obj.json
+    : null;
+
+  if (parsedJson !== null) {
+    return (
+      <div>
+        <SectionTitle>Output</SectionTitle>
+        <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+          <JsonView value={parsedJson} />
+        </div>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-300">
+            Details
+          </summary>
+          <div className="mt-2 bg-slate-950 rounded p-3 overflow-x-auto">
+            <JsonView value={output} />
+          </div>
+        </details>
+      </div>
+    );
+  }
+
   if (text) {
     return (
       <div>
