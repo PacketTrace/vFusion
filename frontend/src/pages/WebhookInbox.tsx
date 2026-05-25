@@ -474,6 +474,12 @@ function EventDetail({
             )}
           </div>
         </div>
+        {/* Compact preview of any attached media (camera still, LPR crop,
+            etc.) — sits to the right of the metadata so the user can see
+            *what* the event was about without scrolling. The full-resolution
+            gallery in the body section remains for events that carry
+            multiple assets. */}
+        <AssetHeaderPreview eventId={event.id} />
         <div className="flex flex-col gap-1.5 shrink-0">
           {event.family && event.family !== "unknown" && (
             <button
@@ -587,7 +593,10 @@ function AssetGallery({ eventId }: { eventId: string }) {
       (q.state.data ?? []).some((a) => a.status === "pending") ? 1500 : false,
   });
   const list = assets.data ?? [];
-  if (list.length === 0) return null;
+  // When there's exactly one asset it's already shown in the header
+  // preview — no need to repeat it down here. Multi-asset events still
+  // get the full gallery so all attachments are reachable.
+  if (list.length <= 1) return null;
   return (
     <Section title={`Media (${list.length})`}>
       <div className="grid grid-cols-2 gap-2 items-start">
@@ -596,6 +605,69 @@ function AssetGallery({ eventId }: { eventId: string }) {
         ))}
       </div>
     </Section>
+  );
+}
+
+
+/** Compact preview of the first ready asset, rendered in the header row
+ *  so the operator sees the camera frame next to the event metadata
+ *  instead of having to scroll. Shares the polling query key with
+ *  ``AssetGallery`` so they don't double-fetch. */
+function AssetHeaderPreview({ eventId }: { eventId: string }) {
+  const assets = useQuery({
+    queryKey: ["webhook-assets", eventId],
+    queryFn: () => apiGet<WebhookAsset[]>(`/api/webhook-events/${eventId}/assets`),
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((a) => a.status === "pending") ? 1500 : false,
+  });
+  const list = assets.data ?? [];
+  if (list.length === 0) return null;
+  // Prefer a ready image asset; fall back to any first asset so the
+  // viewer still sees "downloading…" feedback while the file lands.
+  const ready = list.find(
+    (a) => a.status === "ready" && (!a.content_type || a.content_type.startsWith("image/")),
+  );
+  const a = ready ?? list[0];
+  const fileUrl = `${API_BASE}/api/webhook-events/assets/${a.id}/file`;
+  const isImage = !a.content_type || a.content_type.startsWith("image/");
+  return (
+    <div className="shrink-0 border border-slate-800 rounded overflow-hidden bg-slate-950 w-40">
+      <div className="bg-black flex items-center justify-center min-h-[80px] max-h-[120px]">
+        {a.status === "ready" && isImage ? (
+          <a href={fileUrl} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={fileUrl}
+              alt={a.source_field}
+              className="block max-h-[120px] w-auto"
+              loading="lazy"
+            />
+          </a>
+        ) : a.status === "ready" ? (
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-sky-300 underline px-2 py-3 text-center"
+          >
+            Open ({a.content_type})
+          </a>
+        ) : a.status === "pending" ? (
+          <span className="text-[11px] text-slate-500 px-2 py-3">downloading…</span>
+        ) : (
+          <span
+            className="text-[11px] text-rose-300 px-2 py-3 text-center"
+            title={a.error ?? "download failed"}
+          >
+            ✗ failed
+          </span>
+        )}
+      </div>
+      {list.length > 1 && (
+        <div className="px-2 py-0.5 text-[10px] text-slate-500 text-center">
+          1 of {list.length}
+        </div>
+      )}
+    </div>
   );
 }
 
