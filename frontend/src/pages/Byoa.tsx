@@ -281,7 +281,18 @@ export default function Byoa() {
       if (postToHelix) {
         body.post_to_helix = true;
         body.helix_event_type_uid = helixEventTypeUid;
-        body.helix_attribute = helixAttribute;
+        // When a paired prompt is selected we send its multi-attribute
+        // mapping straight through to the worker — every Helix field
+        // declared by the paired type gets its own value (Issue,
+        // Severity, Reasoning, etc.) instead of stuffing the entire
+        // JSON blob into one. The legacy single-attribute path stays
+        // for unpaired prompts where the operator picks an attribute
+        // manually.
+        if (pickedTemplate?.helix_attribute_mapping) {
+          body.helix_attribute_mapping = pickedTemplate.helix_attribute_mapping;
+        } else {
+          body.helix_attribute = helixAttribute;
+        }
       }
       return apiPost<{ run_id: string }>("/api/byoa/run-once", body);
     },
@@ -611,29 +622,49 @@ export default function Byoa() {
                   </button>
                 </div>
               </Field>
-              <Field
-                label="Write AI text into"
-                required={postToHelix}
-                help={
-                  helixAttrOptions.length > 0
-                    ? "Other schema fields will be sent as empty strings."
-                    : "Pick an event type first to see its attributes."
-                }
-              >
-                <select
-                  value={helixAttribute}
-                  onChange={(e) => setHelixAttribute(e.target.value)}
-                  disabled={helixAttrOptions.length === 0}
-                  className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              {pickedTemplate?.helix_attribute_mapping ? (
+                // Paired prompt — fields fill from the multi-attribute
+                // mapping that travels with the prompt definition. Show
+                // a read-only summary instead of the single-attribute
+                // picker (which would be a downgrade).
+                <Field label="Attribute mapping (from paired prompt)">
+                  <div className="text-[11px] bg-emerald-950/30 border border-emerald-900/60 rounded px-2 py-1.5 space-y-0.5">
+                    {Object.entries(pickedTemplate.helix_attribute_mapping).map(
+                      ([k, v]) => (
+                        <div key={k} className="font-mono text-slate-300">
+                          <span className="text-emerald-300">{k}</span>
+                          <span className="text-slate-500"> ← </span>
+                          <span className="text-slate-100">{v}</span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </Field>
+              ) : (
+                <Field
+                  label="Write AI text into"
+                  required={postToHelix}
+                  help={
+                    helixAttrOptions.length > 0
+                      ? "Other schema fields will be sent as empty strings."
+                      : "Pick an event type first to see its attributes."
+                  }
                 >
-                  <option value="">— pick an attribute —</option>
-                  {helixAttrOptions.map((a) => (
-                    <option key={a.key} value={a.key}>
-                      {a.key} ({a.type})
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                  <select
+                    value={helixAttribute}
+                    onChange={(e) => setHelixAttribute(e.target.value)}
+                    disabled={helixAttrOptions.length === 0}
+                    className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                  >
+                    <option value="">— pick an attribute —</option>
+                    {helixAttrOptions.map((a) => (
+                      <option key={a.key} value={a.key}>
+                        {a.key} ({a.type})
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </Row>
           )}
         </div>

@@ -408,19 +408,49 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             await session.commit()
             return {"status": "success", "warning": "helix action missing"}
 
-        helix_attr = params.get("helix_attribute") or "Summary"
-        text = str(analyze_output.get("text") or "")
         time_sec = (
             analyze_output.get("started_at_epoch")
             or analyze_output.get("captured_at_epoch")
             or int(_utcnow().timestamp())
         )
+
+        # Two ways the operator can specify the Helix payload:
+        #
+        #   1. ``helix_attribute_mapping`` (preferred, sent by paired
+        #      prompts): a dict { "Helix attr": "{{ output.x }}" }. The
+        #      worker rewrites ``{{ output. }}`` -> ``{{ steps.byoa.output. }}``
+        #      and lets the helix step's template resolver fill each
+        #      field. Multi-attribute, structured.
+        #
+        #   2. ``helix_attribute`` (legacy single-field path): one
+        #      attribute name, populated with the raw analyze output's
+        #      ``text``. Used by unpaired prompts where the operator
+        #      picks an attribute manually from BYOA's UI.
+        mapping = params.get("helix_attribute_mapping")
+        if isinstance(mapping, dict) and mapping:
+            attributes: dict[str, Any] = {}
+            for k, v in mapping.items():
+                if isinstance(v, str):
+                    # ``output.`` is the step-local shorthand the paired
+                    # prompt declares; rewrite to the canonical
+                    # ``steps.byoa.output.`` so the helix action's
+                    # resolver finds it.
+                    attributes[k] = v.replace(
+                        "{{ output.", "{{ steps.byoa.output."
+                    )
+                else:
+                    attributes[k] = v
+        else:
+            helix_attr = params.get("helix_attribute") or "Summary"
+            text = str(analyze_output.get("text") or "")
+            attributes = {helix_attr: text}
+
         helix_config: dict[str, Any] = {
             "connection_id": params["connection_id"],
             "camera_id": params["camera_id"],
             "event_type_uid": params["helix_event_type_uid"],
             "time_ms": int(time_sec) * 1000,
-            "attributes": {helix_attr: text},
+            "attributes": attributes,
         }
         helix_record: dict[str, Any] = {
             "name": "post_helix",
