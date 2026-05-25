@@ -1010,21 +1010,29 @@ function FlowEditorInner() {
                 onChangeLabel={(l) =>
                   updateNode(selectedNode.id, { label: l || null })
                 }
-                onAddPairedHelixStep={({
-                  helix_event_type,
-                  helix_attribute_mapping,
-                  sourceStepName,
-                }) =>
-                  setPendingPairedHelix({
-                    def: {
-                      event_type_uid: helix_event_type.event_type_uid,
-                      name: helix_event_type.name,
-                      event_schema: helix_event_type.event_schema,
-                    },
-                    mapping: helix_attribute_mapping,
-                    sourceStepId: selectedNode.id,
-                    sourceStepName,
-                  })
+                // Suppress the "+ Add Helix logging step" affordance when
+                // the flow already has a Helix event step downstream — no
+                // sense offering to insert a duplicate. The template apply
+                // path lands here pre-wired, so the affordance was firing
+                // even for templates that already include the Helix step.
+                onAddPairedHelixStep={
+                  hasDownstreamHelixStep(selectedNode.id, nodes, edges)
+                    ? undefined
+                    : ({
+                        helix_event_type,
+                        helix_attribute_mapping,
+                        sourceStepName,
+                      }) =>
+                        setPendingPairedHelix({
+                          def: {
+                            event_type_uid: helix_event_type.event_type_uid,
+                            name: helix_event_type.name,
+                            event_schema: helix_event_type.event_schema,
+                          },
+                          mapping: helix_attribute_mapping,
+                          sourceStepId: selectedNode.id,
+                          sourceStepName,
+                        })
                 }
                 onChangeActionType={(t) => {
                   // If the current name still matches a known default
@@ -1096,6 +1104,39 @@ function TriggerKindBtn({
       {label}
     </button>
   );
+}
+
+
+/** BFS forward from ``nodeId`` looking for any ``verkada_helix_event``
+ *  node. Used to suppress the "+ Add Helix logging step" affordance
+ *  when one's already wired downstream — the template apply path
+ *  lands the editor on a pre-wired flow, and offering a second
+ *  Helix step on top would just create a duplicate. */
+function hasDownstreamHelixStep(
+  nodeId: string,
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+): boolean {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const outgoing = new Map<string, FlowEdge[]>();
+  for (const e of edges) {
+    if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+    outgoing.get(e.source)!.push(e);
+  }
+  const visited = new Set<string>();
+  const queue: string[] = [nodeId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const e of outgoing.get(current) ?? []) {
+      if (visited.has(e.target)) continue;
+      visited.add(e.target);
+      const n = byId.get(e.target);
+      if (!n) continue;
+      if (n.action_type === "verkada_helix_event") return true;
+      queue.push(n.id);
+    }
+  }
+  return false;
 }
 
 
