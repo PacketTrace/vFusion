@@ -217,6 +217,13 @@ export default function HelixBootstrapModal({
             )}
           </label>
 
+          {/* Hide the Helix-type list until the operator has picked a
+              target connection. Showing them up front (a) is overwhelming
+              before they've chosen where to act, and (b) the existing-
+              type probe hasn't run yet so the "already on this org" badge
+              can't be accurate. Pick a connection, then we render the
+              full state. */}
+          {effectiveTarget && (
           <div className="flex flex-col gap-2">
             {defs.map((d, i) => {
               const schemaEntries = Object.entries(d.event_schema ?? {});
@@ -265,6 +272,7 @@ export default function HelixBootstrapModal({
               );
             })}
           </div>
+          )}
 
           {bootstrapError && (
             <div className="text-xs text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
