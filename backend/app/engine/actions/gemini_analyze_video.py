@@ -100,6 +100,60 @@ PROMPT_TEMPLATES: list[dict[str, str]] = [
             "response to 190-199 characters."
         ),
     },
+    {
+        # Returns structured JSON so a downstream condition + Helix step
+        # can branch on issue / severity / reasoning without parsing
+        # freeform prose. Tuned to skip legit-but-boring scenes
+        # (night IR, empty hallways, privacy masks) so it only fires
+        # for real maintenance work.
+        "name": "Camera FOV health check (JSON)",
+        "value": (
+            "You are auditing a security camera frame for image-quality / "
+            "mounting issues. Decide whether this camera appears to be doing "
+            "its job, OR whether the lens / mounting is impaired in a way a "
+            "maintenance technician should investigate.\n\n"
+            "Respond with ONLY a JSON object — no prose, no code fence — with "
+            "exactly four keys:\n"
+            "  \"status\":   \"ok\" if the image looks like a normal working "
+            "security camera view; \"issue\" if the camera itself appears "
+            "impaired.\n"
+            "  \"issue\":    when status is \"issue\", one of: \"obstructed\" "
+            "(lens covered), \"blurry\" (severely out of focus), \"mis_aimed\" "
+            "(pointed at a wall / ceiling / floor as if knocked), "
+            "\"dirty_lens\" (smears, water, fog), \"dark\" (uniformly black/white "
+            "in a way IR / exposure can't explain), \"scene_drift\" (view doesn't "
+            "look like a security cam should see). Use null when status is \"ok\".\n"
+            "  \"severity\": \"low\" / \"medium\" / \"high\". Use null when status "
+            "is \"ok\".\n"
+            "  \"reasoning\": one-sentence explanation, ≤ 180 characters.\n\n"
+            "DO NOT flag legitimate situations:\n"
+            "  - A dark scene at night is fine (working IR cameras are dark).\n"
+            "  - An empty hallway, parking lot, loading dock, or wall corner is "
+            "fine if it appears to be the intended view.\n"
+            "  - Slight motion blur, compression artifacts, or wide-angle "
+            "distortion in an otherwise normal frame.\n"
+            "  - Privacy-masked regions (solid gray / black rectangles in part "
+            "of the frame) — those are intentional.\n"
+            "  - Glare, sun flare, or backlit scenes if the rest is intelligible.\n\n"
+            "DO flag:\n"
+            "  - Lens physically covered, sprayed, or fogged so the scene is "
+            "unintelligible.\n"
+            "  - Camera so out of focus the scene can't be identified.\n"
+            "  - Camera knocked out of alignment and now pointing at a wall, "
+            "ceiling, or floor.\n"
+            "  - Entire frame is a single flat color suggesting covered lens or "
+            "broken sensor.\n\n"
+            "Examples:\n"
+            "  {\"status\": \"issue\", \"issue\": \"obstructed\", \"severity\": "
+            "\"high\", \"reasoning\": \"Lens covered by fabric or paper — no "
+            "scene visible.\"}\n"
+            "  {\"status\": \"issue\", \"issue\": \"mis_aimed\", \"severity\": "
+            "\"medium\", \"reasoning\": \"Camera appears to be pointing at a "
+            "ceiling tile rather than the corridor.\"}\n"
+            "  {\"status\": \"ok\", \"issue\": null, \"severity\": null, "
+            "\"reasoning\": \"Normal parking lot view, daytime, clear focus.\"}"
+        ),
+    },
 ]
 
 
