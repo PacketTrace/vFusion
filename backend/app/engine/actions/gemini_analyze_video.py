@@ -205,6 +205,79 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
             "Reasoning": "{{ output.json.reasoning }}",
         },
     },
+    {
+        # Same prompt as the door-obstruction-check flow template, but
+        # surfaced here so an operator running BYOA against a doorway
+        # camera can pick it from the dropdown. People walking through
+        # are intentionally not flagged — they're transient.
+        "name": "Door obstruction check (JSON)",
+        "value": (
+            "You are checking whether a door visible in this security "
+            "camera frame is BLOCKED by a physical object that shouldn't "
+            "be there. Focus on the door itself and the immediate egress "
+            "path (within a few feet of the doorway).\n\n"
+            "Respond with ONLY a JSON object - no prose, no code fence - "
+            "with exactly four keys:\n"
+            "  \"obstructed\":  boolean. true when an object is physically "
+            "blocking the door from being opened or used as egress; false "
+            "otherwise.\n"
+            "  \"object_type\": when obstructed, a short noun phrase "
+            "describing what's blocking it (e.g. \"cardboard boxes\", "
+            "\"hand truck\", \"shopping cart\", \"chair\", \"stack of "
+            "pallets\", \"floor scrubber\", \"equipment cart\"). Use "
+            "\"unknown_object\" if you can see an obstruction but can't "
+            "name it. Use null when not obstructed.\n"
+            "  \"severity\":    when obstructed, one of \"low\" (small / "
+            "easily moved object partially in the way), \"medium\" (door "
+            "usable but path is partly blocked), \"high\" (door cannot be "
+            "opened or path completely blocked - a fire-code / safety "
+            "issue). Use null when not obstructed.\n"
+            "  \"reasoning\":   one-sentence explanation of what you saw, "
+            "max 180 characters.\n\n"
+            "DO NOT flag:\n"
+            "  - People walking through, standing near the door, or "
+            "queueing - they are transient and not an obstruction.\n"
+            "  - Carpets, floor mats, door stops, signage, posters, "
+            "normal door hardware.\n"
+            "  - Items clearly on shelves / racks adjacent to but not "
+            "in front of the door.\n"
+            "  - The door itself being closed or open - only flag when "
+            "something else is in the doorway.\n\n"
+            "DO flag:\n"
+            "  - Boxes, pallets, carts, equipment, or furniture placed "
+            "in front of the door or in the immediate egress path.\n"
+            "  - Stacked / piled items that would slow someone exiting "
+            "quickly.\n"
+            "  - Liquid spills or debris fields that look like a slip "
+            "hazard right at the doorway.\n\n"
+            "Examples:\n"
+            "  {\"obstructed\": true, \"object_type\": \"cardboard "
+            "boxes\", \"severity\": \"medium\", \"reasoning\": \"Three "
+            "boxes stacked directly in front of the door, partially "
+            "blocking the swing.\"}\n"
+            "  {\"obstructed\": true, \"object_type\": \"hand truck\", "
+            "\"severity\": \"high\", \"reasoning\": \"Loaded hand truck "
+            "parked across the entire doorway, door cannot open "
+            "inward.\"}\n"
+            "  {\"obstructed\": false, \"object_type\": null, "
+            "\"severity\": null, \"reasoning\": \"Door area clear, two "
+            "people walking past but nothing blocking the path.\"}"
+        ),
+        "helix_event_type": {
+            "event_type_uid": "tpl:door-obstruction",
+            "name": "🚪 Door Obstruction",
+            "event_schema": {
+                "Object Type": "string",
+                "Severity": "string",
+                "Reasoning": "string",
+            },
+        },
+        "helix_attribute_mapping": {
+            "Object Type": "{{ output.json.object_type }}",
+            "Severity": "{{ output.json.severity }}",
+            "Reasoning": "{{ output.json.reasoning }}",
+        },
+    },
 ]
 
 
