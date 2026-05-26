@@ -596,6 +596,9 @@ export default function Byoa() {
         <Field label="Prompt" required>
           {allTemplates.length > 0 && (
             <>
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
+                Pick a template
+              </div>
               {/* Picker grid — replaces the old <select> so the demo /
                   video story reads as "pick the analytic" instead of
                   "scroll a tiny dropdown." Each card shows the
@@ -671,6 +674,23 @@ export default function Byoa() {
                 </div>
               )}
             </>
+          )}
+          {/* "Custom prompt" header tells operators this is the
+              free-form path — write your own analytic instead of
+              picking a card. Sits with a hairline divider above so
+              the visual break between "templates" and "custom" is
+              obvious without taking much vertical space. */}
+          {allTemplates.length > 0 && (
+            <div className="border-t border-white/10 mt-3 pt-3">
+              <div className="flex items-baseline gap-2 mb-1.5">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">
+                  Custom prompt
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  or write your own analytic
+                </div>
+              </div>
+            </div>
           )}
           <textarea
             value={prompt}
