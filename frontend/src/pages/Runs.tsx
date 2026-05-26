@@ -199,6 +199,22 @@ function RunDetailView({ run }: { run: RunDetail }) {
               {flowReplay.isPending ? "Starting…" : "↻ Run it back"}
             </button>
           )}
+          {run.webhook_event_id && (
+            // Jump to the triggering payload in the Inbox. Handy when a
+            // step blew up on something like a missing field — open the
+            // raw hook to see exactly what Verkada sent. The ``ml-auto``
+            // only applies when "Run it back" isn't already taking the
+            // slot, so we use a smaller margin here to keep them paired.
+            <button
+              onClick={() =>
+                navigate(`/inbox?event=${run.webhook_event_id}`)
+              }
+              className={`${canFlowReplay ? "ml-1" : "ml-auto"} text-xs px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100`}
+              title="Open the triggering webhook payload in the Inbox"
+            >
+              {"</>"} View source hook
+            </button>
+          )}
         </div>
         <div className="text-xs text-slate-500 mt-1">
           created {new Date(run.created_at).toLocaleString()}

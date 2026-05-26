@@ -13,6 +13,12 @@ interface Props {
   flowId: string;
   family: string | null;
   notificationType: string | null;
+  // Same field→value shape as the trigger's filters config. The modal
+  // forwards these to the events list endpoint so the operator only
+  // sees payloads that would actually fire the live trigger — e.g. a
+  // flow filtered on ``objects = animal`` doesn't get drowned in
+  // every motion event.
+  filters?: Array<{ field: string; value: string }>;
   defaultEventId: string | null;
   onClose: () => void;
   onRun: (runId: string) => void;
@@ -23,6 +29,7 @@ export default function TestRunModal({
   flowId,
   family,
   notificationType,
+  filters,
   defaultEventId,
   onClose,
   onRun,
@@ -33,11 +40,20 @@ export default function TestRunModal({
   // Recent events, filtered by the flow's trigger family/notification_type
   // so the user mostly sees plausible test inputs. The list endpoint accepts
   // optional family/notification_type so we just forward what we have.
+  const activeFilters = (filters ?? []).filter((f) => f.field && f.value);
   const params = new URLSearchParams({ limit: "25" });
   if (family) params.set("family", family);
   if (notificationType) params.set("notification_type", notificationType);
+  for (const f of activeFilters) {
+    params.append("filters", `${f.field}=${f.value}`);
+  }
+  // Encode filters in the cache key so the list refetches when the
+  // operator tweaks the trigger and reopens the modal.
+  const filterKey = activeFilters
+    .map((f) => `${f.field}=${f.value}`)
+    .join("&");
   const recent = useQuery({
-    queryKey: ["test-run-events", family, notificationType],
+    queryKey: ["test-run-events", family, notificationType, filterKey],
     queryFn: () =>
       apiGet<WebhookEventListResponse>(
         `/api/webhook-events?${params.toString()}`,
@@ -88,7 +104,23 @@ export default function TestRunModal({
               Pick a past webhook to feed this flow as its trigger payload.
               {family ? ` Showing ${family}` : ""}
               {notificationType ? ` / ${notificationType}` : ""}
-              {family || notificationType ? " events." : ""}
+              {family || notificationType ? " events" : ""}
+              {activeFilters.length > 0 && (
+                <>
+                  {" where "}
+                  {activeFilters.map((f, i) => (
+                    <span key={`${f.field}-${i}`}>
+                      {i > 0 && " and "}
+                      <code className="text-slate-300">{f.field}</code>
+                      {" = "}
+                      <code className="text-slate-300">{f.value}</code>
+                    </span>
+                  ))}
+                </>
+              )}
+              {family || notificationType || activeFilters.length > 0
+                ? "."
+                : ""}
             </div>
           </div>
           <button

@@ -11,6 +11,7 @@ from sqlalchemy import select, func, desc, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.engine.triggers import matches as trigger_matches
 from app.models import VerkadaCamera, VerkadaDoor, WebhookAsset, WebhookEvent
 
 
@@ -66,6 +67,15 @@ async def list_events(
     family: str | None = Query(default=None),
     notification_type: str | None = Query(default=None),
     webhook_type: str | None = Query(default=None),
+    filters: list[str] = Query(
+        default=[],
+        description=(
+            "Trigger-style filters as repeated `field=value` pairs. "
+            "Applied with the same dot-path + case-insensitive list-aware "
+            "semantics used by the live trigger matcher, so the Test-run "
+            "modal can show only payloads that would actually fire."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -122,8 +132,43 @@ async def list_events(
         base = base.where(WebhookEvent.webhook_type == webhook_type)
         count_q = count_q.where(WebhookEvent.webhook_type == webhook_type)
 
-    base = base.order_by(WebhookEvent.received_at.desc()).limit(limit).offset(offset)
+    # Parse trigger-style filters once. We can't push these into SQL
+    # cleanly (dot paths into nested JSON + list-aware case-insensitive
+    # matching), so we widen the SQL window and post-filter in Python
+    # using the same matcher the live hook uses. Without widening, a
+    # picky filter on top of a frequently-firing notification_type
+    # would return one or two matches per page and look broken.
+    filter_pairs: list[tuple[str, str]] = []
+    for raw in filters:
+        if "=" not in raw:
+            continue
+        field, value = raw.split("=", 1)
+        field = field.strip()
+        value = value.strip()
+        if field and value:
+            filter_pairs.append((field, value))
+
+    sql_limit = limit if not filter_pairs else min(1000, max(limit * 20, 200))
+    base = base.order_by(WebhookEvent.received_at.desc()).limit(sql_limit).offset(offset)
     rows = (await session.execute(base)).scalars().all()
+
+    if filter_pairs:
+        filt_cfg = {"filters": {f: v for f, v in filter_pairs}}
+        kept: list[WebhookEvent] = []
+        for r in rows:
+            body = r.body_json if isinstance(r.body_json, dict) else {}
+            data = body.get("data") if isinstance(body.get("data"), dict) else {}
+            ev = {
+                "family": r.family,
+                "notification_type": r.notification_type,
+                "data": data,
+            }
+            if trigger_matches(filt_cfg, ev):
+                kept.append(r)
+            if len(kept) >= limit:
+                break
+        rows = kept
+
     total = (await session.execute(count_q)).scalar_one()
     unknown = (
         await session.execute(

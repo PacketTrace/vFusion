@@ -49,7 +49,12 @@ export default function WebhookInbox() {
   // a stale URL source. The notification_type filter is sent through to
   // the backend as a separate query — "__null__" is the sentinel for
   // "notification_type IS NULL", the Stats page's "(unknown)" bucket.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Pre-select an event if the URL carries ?event=<id>. Used by
+  // "View source hook" on the Runs page so an operator can jump
+  // from a failed run straight to the triggering webhook payload.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    searchParams.get("event") ?? null,
+  );
   const [searchInput, setSearchInput] = useState("");
   const [familyFilter, setFamilyFilter] = useState<Family | "">(
     (searchParams.get("family") as Family | null) ?? "",
@@ -66,7 +71,8 @@ export default function WebhookInbox() {
     if (
       searchParams.get("family") ||
       searchParams.get("notification_type") ||
-      searchParams.get("webhook_type")
+      searchParams.get("webhook_type") ||
+      searchParams.get("event")
     ) {
       setSearchParams({}, { replace: true });
     }

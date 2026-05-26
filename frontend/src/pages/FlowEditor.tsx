@@ -395,8 +395,48 @@ function FlowEditorInner() {
   };
 
   const removeNode = (id: string) => {
+    // Splice the node out instead of orphaning its children. Without
+    // this, deleting a middle node (e.g. a condition that's "is it a
+    // bear?") drops the edges in + out, and its former children
+    // re-root to the trigger as siblings — turning a linear chain
+    // into a confusing fan-out. Reconnect every (parent → id) edge
+    // to every (id → child) target so the remaining graph keeps the
+    // same downstream wiring.
+    //
+    // Branch labels (true / false) are inherited from the *incoming*
+    // edge so the surviving path keeps its meaning ("this used to be
+    // the true branch"). De-duped via a Set so a parent that fed the
+    // removed node twice doesn't materialize two identical edges.
+    const incoming = edges.filter((e) => e.target === id);
+    const outgoing = edges.filter((e) => e.source === id);
+    const survivors = edges.filter((e) => e.source !== id && e.target !== id);
+    const splicedKeys = new Set<string>();
+    const spliced: typeof edges = [];
+    for (const inE of incoming) {
+      for (const outE of outgoing) {
+        if (inE.source === outE.target) continue; // self-loop guard
+        const key = `${inE.source}->${outE.target}:${inE.branch ?? ""}`;
+        if (splicedKeys.has(key)) continue;
+        if (
+          survivors.some(
+            (e) =>
+              e.source === inE.source &&
+              e.target === outE.target &&
+              e.branch === inE.branch,
+          )
+        )
+          continue;
+        splicedKeys.add(key);
+        spliced.push({
+          id: uuid(),
+          source: inE.source,
+          target: outE.target,
+          branch: inE.branch,
+        });
+      }
+    }
     setNodes(nodes.filter((n) => n.id !== id));
-    setEdges(edges.filter((e) => e.source !== id && e.target !== id));
+    setEdges([...survivors, ...spliced]);
     if (selected.kind === "node" && selected.id === id)
       setSelected({ kind: "trigger" });
   };
@@ -908,6 +948,7 @@ function FlowEditorInner() {
               flowId={flowId}
               family={trigger.family || null}
               notificationType={trigger.notificationType || null}
+              filters={trigger.filters}
               defaultEventId={sourceEventId}
               onClose={() => setTestRunOpen(false)}
               onRun={(runId) => {
