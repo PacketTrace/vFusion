@@ -591,28 +591,62 @@ export default function Byoa() {
         <Field label="Prompt" required>
           {allTemplates.length > 0 && (
             <>
-              <select
-                value=""
-                onChange={(e) => {
-                  const tpl = allTemplates.find((t) => t.name === e.target.value);
-                  if (!tpl) return;
-                  setPrompt(tpl.value);
-                  setPickedTemplate(tpl);
-                  // A fresh template selection invalidates whatever
-                  // replay state we restored — its mapping is the new
-                  // source of truth.
-                  setRestoredMapping(null);
-                }}
-                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs mb-2"
-              >
-                <option value="">— insert template (replaces text below) —</option>
-                {allTemplates.map((t) => (
-                  <option key={t.name} value={t.name}>
-                    {t.name}
-                    {t.helix_event_type ? " · Helix-paired" : ""}
-                  </option>
-                ))}
-              </select>
+              {/* Picker grid — replaces the old <select> so the demo /
+                  video story reads as "pick the analytic" instead of
+                  "scroll a tiny dropdown." Each card shows the
+                  template name + paired Helix type emoji (when the
+                  template ships one) + a Helix-paired chip so
+                  operators can see the pairing at a glance. The
+                  active card gets a sky border + scale-up so the
+                  current pick is unmistakable. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                {allTemplates.map((t) => {
+                  const active = pickedTemplate?.name === t.name;
+                  // Paired templates carry an emoji in their helix
+                  // event type name (e.g. "🦌 Animal Watch"). Pull
+                  // the first non-space cluster off the front and
+                  // use it as the card icon; falls back to ✨ when
+                  // the template has no pairing.
+                  const helixName = t.helix_event_type?.name ?? "";
+                  const iconMatch = helixName.match(/^\s*(\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|‍\p{Extended_Pictographic})*)/u);
+                  const icon = iconMatch?.[1] ?? "✨";
+                  return (
+                    <button
+                      key={t.name}
+                      type="button"
+                      onClick={() => {
+                        setPrompt(t.value);
+                        setPickedTemplate(t);
+                        // A fresh template selection invalidates
+                        // whatever replay state we restored — its
+                        // mapping is the new source of truth.
+                        setRestoredMapping(null);
+                      }}
+                      className={`text-left p-3 rounded-md border transition-all ${
+                        active
+                          ? "border-sky-400/80 bg-sky-950/40 scale-[1.02] shadow-[0_0_14px_rgba(56,189,248,0.35)]"
+                          : "border-white/15 bg-white/5 hover:border-sky-700/60 hover:bg-sky-950/20"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xl leading-none mt-0.5" aria-hidden>
+                          {icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-slate-100 leading-tight">
+                            {t.name}
+                          </div>
+                          {t.helix_event_type && (
+                            <div className="mt-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60">
+                              🧬 Helix-paired
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
               {pickedTemplate?.helix_event_type && (
                 <div className="text-[11px] bg-emerald-950/30 border border-emerald-900/60 rounded px-2 py-1.5 mb-2">
                   <div className="text-slate-300">
