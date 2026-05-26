@@ -250,6 +250,13 @@ function FlowTemplatesPanel() {
                 {/* Title row: name, "yours" badge, and tag chips share
                     one wrapping line so a short-name template doesn't
                     waste two rows. */}
+                {/* Title row carries the name, "yours" badge, tag
+                    chips, AND the primary "Use" / Delete actions —
+                    pulling them up here reclaims the entire bottom
+                    row that used to sit empty between the summary
+                    strip and the buttons. ``ml-auto`` pushes the
+                    action cluster to the right edge so the title
+                    stays at the leading edge. */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="text-sm font-medium text-slate-100">
                     {tpl.name}
@@ -267,6 +274,28 @@ function FlowTemplatesPanel() {
                       {tag}
                     </span>
                   ))}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={() => useTemplate(tpl.id)}
+                      disabled={busyId !== null}
+                      className="text-xs px-2.5 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
+                    >
+                      {busyId === tpl.id ? "Creating…" : "Use"}
+                    </button>
+                    {tpl.source === "user" && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete template "${tpl.name}"?`)) {
+                            deleteTemplate.mutate(tpl.id);
+                          }
+                        }}
+                        disabled={deleteTemplate.isPending}
+                        className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {/* Tagline + a tiny inline Details disclosure. The
                     long description lives behind the disclosure so
@@ -303,28 +332,6 @@ function FlowTemplatesPanel() {
                       {tpl.summary}
                     </div>
                   )
-                )}
-              </div>
-              <div className="mt-auto flex items-center gap-2">
-                <button
-                  onClick={() => useTemplate(tpl.id)}
-                  disabled={busyId !== null}
-                  className="text-xs px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
-                >
-                  {busyId === tpl.id ? "Creating…" : "Use this template"}
-                </button>
-                {tpl.source === "user" && (
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete template "${tpl.name}"?`)) {
-                        deleteTemplate.mutate(tpl.id);
-                      }
-                    }}
-                    disabled={deleteTemplate.isPending}
-                    className="text-xs px-2 py-1.5 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700 disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
                 )}
               </div>
             </div>

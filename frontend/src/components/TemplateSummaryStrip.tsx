@@ -74,17 +74,17 @@ function StepPill({
   const tone = toneFor(step);
   return (
     <div
-      className={`flex flex-col items-center justify-center w-20 px-1.5 py-1.5 rounded border text-center transition-all duration-300 ${tone} ${
+      className={`flex flex-col items-center justify-center w-16 px-1 py-1 rounded border text-center transition-all duration-300 ${tone} ${
         highlighted
-          ? "scale-105 shadow-[0_0_14px_rgba(56,189,248,0.45)] border-sky-400/80"
+          ? "scale-105 shadow-[0_0_12px_rgba(56,189,248,0.45)] border-sky-400/80"
           : ""
       }`}
       title={label}
     >
-      <span className="text-base leading-none mb-0.5" aria-hidden>
+      <span className="text-sm leading-none mb-0.5" aria-hidden>
         {icon}
       </span>
-      <span className="text-[9px] leading-tight text-slate-200 line-clamp-2 break-words">
+      <span className="text-[9px] leading-[1.1] text-slate-200 line-clamp-2 break-words">
         {label}
       </span>
     </div>
