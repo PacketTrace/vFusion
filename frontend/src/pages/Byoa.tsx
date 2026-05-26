@@ -144,6 +144,14 @@ export default function Byoa() {
   const [postToHelix, setPostToHelix] = useState(false);
   const [helixEventTypeUid, setHelixEventTypeUid] = useState<string>("");
   const [helixAttribute, setHelixAttribute] = useState<string>("");
+  // Survives the "Run it back" round trip when ``pickedTemplate``
+  // can't be matched (the prior run came from a builtin that's since
+  // been edited, etc.). The body builder prefers pickedTemplate's
+  // mapping but falls back to this on replay.
+  const [restoredMapping, setRestoredMapping] = useState<Record<
+    string,
+    string
+  > | null>(null);
   // Inline "+ New type" editor toggle. When opened with a paired
   // prompt selected we seed the form from the paired definition so
   // the operator clicks once and gets the schema pre-filled.
@@ -227,6 +235,21 @@ export default function Byoa() {
             setHelixEventTypeUid(inp.helix_event_type_uid);
           if (typeof inp.helix_attribute === "string")
             setHelixAttribute(inp.helix_attribute);
+          // Restore the paired-prompt mapping too. Without this, "Run
+          // it back" lost the multi-attribute mapping and the worker
+          // fell through to the legacy single-field path — every
+          // replayed run quietly posted the whole JSON blob into a
+          // ``Summary`` attribute that doesn't exist on the paired
+          // event type, and Helix 400'd.
+          if (
+            inp.helix_attribute_mapping &&
+            typeof inp.helix_attribute_mapping === "object" &&
+            !Array.isArray(inp.helix_attribute_mapping)
+          ) {
+            setRestoredMapping(
+              inp.helix_attribute_mapping as Record<string, string>,
+            );
+          }
         }
         setSearchParams({}, { replace: true });
       })
@@ -344,8 +367,10 @@ export default function Byoa() {
         // JSON blob into one. The legacy single-attribute path stays
         // for unpaired prompts where the operator picks an attribute
         // manually.
-        if (pickedTemplate?.helix_attribute_mapping) {
-          body.helix_attribute_mapping = pickedTemplate.helix_attribute_mapping;
+        const effectiveMapping =
+          pickedTemplate?.helix_attribute_mapping ?? restoredMapping;
+        if (effectiveMapping) {
+          body.helix_attribute_mapping = effectiveMapping;
         } else {
           body.helix_attribute = helixAttribute;
         }
@@ -573,6 +598,10 @@ export default function Byoa() {
                   if (!tpl) return;
                   setPrompt(tpl.value);
                   setPickedTemplate(tpl);
+                  // A fresh template selection invalidates whatever
+                  // replay state we restored — its mapping is the new
+                  // source of truth.
+                  setRestoredMapping(null);
                 }}
                 className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs mb-2"
               >
