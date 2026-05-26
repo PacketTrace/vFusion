@@ -73,3 +73,23 @@ body {
   0%   { background-position: 0 0, 0 0, 0 0; }
   100% { background-position: 4px 8px, -6px -4px, 0 0; }
 }
+
+/* Flowing-dash arrows on the template-card summary strip.
+ *
+ * The line is dashed (3-2 px) and we animate ``stroke-dashoffset``
+ * negative so the dashes drift left -> right, suggesting flow. Two
+ * speeds: ``summary-arrow-slow`` for resting arrows, ``-fast`` for
+ * the segment that currently has the spotlight (synchronized with
+ * the React component's active-step cycle). */
+.summary-arrow-slow {
+  animation: summary-arrow-flow 1.6s linear infinite;
+}
+
+.summary-arrow-fast {
+  animation: summary-arrow-flow 0.6s linear infinite;
+}
+
+@keyframes summary-arrow-flow {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -10; }
+}

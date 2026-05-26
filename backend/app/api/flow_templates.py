@@ -95,6 +95,7 @@ async def list_flow_templates(
     """
     out: list[dict[str, Any]] = []
     for tpl in _load_builtins().values():
+        flow = tpl.get("flow") or {}
         out.append(
             {
                 "id": tpl["id"],
@@ -108,7 +109,8 @@ async def list_flow_templates(
                 "tags": _normalize_tags(tpl.get("tags"), tpl.get("category")),
                 "description": tpl.get("description"),
                 "summary": tpl.get("summary"),
-                "trigger_type": tpl.get("flow", {}).get("trigger_type"),
+                "summary_steps": _summary_steps(flow),
+                "trigger_type": flow.get("trigger_type"),
                 "default_name": tpl.get("default_name", tpl.get("name", tpl["id"])),
             }
         )
@@ -131,12 +133,79 @@ async def list_flow_templates(
                 "tags": user_tags,
                 "description": row.description,
                 "summary": row.summary,
+                "summary_steps": _summary_steps(row.flow or {}),
                 "trigger_type": (row.flow or {}).get("trigger_type"),
                 "default_name": row.default_name or row.name,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
         )
     return out
+
+
+def _summary_steps(flow: dict[str, Any]) -> list[dict[str, Any]]:
+    """Topo-sort the flow's nodes and emit a compact descriptor per
+    step for the Templates page summary strip.
+
+    The shape is intentionally minimal — the frontend renders icons
+    + labels per entry, animates dashed arrows between them, and
+    cycles a pulse highlight through them. Just enough info to draw
+    a flow chip chain at a glance:
+
+        {kind: "trigger", trigger_type: "schedule" | "verkada_webhook"}
+        {kind: "action",  action_type: "...", label: "..."}
+        {kind: "condition", label: "..."}
+
+    Topological order falls back to the file order when the edge
+    set is missing or ambiguous, which is fine for the curated
+    built-in templates that all declare an obvious chain.
+    """
+    raw_nodes = flow.get("nodes") or []
+    raw_edges = flow.get("edges") or []
+    if not raw_nodes:
+        return []
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    for n in raw_nodes:
+        if isinstance(n, dict) and n.get("id"):
+            nodes_by_id[str(n["id"])] = n
+    # Topo sort via Kahn's algorithm — orphan nodes (no incoming
+    # edges) come first, then anything reachable from them.
+    indeg: dict[str, int] = {nid: 0 for nid in nodes_by_id}
+    out_edges: dict[str, list[str]] = {nid: [] for nid in nodes_by_id}
+    for e in raw_edges:
+        if not isinstance(e, dict):
+            continue
+        s, t = str(e.get("source") or ""), str(e.get("target") or "")
+        if s in nodes_by_id and t in nodes_by_id:
+            out_edges[s].append(t)
+            indeg[t] += 1
+    order: list[str] = []
+    queue = [nid for nid, d in indeg.items() if d == 0]
+    while queue:
+        cur = queue.pop(0)
+        order.append(cur)
+        for nxt in out_edges.get(cur, []):
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                queue.append(nxt)
+    # Anything left (cycle or detached) — just append in declaration
+    # order so we don't drop nodes.
+    for nid in nodes_by_id:
+        if nid not in order:
+            order.append(nid)
+
+    steps: list[dict[str, Any]] = [
+        {"kind": "trigger", "trigger_type": flow.get("trigger_type")},
+    ]
+    for nid in order:
+        n = nodes_by_id[nid]
+        entry: dict[str, Any] = {
+            "kind": n.get("kind", "action"),
+            "label": n.get("label") or n.get("name") or "",
+        }
+        if n.get("action_type"):
+            entry["action_type"] = n.get("action_type")
+        steps.append(entry)
+    return steps
 
 
 def _normalize_tags(

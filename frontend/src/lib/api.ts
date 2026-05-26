@@ -206,9 +206,23 @@ export interface FlowTemplateListItem {
   tags: string[];
   description: string | null;
   summary: string | null;
+  /** Topo-ordered list of icon-pill steps drawn on each template card.
+   *  Computed server-side from the flow's nodes + edges. */
+  summary_steps?: TemplateSummaryStep[];
   trigger_type: string;
   default_name: string;
   created_at?: string | null;
+}
+
+
+export interface TemplateSummaryStep {
+  kind: "trigger" | "action" | "condition";
+  /** Trigger pills carry the trigger type; actions / conditions don't. */
+  trigger_type?: string | null;
+  /** Drives the icon mapping (sparkle for Gemini, lock for door, etc.). */
+  action_type?: string | null;
+  /** Friendly display label — what shows under the icon on the strip. */
+  label?: string | null;
 }
 
 export interface FlowTemplateNode {

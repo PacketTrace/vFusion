@@ -15,6 +15,7 @@ import {
   HelixEventTypeDef,
 } from "../lib/api";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
+import TemplateSummaryStrip from "../components/TemplateSummaryStrip";
 
 
 // Curated tag colors per product line. Templates whose tags aren't in
@@ -256,10 +257,19 @@ function FlowTemplatesPanel() {
                     {tpl.description}
                   </div>
                 )}
-                {tpl.summary && (
-                  <div className="mt-2 text-[11px] font-mono text-slate-500 bg-slate-950/60 rounded px-2 py-1 border border-white/5">
-                    {tpl.summary}
+                {tpl.summary_steps && tpl.summary_steps.length > 0 ? (
+                  <div
+                    className="mt-2 bg-slate-950/60 rounded border border-white/5 px-2"
+                    title={tpl.summary ?? undefined}
+                  >
+                    <TemplateSummaryStrip steps={tpl.summary_steps} />
                   </div>
+                ) : (
+                  tpl.summary && (
+                    <div className="mt-2 text-[11px] font-mono text-slate-500 bg-slate-950/60 rounded px-2 py-1 border border-white/5">
+                      {tpl.summary}
+                    </div>
+                  )
                 )}
               </div>
               <div className="mt-auto flex items-center gap-2">
