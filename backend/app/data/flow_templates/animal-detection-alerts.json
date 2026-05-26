@@ -2,7 +2,7 @@
   "id": "animal-detection-alerts",
   "name": "Animal species detection",
   "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal species is in the frame and what it's doing, and post the result to Helix so Verkada Command can alert when it sees a specific species (e.g. bear).",
-  "summary": "Webhook -> Gemini analyze (JSON) -> condition on \"bear\" -> Helix event with Animal + Behavior",
+  "summary": "Webhook -> Gemini analyze (JSON) -> condition on \"bear\" -> Helix event with Animal + Breed + Behavior",
   "default_name": "Animal species detection",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -19,6 +19,7 @@
         "name": "\ud83e\udd8c Animal Watch",
         "event_schema": {
           "Animal": "string",
+          "Breed": "string",
           "Behavior": "string"
         }
       }
@@ -38,7 +39,7 @@
           "duration_sec": "10",
           "pre_roll_sec": "2",
           "model": "gemini-2.5-flash",
-          "prompt": "Identify the animal in this security camera video and describe what it is doing. Respond with ONLY a JSON object - no prose, no code fence - with exactly two string keys:\n  \"animal\":   the species in lowercase (e.g. \"bear\", \"deer\", \"coyote\", \"raccoon\"), or \"none\" if no animal is clearly visible.\n  \"behavior\": a 1-4 word verb phrase describing what the animal is doing (e.g. \"walking\", \"feeding\", \"climbing fence\", \"investigating trash\"). Use \"unknown\" if the animal is too brief or unclear to tell.\n\nExample: {\"animal\": \"bear\", \"behavior\": \"walking\"}"
+          "prompt": "Identify the animal in this security camera video and describe what it is doing. Respond with ONLY a JSON object - no prose, no code fence - with exactly three string keys:\n  \"animal\":   the species in lowercase (e.g. \"bear\", \"deer\", \"coyote\", \"raccoon\"), or \"none\" if no animal is clearly visible.\n  \"breed\":    your best guess at the specific breed or sub-species, in lowercase (e.g. \"black-tailed deer\", \"husky\", \"black bear\", \"red fox\"). Use \"unknown\" if you can't tell with reasonable confidence — don't guess wildly.\n  \"behavior\": a 1-4 word verb phrase describing what the animal is doing (e.g. \"walking\", \"feeding\", \"climbing fence\", \"investigating trash\"). Use \"unknown\" if the animal is too brief or unclear to tell.\n\nExample: {\"animal\": \"deer\", \"breed\": \"black-tailed deer\", \"behavior\": \"grazing\"}"
         },
         "position": {
           "x": 220,
@@ -72,6 +73,7 @@
           "event_type_uid": "tpl:animal-watch",
           "attributes": {
             "Animal": "{{ steps.analyze.output.json.animal }}",
+            "Breed": "{{ steps.analyze.output.json.breed }}",
             "Behavior": "{{ steps.analyze.output.json.behavior }}"
           },
           "time_ms": "{{ trigger.data.created }}000"

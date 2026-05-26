@@ -98,26 +98,34 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
         "value": (
             "Identify the animal in this security camera video and describe "
             "what it is doing. Respond with ONLY a JSON object - no prose, "
-            "no code fence - with exactly two string keys:\n"
+            "no code fence - with exactly three string keys:\n"
             "  \"animal\":   the species in lowercase (e.g. \"bear\", "
             "\"deer\", \"coyote\", \"raccoon\"), or \"none\" if no animal is "
             "clearly visible.\n"
+            "  \"breed\":    your best guess at the specific breed or "
+            "sub-species, in lowercase (e.g. \"black-tailed deer\", "
+            "\"husky\", \"black bear\", \"red fox\"). Use \"unknown\" if "
+            "you can't tell with reasonable confidence — don't guess "
+            "wildly.\n"
             "  \"behavior\": a 1-4 word verb phrase describing what the "
             "animal is doing (e.g. \"walking\", \"feeding\", \"climbing "
             "fence\", \"investigating trash\"). Use \"unknown\" if the "
             "animal is too brief or unclear to tell.\n\n"
-            "Example: {\"animal\": \"bear\", \"behavior\": \"walking\"}"
+            "Example: {\"animal\": \"deer\", \"breed\": \"black-tailed "
+            "deer\", \"behavior\": \"grazing\"}"
         ),
         "helix_event_type": {
             "event_type_uid": "tpl:animal-watch",
             "name": "🦌 Animal Watch",
             "event_schema": {
                 "Animal": "string",
+                "Breed": "string",
                 "Behavior": "string",
             },
         },
         "helix_attribute_mapping": {
             "Animal": "{{ output.json.animal }}",
+            "Breed": "{{ output.json.breed }}",
             "Behavior": "{{ output.json.behavior }}",
         },
     },
