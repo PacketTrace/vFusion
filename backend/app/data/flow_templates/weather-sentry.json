@@ -1,6 +1,7 @@
 {
   "id": "weather-sentry",
   "name": "Weather sentry",
+  "tagline": "⛅ Live weather piped into Helix every 30 min. Alert on wind, fog, freeze.",
   "description": "Pulls real atmospheric data from OpenWeatherMap on a schedule and posts it to a Verkada Helix \"Weather\" event so ops can see live conditions next to a camera in Command and alert on hazards like wind, low visibility, or freezing temps. Enter a zip code (or lat/lon for a specific yard / job site) before enabling. Requires an OpenWeatherMap connection \u2014 free tier is fine.",
   "summary": "Schedule every 30 min -> OpenWeatherMap (real API) -> Helix weather event",
   "default_name": "Weather sentry",

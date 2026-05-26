@@ -1,6 +1,7 @@
 {
   "id": "ocr-triggered-unlock",
   "name": "OCR-triggered door unlock",
+  "tagline": "🔤 Read a plate or badge → unlock the door + log the match to Helix.",
   "description": "Read text, signage, or license plates in front of a camera with Gemini and unlock a door when the OCR'd text matches a target string (a VIP plate, vendor name, employee badge code, etc.). Every match also gets logged to Helix as an OCR Match event so you have an audit trail of who/what got let in.",
   "summary": "Motion webhook \u2192 Gemini OCR (JSON) \u2192 condition \u2192 unlock door + Helix log",
   "default_name": "OCR-triggered door unlock",

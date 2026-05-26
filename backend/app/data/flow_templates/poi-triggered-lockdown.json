@@ -1,6 +1,7 @@
 {
   "id": "poi-triggered-lockdown",
   "name": "POI-triggered lockdown / scenario",
+  "tagline": "🚨 Person-of-interest spotted → fire a Command scenario or lock a specific door.",
   "description": "When a Verkada person-of-interest detection fires, automatically lock down doors. Pick either path on first edit: swap the action for **Verkada: Activate Access scenario** to fire a configured Command scenario (Lockdown / Shelter / Evacuate), or keep **verkada_api_call** and point it at a specific door-lockdown endpoint from the API catalog for a single-door action.",
   "summary": "POI webhook \u2192 activate scenario OR call a lockdown endpoint",
   "default_name": "POI-triggered lockdown / scenario",

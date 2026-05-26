@@ -269,10 +269,30 @@ function FlowTemplatesPanel() {
                     ))}
                   </div>
                 )}
-                {tpl.description && (
-                  <div className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                    {tpl.description}
+                {/* Tagline is the snappy one-liner you can read at a
+                    glance. The long-form description is still here for
+                    operators who want the full story, but it lives
+                    behind a "Details" disclosure so the card stays
+                    scannable on a demo / video. Falls back to
+                    description when no tagline was authored. */}
+                {tpl.tagline ? (
+                  <div className="text-sm text-slate-200 mt-2 leading-snug">
+                    {tpl.tagline}
                   </div>
+                ) : (
+                  tpl.description && (
+                    <div className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                      {tpl.description}
+                    </div>
+                  )
+                )}
+                {tpl.tagline && tpl.description && tpl.description !== tpl.tagline && (
+                  <details className="mt-1.5 text-[11px] text-slate-400">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-300 select-none">
+                      Details
+                    </summary>
+                    <div className="mt-1 leading-relaxed">{tpl.description}</div>
+                  </details>
                 )}
                 {tpl.summary_steps && tpl.summary_steps.length > 0 ? (
                   <div

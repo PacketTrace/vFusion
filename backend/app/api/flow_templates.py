@@ -107,6 +107,11 @@ async def list_flow_templates(
                 # back-compat with anything still reading the old shape.
                 "category": tpl.get("category") or (tpl.get("tags") or [None])[0],
                 "tags": _normalize_tags(tpl.get("tags"), tpl.get("category")),
+                # Short one-liner shown on the template card. Falls
+                # back to the first sentence of the long description
+                # when the JSON doesn't declare a tagline — keeps
+                # back-compat for any template still on the old shape.
+                "tagline": tpl.get("tagline") or _first_sentence(tpl.get("description")),
                 "description": tpl.get("description"),
                 "summary": tpl.get("summary"),
                 "summary_steps": _summary_steps(flow),
@@ -131,6 +136,7 @@ async def list_flow_templates(
                 "name": row.name,
                 "category": row.category,
                 "tags": user_tags,
+                "tagline": _first_sentence(row.description),
                 "description": row.description,
                 "summary": row.summary,
                 "summary_steps": _summary_steps(row.flow or {}),
@@ -140,6 +146,30 @@ async def list_flow_templates(
             }
         )
     return out
+
+
+def _first_sentence(text: str | None) -> str | None:
+    """Best-effort one-liner extracted from a longer description.
+
+    Used as a fallback ``tagline`` for older templates that haven't
+    declared one yet — picks everything up to the first sentence
+    terminator, capped at ~120 chars so cards stay scannable. Returns
+    None when the input is empty so the card layer can decide what to
+    render in the absence of a snappy summary.
+    """
+    if not text:
+        return None
+    stripped = text.strip()
+    if not stripped:
+        return None
+    for sep in (". ", "! ", "? ", "\n"):
+        idx = stripped.find(sep)
+        if idx > 0:
+            stripped = stripped[: idx + 1].rstrip()
+            break
+    if len(stripped) > 120:
+        stripped = stripped[:117].rstrip() + "…"
+    return stripped
 
 
 def _summary_steps(flow: dict[str, Any]) -> list[dict[str, Any]]:

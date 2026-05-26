@@ -1,6 +1,7 @@
 {
   "id": "door-obstruction-check",
   "name": "Door obstruction check",
+  "tagline": "🚪 Catch boxes, pallets, and clutter blocking doors before fire-marshal does.",
   "description": "Scheduled sweep that checks whether a door is blocked by something it shouldn't be \u2014 boxes, pallets, hand trucks, equipment, chairs. People walking through or standing nearby don't count (they're transient). Gemini looks at a door-facing camera, judges if the doorway is impeded, and posts a Helix event when something needs to move. Useful for warehouses, server rooms, fire-egress audits, and any high-traffic door where physical blockage is a safety / compliance issue.",
   "summary": "Schedule -> Gemini still-image (JSON) -> condition -> Helix \ud83d\udeaa Door Obstruction event",
   "default_name": "Door obstruction check",

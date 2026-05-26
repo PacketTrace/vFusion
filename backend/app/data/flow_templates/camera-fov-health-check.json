@@ -1,6 +1,7 @@
 {
   "id": "camera-fov-health-check",
   "name": "Camera FOV health check",
+  "tagline": "🩺 Daily camera sanity check. Catches blurry, blocked, or mis-aimed feeds before anyone notices.",
   "description": "Daily sanity check that a camera is actually doing its job. Pulls a still from one camera, asks Gemini whether the view is impaired (obstructed, blurry, mis-aimed at a wall, dirty lens) and posts a Helix event whenever something looks wrong so maintenance can investigate. Pick the camera and adjust the schedule before enabling. Clone the flow per camera for coverage of more than one.",
   "summary": "Daily schedule \u2192 Gemini still-image (JSON) \u2192 condition \u2192 Helix event when impaired",
   "default_name": "Camera FOV health check",

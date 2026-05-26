@@ -1,6 +1,7 @@
 {
   "id": "hourly-shelf-stock-check",
   "name": "Hourly shelf-stock check",
+  "tagline": "📦 Hourly retail shelf check. Alerts floor staff when stock drops.",
   "description": "No webhook source \u2014 run on a schedule. Every hour, pull a still frame from a retail camera, ask Gemini how full the shelf or rack is, and post the percentage to Helix so Verkada Command can alert floor staff when stock drops.",
   "summary": "Hourly schedule \u2192 Gemini still-image analyze (JSON) \u2192 Helix event with Stock Level",
   "default_name": "Hourly shelf-stock check",

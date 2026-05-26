@@ -204,6 +204,11 @@ export interface FlowTemplateListItem {
   // template. Built-in templates declare this in their JSON; user
   // templates fall back to ``[category]`` until they're migrated.
   tags: string[];
+  // Short one-liner for the template card — the "what does this do?"
+  // tagline that reads quickly during a demo. Built-in templates
+  // declare this; user templates get it auto-derived from the first
+  // sentence of ``description`` server-side.
+  tagline: string | null;
   description: string | null;
   summary: string | null;
   /** Topo-ordered list of icon-pill steps drawn on each template card.
