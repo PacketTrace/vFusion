@@ -94,7 +94,7 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
         # JSON {animal, behavior} so the paired 🦌 Animal Watch Helix
         # type's attributes map cleanly. Picking this in BYOA yields
         # the same result as the flow would.
-        "name": "Animal species detection (JSON)",
+        "name": "Animal species detection",
         "value": (
             "Identify the animal in this security camera video and describe "
             "what it is doing. Respond with ONLY a JSON object - no prose, "
@@ -131,7 +131,7 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
     },
     {
         # Mirrors the "Hourly shelf-stock check" flow template.
-        "name": "Shelf stock check (JSON)",
+        "name": "Shelf stock check",
         "value": (
             "Estimate how full the shelf, display, or clothing rack in this "
             "image is on a scale of 0-100, where 100 is fully stocked and 0 "
@@ -168,7 +168,7 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
         # Mirrors the "OCR-triggered door unlock" flow template — JSON
         # output with text + has_text so a condition can branch on
         # whether anything was read.
-        "name": "OCR — extract visible text (JSON)",
+        "name": "OCR — extract visible text",
         "value": (
             "Read every piece of legible text, signage, and license plates "
             "visible in this security camera frame.\n\n"
@@ -207,7 +207,7 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
         # freeform prose. Tuned to skip legit-but-boring scenes
         # (night IR, empty hallways, privacy masks) so it only fires
         # for real maintenance work.
-        "name": "Camera FOV health check (JSON)",
+        "name": "Camera FOV health check",
         "value": (
             "You are auditing a security camera frame for image-quality / "
             "mounting issues. Decide whether this camera appears to be doing "
@@ -274,7 +274,7 @@ PROMPT_TEMPLATES: list[dict[str, Any]] = [
         # surfaced here so an operator running BYOA against a doorway
         # camera can pick it from the dropdown. People walking through
         # are intentionally not flagged — they're transient.
-        "name": "Door obstruction check (JSON)",
+        "name": "Door obstruction check",
         "value": (
             "You are checking whether a door visible in this security "
             "camera frame is BLOCKED by a physical object that shouldn't "

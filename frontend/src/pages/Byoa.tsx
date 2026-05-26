@@ -71,8 +71,13 @@ const GEMINI_MODELS: ModelChoice[] = [
 ];
 
 
-const DEFAULT_PROMPT =
-  "Describe only what is clearly visible in this security camera footage. If the scene is dark or unclear, describe what you can see including that it is dark. Do not invent or imagine details that are not visible. Response is capped at 198–199 chars.";
+// Starting prompt is empty so the textarea reads as a clean
+// invitation ("write your own analytic"). The old auto-filled
+// safety-description prompt has been demoted to a placeholder
+// example so operators see *one* concrete prompt without having
+// to clear it before typing their own.
+const DEFAULT_PROMPT = "";
+const PROMPT_PLACEHOLDER = "Do you see a spill on the ground?";
 
 
 export default function Byoa() {
@@ -670,9 +675,10 @@ export default function Byoa() {
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            placeholder={PROMPT_PLACEHOLDER}
             rows={6}
             spellCheck={false}
-            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm placeholder:text-slate-500 placeholder:italic"
           />
         </Field>
 
