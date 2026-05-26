@@ -656,8 +656,13 @@ function FlowEditorInner() {
     const sourceNode = nodes.find((n) => n.id === e.source);
     const targetNode = nodes.find((n) => n.id === e.target);
     const isCondition = sourceNode?.kind === "condition";
+    // Brighter resting stroke than the old slate-600 — the canvas
+    // edges now have a soft sky glow (see index.css), and a too-dim
+    // base color washed the glow out into noise. ``#64748b``
+    // (slate-500) keeps the unbranched edge readable as "neutral
+    // connection" while still picking up the halo.
     const branchColor =
-      e.branch === "true" ? "#34d399" : e.branch === "false" ? "#fb7185" : "#475569";
+      e.branch === "true" ? "#34d399" : e.branch === "false" ? "#fb7185" : "#64748b";
     // Run-state edge styling: when the target step is currently running,
     // pull the edge forward with a brighter stroke + thicker line so the
     // viewer's eye follows where the action is. Completed-to-completed
@@ -706,7 +711,7 @@ function FlowEditorInner() {
     .filter((n) => !edges.some((e) => e.target === n.id))
     .map((n) => {
       const tgtStatus = stepStatusByName[n.name];
-      let stroke = "#475569";
+      let stroke = "#64748b";
       let strokeWidth = 1.5;
       if (tgtStatus === "running") {
         stroke = "#38bdf8";
