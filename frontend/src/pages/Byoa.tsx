@@ -674,22 +674,48 @@ export default function Byoa() {
                     ))}
                   </select>
                 </Field>
-                <button
-                  type="button"
-                  onClick={() => setCreatingHelixType(true)}
-                  disabled={!verkadaConnId}
-                  title={
-                    pickedTemplate?.helix_event_type
-                      ? `Create the ${pickedTemplate.helix_event_type.name} type on this Verkada org (schema pre-filled from the paired prompt).`
-                      : "Create a new Helix event type on this Verkada org."
-                  }
-                  className="mt-2 inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded border border-emerald-700/60 bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <span aria-hidden>+</span>
-                  {pickedTemplate?.helix_event_type
-                    ? `Create "${pickedTemplate.helix_event_type.name}" in Verkada`
-                    : "New Helix event type"}
-                </button>
+                {(() => {
+                  // Only surface the create affordance when the paired
+                  // prompt's type isn't already in the synced list (or
+                  // when there's no paired prompt and the operator is
+                  // free-styling). Matching is by uid first, then by
+                  // name (case-insensitive) — uid wins because the
+                  // template ships with one, but legacy types in older
+                  // orgs sometimes only line up by name.
+                  const synced = helixTypes.data ?? [];
+                  const targetUid =
+                    pickedTemplate?.helix_event_type?.event_type_uid ?? "";
+                  const targetName =
+                    pickedTemplate?.helix_event_type?.name ?? "";
+                  const exists =
+                    !!pickedTemplate?.helix_event_type &&
+                    synced.some(
+                      (et) =>
+                        (targetUid && et.event_type_uid === targetUid) ||
+                        (targetName &&
+                          (et.name ?? "").toLowerCase() ===
+                            targetName.toLowerCase()),
+                    );
+                  if (exists) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setCreatingHelixType(true)}
+                      disabled={!verkadaConnId}
+                      title={
+                        pickedTemplate?.helix_event_type
+                          ? `Create the ${pickedTemplate.helix_event_type.name} type on this Verkada org (schema pre-filled from the paired prompt).`
+                          : "Create a new Helix event type on this Verkada org."
+                      }
+                      className="mt-2 inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded border border-emerald-700/60 bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span aria-hidden>+</span>
+                      {pickedTemplate?.helix_event_type
+                        ? `Create "${pickedTemplate.helix_event_type.name}" in Verkada`
+                        : "New Helix event type"}
+                    </button>
+                  );
+                })()}
               </div>
               {pickedTemplate?.helix_attribute_mapping ? (
                 // Paired prompt — fields fill from the multi-attribute
