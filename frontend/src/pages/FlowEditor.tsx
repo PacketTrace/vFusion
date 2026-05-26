@@ -6,6 +6,7 @@ import {
   Connection as RFConnection,
   Controls,
   Edge,
+  MarkerType,
   Node,
   NodeChange,
   ReactFlow,
@@ -700,6 +701,17 @@ function FlowEditorInner() {
       source: e.source,
       target: e.target,
       sourceHandle: isCondition ? e.branch : undefined,
+      // Arrowhead colored to match the stroke so true/false /
+      // run-state coloring carries through to the tip. Without
+      // this, the canvas reads as "lines" instead of "arrows" and
+      // direction has to be inferred from layout — which gets
+      // confusing on flows with branches that loop sideways.
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: stroke,
+        width: 18,
+        height: 18,
+      },
       data: {
         stroke,
         strokeWidth,
@@ -732,6 +744,12 @@ function FlowEditorInner() {
         source: TRIGGER_ID,
         target: n.id,
         selectable: false,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: stroke,
+          width: 18,
+          height: 18,
+        },
         data: { stroke, strokeWidth },
       };
     });
