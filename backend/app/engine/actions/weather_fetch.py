@@ -60,8 +60,13 @@ SCHEMA: dict[str, Any] = {
             "name": "zip",
             "label": "Zip code (US)",
             "type": "text",
-            "required": False,
-            "help": "5-digit US zip — e.g. 98404. Easiest path for most operators. Leave blank if you'd rather use lat/lon below.",
+            # Marked required so the needs-config badge prompts for it
+            # — zip is the 99% path. Power users who'd rather use
+            # lat/lon fill the advanced fields below; the runtime
+            # validation accepts "zip OR (lat+lon)" so filling lat/lon
+            # still works even though the badge nags for a zip.
+            "required": True,
+            "help": "5-digit US zip — e.g. 98404. The easy path. Power users can leave this blank and fill lat/lon under Advanced instead.",
         },
         {
             "name": "country",
@@ -76,13 +81,15 @@ SCHEMA: dict[str, Any] = {
             "label": "Latitude",
             "type": "text",
             "required": False,
-            "help": "Use lat/lon when a zip isn't precise enough (e.g. a specific yard or job site). Either fill both lat + lon, or fill the zip above — don't need both.",
+            "group": "advanced",
+            "help": "Use lat/lon when a zip isn't precise enough (e.g. a specific yard or job site). Fill both lat + lon, and leave the zip blank.",
         },
         {
             "name": "longitude",
             "label": "Longitude",
             "type": "text",
             "required": False,
+            "group": "advanced",
             "help": "Paired with latitude. Both must be set if you're not using zip.",
         },
         {

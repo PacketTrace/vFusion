@@ -407,49 +407,61 @@ async def _rebind_connections(
     session: AsyncSession,
     verkada_override: str | None = None,
 ) -> list[dict[str, Any]]:
-    """For each null ``connection_id`` / ``gemini_connection_id`` slot,
-    pre-fill it.
+    """Pre-fill every empty ``connection_ref`` slot with a connection of
+    the *matching type*.
 
-    Verkada slots use ``verkada_override`` when supplied (the
-    connection the operator picked in the bootstrap modal). Without
-    an override we fall back to the legacy "exactly one matching
-    connection" heuristic — multiple Verkada connections + no
-    override leaves the slot null and the operator picks by hand.
+    This is spec-driven: for each node we look up its action spec and
+    find the fields declared as ``connection_ref``, then fill each null
+    one with a connection whose ``type`` matches the field's
+    ``connection_type`` (gemini, verkada, openweathermap, …).
 
-    Gemini slots use the legacy heuristic only; the bootstrap modal
-    is Helix-scoped so it doesn't ask about Gemini.
+    Earlier this blindly stuffed the single Verkada connection into
+    *any* field literally named ``connection_id`` — which broke
+    weather_fetch, whose ``connection_id`` is an OpenWeatherMap slot.
+    A Verkada connection landed in it and the run died with
+    "weather_fetch needs an openweathermap connection, got 'verkada'".
+
+    Rules per type:
+      * Verkada uses ``verkada_override`` when supplied (the bootstrap
+        modal's pick), else the "exactly one verkada connection"
+        heuristic.
+      * Every other type (gemini, openweathermap, …) uses the
+        "exactly one connection of that type" heuristic. Zero or
+        multiple → leave null, operator picks in the editor.
     """
-    verkada_id: str | None = None
-    if verkada_override:
-        verkada_id = verkada_override
-    else:
-        verkada = (
-            await session.execute(
-                select(Connection).where(Connection.type == "verkada")
-            )
-        ).scalars().all()
-        verkada_id = str(verkada[0].id) if len(verkada) == 1 else None
-    gemini = (
-        await session.execute(
-            select(Connection).where(Connection.type == "gemini")
-        )
-    ).scalars().all()
-    gemini_id = str(gemini[0].id) if len(gemini) == 1 else None
-    if not verkada_id and not gemini_id:
-        return nodes
+    from app.engine.actions import ACTIONS
+
+    # Build type -> connection-id map. Single-of-type wins; verkada
+    # honors the override first.
+    all_conns = (await session.execute(select(Connection))).scalars().all()
+    by_type: dict[str, list[Connection]] = {}
+    for c in all_conns:
+        by_type.setdefault(c.type, []).append(c)
+
+    def _id_for_type(conn_type: str) -> str | None:
+        if conn_type == "verkada" and verkada_override:
+            return verkada_override
+        matches = by_type.get(conn_type, [])
+        return str(matches[0].id) if len(matches) == 1 else None
 
     out: list[dict[str, Any]] = []
     for n in nodes:
         n = dict(n)
         cfg = dict(n.get("config") or {})
-        if verkada_id and cfg.get("connection_id") is None and "connection_id" in cfg:
-            cfg["connection_id"] = verkada_id
-        if (
-            gemini_id
-            and cfg.get("gemini_connection_id") is None
-            and "gemini_connection_id" in cfg
-        ):
-            cfg["gemini_connection_id"] = gemini_id
+        spec = ACTIONS.get(n.get("action_type") or "")
+        if spec is not None:
+            for field in spec.schema.get("fields", []):
+                if field.get("type") != "connection_ref":
+                    continue
+                fname = field.get("name")
+                if not fname or fname not in cfg or cfg.get(fname) is not None:
+                    continue
+                conn_type = field.get("connection_type")
+                if not conn_type:
+                    continue
+                resolved = _id_for_type(conn_type)
+                if resolved:
+                    cfg[fname] = resolved
         n["config"] = cfg
         out.append(n)
     return out
