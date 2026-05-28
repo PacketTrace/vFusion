@@ -62,14 +62,12 @@ async def run(
     region = secret.get("region") or None
 
     # Surface the exact request in the run log BEFORE sending — same
-    # debugging affordance the Helix action has. Lets you see what
-    # scenario_id actually went over the wire even when the call 403s.
-    body = {"scenario_id": scenario_id}
+    # debugging affordance the Helix action has. The scenario_id rides
+    # in the URL path (not a body), so log the resolved path.
+    path = f"/access/v1/scenarios/{scenario_id}/activate"
     progress = ctx.get("_progress")
     if progress:
-        await progress.log(
-            "POST /access/v1/scenario/activate → " + json.dumps(body, default=str)
-        )
+        await progress.log(f"POST {path} (empty body)")
 
     client = VerkadaClient(api_key=api_key, base_url=region)
     result = await client.activate_scenario(scenario_id)
@@ -81,8 +79,6 @@ async def run(
     return {
         "action": "verkada_activate_scenario",
         "scenario_id": scenario_id,
-        # Echo the request body so the Runs page Output → Details has it
-        # persistently, not just transiently in the log panel.
-        "request_body": body,
+        "request_path": path,
         "verkada_response": result,
     }

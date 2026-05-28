@@ -60,12 +60,10 @@ async def run(
         )
     region = secret.get("region") or None
 
-    body = {"scenario_id": scenario_id}
+    path = f"/access/v1/scenarios/{scenario_id}/deactivate"
     progress = ctx.get("_progress")
     if progress:
-        await progress.log(
-            "POST /access/v1/scenario/release → " + json.dumps(body, default=str)
-        )
+        await progress.log(f"POST {path} (empty body)")
 
     client = VerkadaClient(api_key=api_key, base_url=region)
     result = await client.release_scenario(scenario_id)
@@ -77,6 +75,6 @@ async def run(
     return {
         "action": "verkada_release_scenario",
         "scenario_id": scenario_id,
-        "request_body": body,
+        "request_path": path,
         "verkada_response": result,
     }

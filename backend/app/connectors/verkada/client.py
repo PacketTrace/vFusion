@@ -276,14 +276,18 @@ class VerkadaClient:
     async def activate_scenario(self, scenario_id: str) -> dict[str, Any]:
         """Activate an Access scenario by id.
 
-        Endpoint shape mirrors door admin_unlock: singular noun + verb,
-        scenario_id in the request body. The Verkada docs page is
-        ``postaccessscenarioactivateviewv1``; if the live path differs
-        we'll see it in the error and adjust.
+        Live path (confirmed against the real API): scenario_id lives in
+        the URL path under the *plural* ``scenarios`` collection, and the
+        body is empty:
+
+            POST /access/v1/scenarios/{scenario_id}/activate
+
+        The earlier singular ``/scenario/activate`` with id-in-body
+        404'd at the gateway, which Verkada surfaces as a misleading
+        403 "Insufficient permissions" rather than a 404.
         """
-        result = await self._post(
-            "/access/v1/scenario/activate", {"scenario_id": scenario_id}
-        )
+        path = f"/access/v1/scenarios/{scenario_id}/activate"
+        result = await self.request("POST", path)
         if result["status_code"] >= 400:
             raise VerkadaApiError(
                 f"activate_scenario failed: status={result['status_code']} "
@@ -292,10 +296,14 @@ class VerkadaClient:
         return result
 
     async def release_scenario(self, scenario_id: str) -> dict[str, Any]:
-        """Release (deactivate) a previously activated Access scenario."""
-        result = await self._post(
-            "/access/v1/scenario/release", {"scenario_id": scenario_id}
-        )
+        """Deactivate a previously activated Access scenario.
+
+        Mirrors activate — plural collection, id in the path, empty
+        body. Verb is ``deactivate`` (Verkada's pairing for
+        ``activate``).
+        """
+        path = f"/access/v1/scenarios/{scenario_id}/deactivate"
+        result = await self.request("POST", path)
         if result["status_code"] >= 400:
             raise VerkadaApiError(
                 f"release_scenario failed: status={result['status_code']} "
