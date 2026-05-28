@@ -10,7 +10,7 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 
 ## Features
 
-- 📥 **Webhook inbox** — catch any Verkada webhook at `/hooks/*`, auto-classify into family (camera / access / lpr / sensor / intercom), auto-detect new orgs on first sight
+- 📥 **Webhook Explorer** — catch any Verkada webhook at `/hooks/*`, auto-classify into family (camera / access / lpr / sensor / intercom), auto-detect new orgs on first sight
 - 🎨 **Visual flow editor** — drag-and-drop canvas (React Flow) for event-driven automations. Conditions, branches, per-step ▶ Run button for testing
 - 🎥 **Gemini video analysis** — pull a historical clip from any Verkada camera at trigger time, send to Gemini (2.5 / 3.x Flash or Pro), get AI summary back. Or analyze a single live frame for ~10× cost savings
 - 🚪 **Verkada actions** — unlock doors, activate/release Access scenarios (Lockdown / Evacuate / Shelter), post Helix events (schema-aware attribute validation), or call any cataloged endpoint generically
@@ -19,7 +19,7 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 - ⏰ **Triggers** — Verkada webhooks + scheduled jobs (interval / daily / weekly)
 - 🌦️ **Beyond Verkada + Gemini** — pluggable connections (e.g. OpenWeatherMap) let a scheduled flow pull external data and post it to Helix too
 - 🧪 **Workbench** — one-shot Gemini test page. Pick a camera, write a prompt, optionally chain a Helix post — without building a full flow first. "Run it back" to rehydrate any past test
-- 📊 **Stats & cost** — ingest counters (24h / 7d / 30d), top event types with inbox drill-down, Gemini spend tracking per model, real-time server load (CPU / memory / disk)
+- 📊 **Stats & cost** — ingest counters (24h / 7d / 30d), top event types with Webhook Explorer drill-down, Gemini spend tracking per model, real-time server load (CPU / memory / disk)
 - 🌍 **Public URLs built-in** — two deploy modes: quick mode (free TryCloudflare URL, zero Cloudflare setup) and lab mode (named tunnel on your own domain). URL auto-displayed in the UI banner
 - 🔐 **Secrets at rest** — Fernet encryption for stored API keys + signing secrets, HMAC webhook signature verification, sensitive headers redacted before persistence
 
@@ -119,7 +119,7 @@ For trying the full Verkada → webhook → flow loop without configuring a doma
 docker compose --profile quick up --build -d
 ```
 
-First build takes ~2–3 min (image pulls + npm install + alembic migrations). Subsequent starts are seconds. Then open **http://localhost:15173** — the inbox banner shows your trycloudflare URL within ~10 seconds.
+First build takes ~2–3 min (image pulls + npm install + alembic migrations). Subsequent starts are seconds. Then open **http://localhost:15173** — the Webhook Explorer banner shows your trycloudflare URL within ~10 seconds.
 
 ### 2. Wire it into Verkada Command
 
@@ -133,7 +133,7 @@ Open **http://localhost:15173**. On first run you'll be asked to set an **admin 
    - **Save**
 3. **In Verkada Command** → click **Send test webhook**.
 
-The dashboard auto-unlocks the moment the real webhook arrives — vFusion auto-detects the org and creates a Connection for it. In the inbox, the event should show a green **✓ verified** badge. To finish, head to **Connections**, open the auto-created Verkada org, and paste in your **Verkada API key** so the action steps can act on cameras, doors, and Helix.
+The dashboard auto-unlocks the moment the real webhook arrives — vFusion auto-detects the org and creates a Connection for it. In the Webhook Explorer, the event should show a green **✓ verified** badge. To finish, head to **Connections**, open the auto-created Verkada org, and paste in your **Verkada API key** so the action steps can act on cameras, doors, and Helix.
 
 ### What's exposed through the tunnel
 
@@ -198,12 +198,12 @@ Open **http://localhost:15173**. The welcome modal walks you through it — the 
 
 ### 5. Finish setup in vFusion
 
-The test webhook lands in the inbox within a couple seconds — vFusion auto-detects the org and the welcome gate dismisses. Head to **Connections**, open the auto-created Verkada org, and supply:
+The test webhook lands in the Webhook Explorer within a couple seconds — vFusion auto-detects the org and the welcome gate dismisses. Head to **Connections**, open the auto-created Verkada org, and supply:
 
 - Your **Verkada API key** — generated in Verkada Command
 - The webhook signing secret field is already populated with the value from step 1; leave it as-is
 
-Save. The test webhook in the inbox should now show a green **✓ verified** badge.
+Save. The test webhook in the Webhook Explorer should now show a green **✓ verified** badge.
 
 ---
 
@@ -215,10 +215,10 @@ vFusion handles credentials with broad permissions on real physical-security inf
 
 - **Single-user admin password.** The dashboard and admin API are gated by a password the operator sets on first run. The password is **hashed** (not encrypted — hashing is one-way) with bcrypt (cost 12, per-password salt, SHA-256 pre-digest so long passphrases aren't truncated) and stored in `app_settings`. It never appears in the UI or any API response. Sessions are HMAC-signed cookies (HttpOnly, 7-day expiry) keyed off `SECRET_KEY` in `.env` — rotating `SECRET_KEY` invalidates every existing session at once.
 - **Secrets encrypted at rest.** Stored API keys and webhook signing secrets are encrypted with [Fernet (AES-128-CBC + HMAC-SHA-256)](https://cryptography.io/en/latest/fernet/) before hitting Postgres. The encryption key auto-generates on first backend boot and persists in the `vfusion_secrets` docker volume — never committed, never exposed via the UI. If the DB leaks without the volume, the credentials inside stay opaque. (You can override the auto-generated key by setting `FERNET_KEY` in `.env` — useful for 1Password / KMS-driven deploys where the secret lives elsewhere.)
-- **Webhook authenticity via HMAC.** Every inbound webhook with a configured signing secret runs through `HMAC-SHA-256(secret, body|timestamp)` per Verkada's documented scheme, with 60-second replay tolerance and constant-time comparison. Mismatches are flagged in the inbox as **✗ bad sig**. Without a configured secret, webhooks land as `unverified` — they ingest but you can't prove they came from Verkada.
+- **Webhook authenticity via HMAC.** Every inbound webhook with a configured signing secret runs through `HMAC-SHA-256(secret, body|timestamp)` per Verkada's documented scheme, with a 5-minute replay tolerance and constant-time comparison. Mismatches are flagged in the Webhook Explorer as **✗ bad sig**. Without a configured secret, webhooks land as `unverified` — they ingest but you can't prove they came from Verkada.
 - **Public tunnel locked down by path + method.** In both quick and lab modes, the only thing reachable through the public URL is `POST /hooks/verkada`. Quick mode enforces this with a bundled Caddy reverse proxy (Caddyfile in `caddy/`). Lab mode enforces it with the Cloudflare-dashboard `hooks/*` path filter. The admin API, dashboard, and synthetic `/hooks/<slug>` paths return 404 to the public internet — and the 404 (vs 405) keeps the path itself opaque to scanners.
 - **Generated signing secrets, not user-typed.** The Connection form's **Generate** button produces 48 random bytes from `crypto.getRandomValues` (URL-safe base64, ~64 chars). No prompts that tempt users to type "password123."
-- **Sensitive request headers redacted.** `Authorization`, `Cookie`, `X-API-Key`, and `X-Verkada-Auth` are scrubbed before any request body lands in the `webhook_events` table. Inspecting an event in the inbox won't reveal another system's auth headers.
+- **Sensitive request headers redacted.** `Authorization`, `Cookie`, `X-API-Key`, and `X-Verkada-Auth` are scrubbed before any request body lands in the `webhook_events` table. Inspecting an event in the Webhook Explorer won't reveal another system's auth headers.
 - **Org auto-creation is UUID-gated.** A malformed or all-zero `org_id` won't auto-create a `Connection` row — that prevents synthetic test traffic (smoke-test curls, scanner probes) from polluting the Connections page or accidentally unlocking the onboarding gate.
 - **First-run onboarding gate.** On fresh installs the dashboard is gated behind a welcome modal until a real Verkada webhook arrives. A fully-public quick-mode URL doesn't expose configurable flows to anyone who happens to load `localhost:15173` first. The modal also has a **Skip for now** button to open the dashboard early (e.g. to explore in LAN mode) — the skip is persisted server-side, so only do it on a deploy you control.
 - **Retention windows.** Captured webhook bodies, downloaded asset images, and run history get swept on a schedule (defaults: 30 days for events, 90 for runs, 1–7 for media). Configurable in Settings → 0 means "keep forever." Reduces the blast radius of a DB compromise.
