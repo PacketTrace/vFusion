@@ -1,9 +1,9 @@
 {
   "id": "poi-triggered-lockdown",
   "name": "POI-triggered lockdown / scenario",
-  "tagline": "🚨 Person-of-interest spotted → fire a Command scenario or lock a specific door.",
-  "description": "When a Verkada person-of-interest detection fires, automatically lock down doors. Pick either path on first edit: swap the action for **Verkada: Activate Access scenario** to fire a configured Command scenario (Lockdown / Shelter / Evacuate), or keep **verkada_api_call** and point it at a specific door-lockdown endpoint from the API catalog for a single-door action.",
-  "summary": "POI webhook \u2192 activate scenario OR call a lockdown endpoint",
+  "tagline": "🚨 Person-of-interest spotted → activate a Command Access scenario (Lockdown / Shelter / Evacuate).",
+  "description": "When a Verkada person-of-interest detection fires, automatically activate a configured Command Access scenario \u2014 Lockdown, Shelter-in-place, Evacuate, etc. Pick the scenario before enabling (use Sync scenarios on the Connections page if the list is empty). For a single-door action instead of a whole scenario, swap the action to Verkada: Unlock door or a Verkada API call pointed at a door-lockdown endpoint.",
+  "summary": "POI webhook \u2192 activate Access scenario",
   "default_name": "POI-triggered lockdown / scenario",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -18,11 +18,10 @@
         "name": "lockdown",
         "label": "Lock it down",
         "kind": "action",
-        "action_type": "verkada_api_call",
+        "action_type": "verkada_activate_scenario",
         "config": {
           "connection_id": null,
-          "endpoint_id": null,
-          "params": {}
+          "scenario_id": null
         },
         "position": {
           "x": 220,
