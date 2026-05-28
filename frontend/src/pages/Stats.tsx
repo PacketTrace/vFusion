@@ -471,7 +471,7 @@ function BarList({
               <Link
                 to={linkBuilder(i)}
                 className="block hover:bg-white/5 rounded -mx-2 px-2 py-1 transition-colors"
-                title="Open these events in the Webhook Inbox"
+                title="Open these events in the Webhook Explorer"
               >
                 {body}
               </Link>

@@ -75,7 +75,7 @@ function AppShell() {
                 `${navItem} ${isActive ? navActive : navInactive}`
               }
             >
-              Webhook Inbox
+              Webhook Explorer
             </NavLink>
             <NavLink
               to="/flows"

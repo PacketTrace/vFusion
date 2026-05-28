@@ -137,7 +137,7 @@ export default function WebhookInbox() {
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Webhook Inbox</h1>
+        <h1 className="text-2xl font-semibold text-white">Webhook Explorer</h1>
         <p className="text-slate-400 text-sm mt-1">
           Every request to{" "}
           <code className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200">

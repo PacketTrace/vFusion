@@ -36,7 +36,7 @@ export default function UnrecognizedEvents() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to="/inbox" className="text-xs text-slate-500 hover:text-slate-300">
-            ← Webhook Inbox
+            ← Webhook Explorer
           </Link>
           <h1 className="text-2xl font-semibold text-white mt-1">Unrecognized variants</h1>
           <p className="text-slate-400 text-sm mt-1">

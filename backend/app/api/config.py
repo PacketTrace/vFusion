@@ -2,7 +2,7 @@
 
 Tells the frontend two things:
   1. What kind of webhook ingress is active and which URL to display
-     (Webhook Inbox banner + onboarding modal).
+     (Webhook Explorer banner + onboarding modal).
   2. Whether the install is "fresh" — i.e. needs to gate the dashboard
      behind a first-Verkada-webhook onboarding modal.
 

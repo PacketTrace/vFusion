@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     fernet_key: str = ""
     cors_origins: str = "http://localhost:5173"
     # Set by named-tunnel deploys (Cloudflare Tunnel with a custom domain).
-    # The Webhook Inbox banner displays this URL so users know what to paste
+    # The Webhook Explorer banner displays this URL so users know what to paste
     # into Verkada Command. Quick-mode deploys auto-discover instead.
     public_webhook_base: str = ""
 

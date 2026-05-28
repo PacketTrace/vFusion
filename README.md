@@ -20,7 +20,7 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 - 🌦️ **Beyond Verkada + Gemini** — pluggable connections (e.g. OpenWeatherMap) let a scheduled flow pull external data and post it to Helix too
 - 🧪 **Workbench** — one-shot Gemini test page. Pick a camera, write a prompt, optionally chain a Helix post — without building a full flow first. "Run it back" to rehydrate any past test
 - 📊 **Stats & cost** — ingest counters (24h / 7d / 30d), top event types with inbox drill-down, Gemini spend tracking per model, real-time server load (CPU / memory / disk)
-- 🌍 **Public URLs built-in** — two deploy modes: quick mode (free TryCloudflare URL, zero Cloudflare setup) and production (named tunnel on your own domain). URL auto-displayed in the UI banner
+- 🌍 **Public URLs built-in** — two deploy modes: quick mode (free TryCloudflare URL, zero Cloudflare setup) and lab mode (named tunnel on your own domain). URL auto-displayed in the UI banner
 - 🔐 **Secrets at rest** — Fernet encryption for stored API keys + signing secrets, HMAC webhook signature verification, sensitive headers redacted before persistence
 
 ## Example use cases
@@ -66,7 +66,7 @@ Line these up before you start. Docker is the only thing you install on the host
 ### Optional — needed for specific features
 
 - **A Google Gemini API key** — free to create at [aistudio.google.com](https://aistudio.google.com/). Required only for the Gemini video / still-image analysis actions and the Workbench. Flows that just post Helix events, unlock doors, or call generic API endpoints don't need it. Gemini usage is billed by Google; vFusion tracks an estimated cost.
-- **A Cloudflare account + a domain on Cloudflare** — only for **production mode** (a stable webhook URL on your own domain). **Quick mode** needs neither — it uses a free, ephemeral TryCloudflare URL.
+- **A Cloudflare account + a domain on Cloudflare** — only for **lab mode** (a stable webhook URL on your own domain). **Quick mode** needs neither — it uses a free, ephemeral TryCloudflare URL.
 - **Tailscale or a VPN** — recommended for remote admin access. The dashboard and admin API have no built-in auth, so don't expose them to the public internet.
 
 ## Two ways to run
@@ -74,7 +74,7 @@ Line these up before you start. Docker is the only thing you install on the host
 | Mode | Webhook URL | Best for |
 |---|---|---|
 | **Quick** | `https://<random>.trycloudflare.com/hooks/verkada` — changes on every restart | Testing, demos, kicking the tires. No Cloudflare account or domain needed. |
-| **Production** | `https://hooks.yourdomain.com/hooks/verkada` — stable | Always-on deploys. Requires a free Cloudflare account + a domain on Cloudflare. |
+| **Lab** | `https://hooks.yourdomain.com/hooks/verkada` — stable | Always-on deploys. Requires a free Cloudflare account + a domain on Cloudflare. |
 
 Both share the same bootstrap below. After that, pick one path.
 
@@ -82,7 +82,7 @@ Both share the same bootstrap below. After that, pick one path.
 
 ## Bootstrap (one-time, ~5 min)
 
-Same for both modes. If you're skipping ahead to Production, do these steps first.
+Same for both modes. If you're skipping ahead to Lab mode, do these steps first.
 
 ### 1. Install Docker Desktop
 
@@ -141,11 +141,11 @@ Only the exact path `POST /hooks/verkada`. A Caddy reverse proxy sits between th
 
 ### Catch
 
-The trycloudflare URL **changes every time `cloudflared` restarts**. You'd have to re-paste the new URL into Verkada Command after each restart. For something stable, see Production mode below.
+The trycloudflare URL **changes every time `cloudflared` restarts**. You'd have to re-paste the new URL into Verkada Command after each restart. For something stable, see Lab mode below.
 
 ---
 
-## Production mode — 24/7 with your own domain
+## Lab mode — 24/7 with your own domain
 
 For always-on deploys with a stable URL. Requires a free Cloudflare account + a domain on Cloudflare.
 
@@ -216,7 +216,7 @@ vFusion handles credentials with broad permissions on real physical-security inf
 - **Single-user admin password.** The dashboard and admin API are gated by a password the operator sets on first run. The password is **hashed** (not encrypted — hashing is one-way) with bcrypt (cost 12, per-password salt, SHA-256 pre-digest so long passphrases aren't truncated) and stored in `app_settings`. It never appears in the UI or any API response. Sessions are HMAC-signed cookies (HttpOnly, 7-day expiry) keyed off `SECRET_KEY` in `.env` — rotating `SECRET_KEY` invalidates every existing session at once.
 - **Secrets encrypted at rest.** Stored API keys and webhook signing secrets are encrypted with [Fernet (AES-128-CBC + HMAC-SHA-256)](https://cryptography.io/en/latest/fernet/) before hitting Postgres. The encryption key auto-generates on first backend boot and persists in the `vfusion_secrets` docker volume — never committed, never exposed via the UI. If the DB leaks without the volume, the credentials inside stay opaque. (You can override the auto-generated key by setting `FERNET_KEY` in `.env` — useful for 1Password / KMS-driven deploys where the secret lives elsewhere.)
 - **Webhook authenticity via HMAC.** Every inbound webhook with a configured signing secret runs through `HMAC-SHA-256(secret, body|timestamp)` per Verkada's documented scheme, with 60-second replay tolerance and constant-time comparison. Mismatches are flagged in the inbox as **✗ bad sig**. Without a configured secret, webhooks land as `unverified` — they ingest but you can't prove they came from Verkada.
-- **Public tunnel locked down by path + method.** In both quick and production modes, the only thing reachable through the public URL is `POST /hooks/verkada`. Quick mode enforces this with a bundled Caddy reverse proxy (Caddyfile in `caddy/`). Production mode enforces it with the Cloudflare-dashboard `hooks/*` path filter. The admin API, dashboard, and synthetic `/hooks/<slug>` paths return 404 to the public internet — and the 404 (vs 405) keeps the path itself opaque to scanners.
+- **Public tunnel locked down by path + method.** In both quick and lab modes, the only thing reachable through the public URL is `POST /hooks/verkada`. Quick mode enforces this with a bundled Caddy reverse proxy (Caddyfile in `caddy/`). Lab mode enforces it with the Cloudflare-dashboard `hooks/*` path filter. The admin API, dashboard, and synthetic `/hooks/<slug>` paths return 404 to the public internet — and the 404 (vs 405) keeps the path itself opaque to scanners.
 - **Generated signing secrets, not user-typed.** The Connection form's **Generate** button produces 48 random bytes from `crypto.getRandomValues` (URL-safe base64, ~64 chars). No prompts that tempt users to type "password123."
 - **Sensitive request headers redacted.** `Authorization`, `Cookie`, `X-API-Key`, and `X-Verkada-Auth` are scrubbed before any request body lands in the `webhook_events` table. Inspecting an event in the inbox won't reveal another system's auth headers.
 - **Org auto-creation is UUID-gated.** A malformed or all-zero `org_id` won't auto-create a `Connection` row — that prevents synthetic test traffic (smoke-test curls, scanner probes) from polluting the Connections page or accidentally unlocking the onboarding gate.

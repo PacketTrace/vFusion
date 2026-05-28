@@ -95,8 +95,8 @@ services:
       - vfusion_secrets:/app/secrets
     command: arq app.worker.WorkerSettings
 
-  # Cloudflare Tunnel — production mode. Stable URL on your own domain.
-  # Requires CF_TUNNEL_TOKEN in .env. See README "Production deploy".
+  # Cloudflare Tunnel — lab mode. Stable URL on your own domain.
+  # Requires CF_TUNNEL_TOKEN in .env. See README "Lab deploy".
   #   docker compose --profile cloudflared up -d
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -128,7 +128,7 @@ services:
   # production Verkada webhooks at this. Useful for kicking the tires
   # end-to-end without setting up DNS. The backend's /api/config endpoint
   # reads the assigned hostname from cloudflared's metrics endpoint and
-  # surfaces it in the Webhook Inbox banner.
+  # surfaces it in the Webhook Explorer banner.
   # Points at caddy-quick (path-filtered) rather than backend directly,
   # so a leaked trycloudflare URL can't be used to hit /api/*.
   #   docker compose --profile quick up -d
