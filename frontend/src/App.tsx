@@ -18,8 +18,8 @@ import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
 import Workbench from "./pages/Workbench";
 
-// Header + nav adopt the a prior demo app "BYOA" glass aesthetic so the
-// animated Vanta NET background renders through the chrome.
+// Header + nav use a glass aesthetic so the animated Vanta NET
+// background renders through the chrome.
 const navItem =
   "px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10";
 const navActive = "bg-white/15 text-white";

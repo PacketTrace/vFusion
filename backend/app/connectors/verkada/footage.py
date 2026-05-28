@@ -1,7 +1,6 @@
 """Pull historical footage out of Verkada via HLS + ffmpeg.
 
-Ported from a prior internal project's verkada_footage.py. The two
-public entry points used by flow actions are:
+The two public entry points used by flow actions are:
 
   - ``get_stream_key(api_key, org_id)`` — short-lived JWT for HLS auth.
     Cached in-process with a small TTL safety margin.

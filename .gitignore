@@ -18,3 +18,6 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Internal agent/dev handoff notes — never publish
+CONTINUE.md

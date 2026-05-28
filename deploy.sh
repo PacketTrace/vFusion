@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 # ============================================================================
-# verkadaRoute deploy script
+# vFusion deploy script
 # ============================================================================
 # Runs on the docker host. Pulls latest code from GitHub, renders .env from
 # .env.tpl using the 1Password service account token, and rebuilds + recreates
 # the stack.
 #
-# Prerequisites (already in place from another deploy / other deploys):
-#   1. `op` CLI installed
+# Prerequisites on the deploy host:
+#   1. `op` (1Password) CLI installed
 #   2. /etc/op-token exists (root:docker 0640) with a 1Password service
-#      account token scoped to the Homelab vault.
-#   3. This repo cloned at /home/docker/dockerConfig/verkadaRoute.
+#      account token scoped to the vault holding this app's secrets.
+#   3. This repo cloned somewhere on the host.
 #
-# Usage:
-#   cd /home/docker/dockerConfig/verkadaRoute
+# Usage (run from anywhere — the script locates its own directory):
 #   ./deploy.sh                 # rebuild all services
 #   ./deploy.sh backend worker  # rebuild specific services only
 # ============================================================================
 
 set -euo pipefail
 
-SERVICE_DIR="/home/docker/dockerConfig/verkadaRoute"
+# Resolve the repo root from the script's own location so this works
+# wherever the repo is cloned, with no hardcoded host path.
+SERVICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="/etc/op-token"
 ENV_FILE="${SERVICE_DIR}/.env"
 ENV_TEMPLATE="${SERVICE_DIR}/.env.tpl"

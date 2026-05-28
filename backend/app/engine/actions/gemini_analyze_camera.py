@@ -1,7 +1,7 @@
 """Action: motion event → pull MP4 from Verkada → Gemini analysis.
 
-The "easy-mode" pipeline action that mirrors a prior internal project's
-end-to-end flow: a single step that takes the Verkada + Gemini connections
+The "easy-mode" pipeline action: a single step that takes the
+Verkada + Gemini connections
 plus a camera_id + timestamp, grabs the clip, sends it to Gemini, and
 returns the text. Chain a verkada_helix_event step after this and you
 have the complete motion → AI → Helix automation in just two nodes.
