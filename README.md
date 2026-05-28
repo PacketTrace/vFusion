@@ -13,9 +13,11 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 - 📥 **Webhook inbox** — catch any Verkada webhook at `/hooks/*`, auto-classify into family (camera / access / lpr / sensor / intercom), auto-detect new orgs on first sight
 - 🎨 **Visual flow editor** — drag-and-drop canvas (React Flow) for event-driven automations. Conditions, branches, per-step ▶ Run button for testing
 - 🎥 **Gemini video analysis** — pull a historical clip from any Verkada camera at trigger time, send to Gemini (2.5 / 3.x Flash or Pro), get AI summary back. Or analyze a single live frame for ~10× cost savings
-- 🚪 **Verkada actions** — unlock doors, post Helix events (schema-aware attribute validation), or call any cataloged endpoint generically
+- 🚪 **Verkada actions** — unlock doors, activate/release Access scenarios (Lockdown / Evacuate / Shelter), post Helix events (schema-aware attribute validation), or call any cataloged endpoint generically
+- 🧩 **Starter templates** — one-click flows for the common jobs (animal/breed detection, camera-health checks, door-obstruction sweeps, shelf-stock, OCR unlock, POI lockdown, live weather), each pre-wired with its Helix event type
 - 📚 **API catalog** — auto-syncs every Verkada OpenAPI spec every 4 hours, generates structured request forms for path / query / body params on every endpoint
 - ⏰ **Triggers** — Verkada webhooks + scheduled jobs (interval / daily / weekly)
+- 🌦️ **Beyond Verkada + Gemini** — pluggable connections (e.g. OpenWeatherMap) let a scheduled flow pull external data and post it to Helix too
 - 🧪 **Workbench** — one-shot Gemini test page. Pick a camera, write a prompt, optionally chain a Helix post — without building a full flow first. "Run it back" to rehydrate any past test
 - 📊 **Stats & cost** — ingest counters (24h / 7d / 30d), top event types with inbox drill-down, Gemini spend tracking per model, real-time server load (CPU / memory / disk)
 - 🌍 **Public URLs built-in** — two deploy modes: quick mode (free TryCloudflare URL, zero Cloudflare setup) and production (named tunnel on your own domain). URL auto-displayed in the UI banner
@@ -23,14 +25,19 @@ Self-hosted, Verkada-flavored workflow automation — a visual router for webhoo
 
 ## Example use cases
 
-A few flows you can build with vFusion's core loop — **trigger → Gemini → Helix event in Verkada Command**:
+Every one of these ships as a **one-click starter template** (Templates tab) — pre-wired with a trigger, the Gemini/Verkada actions, and (where relevant) a Helix event type so the result lands in Verkada Command without extra plumbing. Pick connections, hit enable.
 
-| Use case | Trigger | What the flow does |
+| Template | Trigger | What the flow does |
 |---|---|---|
-| **Animal detection alerts** | Motion webhook from a wildlife camera | Gemini identifies the animal, posts it to Helix as `Animal`. Command alerts when `Animal` contains "bear". |
-| **Hourly shelf-stock check** | Hourly schedule | Gemini scores shelf fullness 0–100, posts to Helix as `Stock Level`. Command alerts floor staff when below 30. |
-| **POI-triggered lockdown** | Verkada POI webhook | Optional watchlist filter, then `verkada_api_call` hits the door-lockdown endpoint from the API catalog. |
-| **Delivery driver auto-unlock** | Motion webhook on a loading-dock or front-door camera | Gemini OCRs the uniform / vehicle logo (FedEx, UPS, Amazon, DHL). When the carrier matches, the flow unlocks the door for ~30s and logs `Carrier`, time, and a still snapshot to Helix. No buzzer, no shared codes. |
+| **🦌 Animal species detection** | Motion webhook (objects = animal) | Gemini returns JSON `{animal, breed, behavior}`; posts all three to a Helix "Animal Watch" event. Command alerts when `Animal` is "bear". |
+| **🩺 Camera FOV health check** | Daily schedule | Gemini judges whether a camera's view is impaired (blocked, blurry, mis-aimed); posts `Issue / Severity / Reasoning` to Helix only when something looks wrong. |
+| **🚪 Door obstruction check** | Schedule | Gemini checks a door-facing camera for boxes/pallets/clutter blocking egress (people don't count); posts `Object Type / Severity / Reasoning` to Helix. |
+| **📦 Hourly shelf-stock check** | Hourly schedule | Gemini scores shelf fullness 0–100; posts `Stock Level / Reasoning` to Helix. Command alerts floor staff when stock drops. |
+| **🔤 OCR-triggered door unlock** | Motion webhook | Gemini OCRs a plate / badge / sign; when it matches a target string, the flow unlocks the door and logs the match to Helix as an audit trail. |
+| **🚨 POI-triggered lockdown** | Verkada person-of-interest webhook | Activates a configured Command **Access scenario** (Lockdown / Shelter / Evacuate). Swap to a single-door unlock if you'd rather not fire a whole scenario. |
+| **⛅ Weather sentry** | Schedule (every 30 min) | Pulls live conditions from OpenWeatherMap and posts temp / wind / visibility / etc. to a Helix "Weather" event so ops can see conditions next to a camera and alert on hazards. |
+
+Or skip the templates entirely: the **Workbench** lets you point Gemini at any camera with a custom prompt ("Do you see a spill on the ground?") and optionally chain a Helix post — no flow required.
 
 ## Before you deploy
 
@@ -318,9 +325,9 @@ frontend/       Vite + React + Tailwind + React Flow
 
 ![Run output and trigger payload](docs/images/run-output.png)
 
-**Prompt templates** — save and reuse analysis prompts across actions and the Workbench.
+**Starter templates** — one-click flows pre-wired with a trigger, Gemini/Verkada actions, and a matching Helix event type. Filter by tag, glance at the animated flow summary, hit *Use*.
 
-![Prompt templates](docs/images/templates.png)
+![Starter templates](docs/images/templates.png)
 
 **Stats & cost** — webhook ingest counters (24h / 7d / 30d), webhooks by family, top event types, estimated Gemini spend, and real-time server load.
 
@@ -340,7 +347,7 @@ The result lands in Verkada Command as a Helix event you can search and filter:
 
 <p align="center"><img src="docs/images/helix-command-bear.png" alt="Helix event — animal detection with a push alert" width="420"></p>
 
-**Delivery / package summary** — what Gemini saw at the front door.
+**Delivery / package summary** — a custom prompt describing what Gemini saw at the front door, written straight to Helix.
 
 <p align="center"><img src="docs/images/helix-command-delivery.png" alt="Helix event — delivery" width="420"></p>
 
