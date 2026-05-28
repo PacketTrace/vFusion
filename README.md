@@ -305,29 +305,25 @@ frontend/       Vite + React + Tailwind + React Flow
 
 ## Screenshots
 
+**Starter templates** — one-click flows pre-wired with a trigger, Gemini/Verkada actions, and a matching Helix event type. Filter by tag, glance at the animated flow summary, hit *Use*.
+
+![Starter templates](docs/images/templates.png)
+
 **Visual flow editor** — a drag-and-drop canvas for event-driven automations: conditions, branches, and a per-step run button for testing.
 
 <p align="center"><img src="docs/images/flow-editor.png" alt="Visual flow editor"></p>
 
-**Webhook inbox** — every Verkada webhook captured, auto-classified into a family, and HMAC signature-verified.
+**Webhook Explorer** — every Verkada webhook captured, auto-classified into a family, and HMAC signature-verified.
 
-![Webhook inbox](docs/images/webhook-inbox.png)
+![Webhook Explorer](docs/images/webhook-inbox.png)
 
 **Workbench** — a one-shot Gemini test runner: pick a camera, write a prompt, see the result before committing it to a flow.
 
 ![Workbench](docs/images/workbench.png)
 
-**Run detail** — live phase progress, the frame Gemini saw, its summary, and an estimated cost.
+**Run detail** — live phase progress, the frame Gemini saw, the values posted to Helix, and an estimated cost.
 
 ![Run detail](docs/images/run-detail.png)
-
-**Reproducible runs** — the exact trigger payload, prompt, and model are recorded next to every result.
-
-![Run output and trigger payload](docs/images/run-output.png)
-
-**Starter templates** — one-click flows pre-wired with a trigger, Gemini/Verkada actions, and a matching Helix event type. Filter by tag, glance at the animated flow summary, hit *Use*.
-
-![Starter templates](docs/images/templates.png)
 
 **Stats & cost** — webhook ingest counters (24h / 7d / 30d), webhooks by family, top event types, estimated Gemini spend, and real-time server load.
 
@@ -335,13 +331,7 @@ frontend/       Vite + React + Tailwind + React Flow
 
 ## From analysis to Verkada Helix
 
-Gemini's analysis doesn't just sit in the vFusion dashboard. The `verkada_helix_event` action posts it straight back into Verkada Command as a searchable Helix event — attached to the camera and timestamp.
-
-**The vFusion side** — a run analyzes the frame, then posts the summary to Helix as a second step.
-
-![Run posting to Helix](docs/images/helix-post-run.png)
-
-The result lands in Verkada Command as a Helix event you can search and filter:
+Gemini's analysis doesn't just sit in the vFusion dashboard. The `verkada_helix_event` action posts it straight back into Verkada Command as a searchable Helix event — attached to the camera and timestamp. The result lands in Command as an event you can search and filter:
 
 **Animal detection** — a wildlife camera flags a "bear or coyote", and Verkada Command's notification rules fire a push alert on the Helix event vFusion posted.
 
