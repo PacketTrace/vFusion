@@ -311,7 +311,7 @@ frontend/       Vite + React + Tailwind + React Flow
 
 **Visual flow editor** — a drag-and-drop canvas for event-driven automations: conditions, branches, and a per-step run button for testing.
 
-<p align="center"><img src="docs/images/flow-editor.png" alt="Visual flow editor"></p>
+<p align="center"><img src="docs/images/flow-editor-demo.gif" alt="Visual flow editor"></p>
 
 **Webhook Explorer** — every Verkada webhook captured, auto-classified into a family, and HMAC signature-verified.
 
