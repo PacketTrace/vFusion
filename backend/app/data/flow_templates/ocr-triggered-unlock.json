@@ -16,9 +16,8 @@
         "event_type_uid": "tpl:ocr-match",
         "name": "\ud83d\udd13 OCR Match Unlock",
         "event_schema": {
-          "Match Value": "string",
           "Observed Text": "string",
-          "Door": "string"
+          "Camera": "string"
         }
       }
     ],
@@ -85,9 +84,8 @@
           "camera_id": "{{ trigger.data.camera_id }}",
           "event_type_uid": "tpl:ocr-match",
           "attributes": {
-            "Match Value": "(fill in the target value you matched on)",
             "Observed Text": "{{ steps.ocr.output.json.text }}",
-            "Door": "(fill in the door description)"
+            "Camera": "{{ trigger.data.camera_id }}"
           },
           "time_ms": "{{ trigger.data.created }}000"
         },
