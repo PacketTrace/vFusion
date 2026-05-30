@@ -107,15 +107,16 @@ That's it for setup. The encryption key (`FERNET_KEY`) generates itself on first
 
 #### Running on a server or homelab (browsing from another machine)
 
-The defaults assume the stack and your browser are on the **same** machine (`localhost`). If you'll open the dashboard from a different device — e.g. vFusion runs on a Proxmox box and you browse from your laptop — set these in `.env` to the host's LAN IP or hostname. Otherwise the dashboard's browser tries to reach the API on *your* machine and the page can't connect:
+The defaults assume the stack and your browser are on the **same** machine (`localhost`). If you'll open the dashboard from a different device — e.g. vFusion runs on a Proxmox / Raspberry Pi / NUC and you browse from your laptop — set these two in `.env` to the host's LAN IP or hostname so the browser can reach the backend:
 
 ```
-VITE_API_BASE=http://<host-ip>:18080        # where the dashboard sends API calls
-CORS_ORIGINS=http://<host-ip>:15173         # origin the backend accepts requests from
-PUBLIC_WEBHOOK_BASE=http://<host-ip>:18080  # webhook URL the UI shows you to paste
+VITE_API_BASE=http://<host-ip>:18080   # where the dashboard sends API calls
+CORS_ORIGINS=http://<host-ip>:15173    # origin the backend accepts requests from
 ```
 
-Use the same `<host-ip>` (e.g. `192.168.1.50`) for all three, then reach the dashboard at `http://<host-ip>:15173` — not `localhost`. After editing `.env`, recreate the containers (`docker compose up -d --force-recreate frontend backend`). Keep these ports on your LAN/VPN; only `POST /hooks/verkada` should face the internet.
+Use the same `<host-ip>` (e.g. `192.168.1.50`) for both, then reach the dashboard at `http://<host-ip>:15173` — not `localhost`. After editing `.env`, recreate the containers (`docker compose up -d --force-recreate frontend backend`). Keep these ports on your LAN/VPN; only `POST /hooks/verkada` should ever face the internet.
+
+> ⚠ **Don't set `PUBLIC_WEBHOOK_BASE` to your LAN IP.** That env var controls the public webhook URL the dashboard tells you to paste into Verkada Command — Verkada's cloud needs to reach it *from the internet*, so it has to be a publicly-resolvable URL. In quick mode it's auto-detected from the TryCloudflare tunnel; in lab mode set it to your named-tunnel hostname (e.g. `https://hooks.yourdomain.com`), **not** the LAN IP. Leaving it unset is fine — the UI just falls back to the host IP, which is a useful hint but not a working public URL.
 
 > ⚠ **Back up the `vfusion_secrets` volume.** It holds the master key that encrypts every stored API key and signing secret. Losing it = losing all your stored credentials. `docker run --rm -v vfusion_secrets:/src -v $PWD:/dst alpine tar czf /dst/vfusion-secrets-backup.tar.gz -C /src .` exports it to a tarball.
 
@@ -174,6 +175,8 @@ For always-on deploys with a stable URL. Requires a free Cloudflare account + a 
    - **Path**: `hooks/*` ← important: limits public exposure to webhook endpoints only
    - **Service** → **Type**: `HTTP` → **URL**: `backend:8000`
 7. **Save hostname**. Your public URL is now `https://hooks.yourdomain.com/hooks/verkada`.
+
+> ⚠ **Turn off "Bot Fight Mode" for this domain** (Cloudflare → your domain → **Security** → **Bots**). It's on by default and silently blocks Verkada's webhook senders as suspected bot traffic, so events never reach the tunnel and never land in the Webhook Explorer. If you want bot protection, leave Bot Fight Mode on but add a **WAF Skip rule** for the `/hooks/*` path so Verkada's POSTs pass through.
 
 ### 2. Add the token to `.env`
 
