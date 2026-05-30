@@ -2,7 +2,7 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -260,6 +260,23 @@ async def _enqueue_matching_flows(
     return triggered
 
 
+# Verkada only POSTs to webhooks. We still register the other verbs so
+# random GET probes (browsers, security scanners, Cloudflare health
+# checks, etc.) get a clean 204 instead of FastAPI's 405-with-Allow
+# header — but we short-circuit non-POST *before* writing to
+# webhook_events so the Webhook Explorer doesn't fill up with junk
+# "GET unknown" rows that alarm new operators.
+async def _accept_post_only(
+    request: Request,
+    slug: str,
+    session: AsyncSession,
+    background_tasks: BackgroundTasks,
+) -> Any:
+    if request.method != "POST":
+        return Response(status_code=204)
+    return await _record(request, slug, session, background_tasks)
+
+
 @router.api_route(
     "/hooks/{slug:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -269,8 +286,8 @@ async def catch_all(
     request: Request,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    return await _record(request, slug, session, background_tasks)
+) -> Any:
+    return await _accept_post_only(request, slug, session, background_tasks)
 
 
 @router.api_route("/hooks", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -278,5 +295,5 @@ async def catch_root(
     request: Request,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    return await _record(request, "", session, background_tasks)
+) -> Any:
+    return await _accept_post_only(request, "", session, background_tasks)
