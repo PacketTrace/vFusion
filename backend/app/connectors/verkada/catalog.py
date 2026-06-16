@@ -17,12 +17,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from sqlalchemy import select
 
+from app.connectors.verkada.client import normalize_base_url
 from app.db import SessionLocal
 from app.models import VerkadaApiEndpoint, VerkadaApiSpec
 
@@ -45,7 +47,16 @@ DEFAULT_NAMESPACES: list[str] = [
 ]
 
 
-SPEC_URL_TEMPLATE = "https://api.verkada.com/admin/{namespace}/openapi.json"
+# Region-aware: defaults to the US host, but EU operators can override by
+# setting VERKADA_API_BASE in .env (e.g. https://api.eu.verkada.com).
+# The OpenAPI specs are served per-region; an EU operator using a US base
+# may see specs that don't perfectly match the endpoints their key can
+# actually call. Catalog crawl is global (not per-connection) so this is
+# a single env-var knob rather than a per-Connection lookup.
+SPEC_URL_TEMPLATE = (
+    f"{normalize_base_url(os.environ.get('VERKADA_API_BASE'))}"
+    "/admin/{namespace}/openapi.json"
+)
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 

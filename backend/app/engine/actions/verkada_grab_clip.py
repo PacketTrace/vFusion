@@ -95,6 +95,8 @@ async def run(
     secret = decrypt_secret(connection.encrypted_secret)
     api_key = secret.get("api_key")
     org_id = secret.get("org_id") or connection.external_id
+    # Honor the connection's region override (e.g. EU orgs).
+    region = secret.get("region") or None
     if not api_key:
         raise ValueError("Verkada connection has no api_key set")
     if not org_id:
@@ -129,6 +131,7 @@ async def run(
             start_epoch=start_epoch,
             duration_sec=duration_sec,
             out_path=out_path,
+            base_url=region,
         )
     except FootageError as e:
         raise ValueError(str(e)) from e

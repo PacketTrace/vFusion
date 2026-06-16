@@ -14,6 +14,33 @@ import httpx
 DEFAULT_BASE_URL = "https://api.verkada.com"
 
 
+def normalize_base_url(raw: str | None) -> str:
+    """Return a well-formed Verkada API base URL.
+
+    The Verkada connection form's ``region`` field is freeform text, which
+    historically meant users could paste any of:
+
+      - ``https://api.eu.verkada.com``  (correct)
+      - ``api.eu.verkada.com``          (no scheme — httpx rejects this)
+      - ``https://api.eu.verkada.com/`` (trailing slash)
+      - empty / None                    (use US default)
+
+    All of those should "just work" — this normalizer adds the scheme,
+    strips trailing slashes, and falls back to the default when blank.
+    Callers (``VerkadaClient.__init__`` and the footage / catalog modules)
+    use this so a regional hostname pasted from Verkada's docs works
+    whether or not the user remembered the ``https://`` prefix.
+    """
+    if raw is None:
+        return DEFAULT_BASE_URL
+    s = raw.strip()
+    if not s:
+        return DEFAULT_BASE_URL
+    if not s.lower().startswith(("http://", "https://")):
+        s = f"https://{s}"
+    return s.rstrip("/")
+
+
 class VerkadaApiError(Exception):
     """Raised on non-2xx responses from Verkada. Carries the HTTP status
     and the parsed body so callers can branch on auth/permission failures
@@ -59,7 +86,11 @@ def _build_error(method: str, path: str, res: httpx.Response) -> VerkadaApiError
 class VerkadaClient:
     def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 15.0):
         self.api_key = api_key
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        # normalize_base_url accepts bare hostnames + adds the scheme +
+        # strips trailing slashes, so an EU operator pasting
+        # "api.eu.verkada.com" into the connection form's region field
+        # works the same as "https://api.eu.verkada.com".
+        self.base_url = normalize_base_url(base_url)
         self.timeout = timeout
         self._token: str | None = None
 

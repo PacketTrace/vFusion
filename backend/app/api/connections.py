@@ -65,7 +65,7 @@ CONNECTION_TYPES: dict[str, dict[str, Any]] = {
             {"name": "org_id", "label": "Verkada Org ID", "type": "text", "required": True, "help": f"UUID, e.g. fe46589d-cb2a-4bee-… Auto-filled when {BRAND_NAME} detects a new org from an incoming webhook."},
             {"name": "api_key", "label": "API key", "type": "secret", "required": False, "help": "Needed for action nodes (door unlock, post Helix events, etc.). You can save the form without it and come back later — the connection just won't be \"setup_complete\" until you add it. The pending-setup banner sticks around as a reminder."},
             {"name": "webhook_signing_secret", "label": "Webhook signing secret", "type": "secret", "required": False, "generate": True, "help": "Optional but recommended. Click Generate, copy the value, and paste it into Verkada Command → Webhooks → Shared secret. The same value lives on both sides — it's just an HMAC key that lets us verify each webhook came from your Verkada org."},
-            {"name": "region", "label": "API region", "type": "text", "required": False, "help": "e.g. api.verkada.com (leave blank for default)"},
+            {"name": "region", "label": "API region (EU / other non-US orgs)", "type": "text", "required": False, "help": "Leave blank for US orgs (default: https://api.verkada.com). For EU orgs, set this to https://api.eu.verkada.com — otherwise camera streaming, footage, doors, and Helix calls will all fail with cryptic 4xx errors. The hostname alone (api.eu.verkada.com) is accepted too; https:// is added automatically. See https://apidocs.verkada.com/reference/service-regions for other regions."},
         ],
     }
 }
@@ -256,6 +256,10 @@ async def test_streaming(
         raise HTTPException(
             status_code=400, detail="connection has no org_id"
         )
+    # Honor the connection's region (e.g. https://api.eu.verkada.com) when
+    # set — the streaming test must hit the same region as the org's
+    # actual API or the token + m3u8 won't authenticate.
+    region = secret.get("region") or None
 
     def _clean(e: FootageError) -> str:
         # FootageError messages often include URL-shaped detail; collapse
@@ -283,6 +287,7 @@ async def test_streaming(
             camera_id=cam.camera_id,
             out_path=live_path,
             timeout_sec=30,
+            base_url=region,
         )
         result["live"] = {"ok": True}
     except FootageError as e:
@@ -304,6 +309,7 @@ async def test_streaming(
             out_path=hist_path,
             buffer_sec=0.0,
             timeout_sec=45,
+            base_url=region,
         )
         result["historical"] = {"ok": True}
     except FootageError as e:

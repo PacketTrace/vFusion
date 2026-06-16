@@ -219,6 +219,10 @@ async def run(
     secret = decrypt_secret(connection.encrypted_secret)
     api_key = secret.get("api_key")
     org_id = secret.get("org_id") or connection.external_id
+    # Honor the connection's region override (e.g. EU orgs); footage.py
+    # threads this through to both the stream-key fetch and the m3u8 URL,
+    # which must both hit the same regional host as the org's API.
+    region = secret.get("region") or None
     if not api_key:
         raise ValueError("Verkada connection has no api_key set")
     if not org_id:
@@ -319,6 +323,7 @@ async def run(
             duration_sec=grab_duration,
             out_path=clip_path,
             progress=progress,
+            base_url=region,
         )
     except FootageError as e:
         if progress:

@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx
 
+from app.connectors.verkada.client import normalize_base_url
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +38,28 @@ class FootageError(RuntimeError):
     pass
 
 
-# Module-level cache keyed by (api_key, org_id) — refreshed lazily.
-_stream_keys: dict[tuple[str, str], tuple[str, float]] = {}
+# Module-level cache keyed by (api_key, org_id, base_url) — refreshed lazily.
+# Including base_url in the key prevents a token minted against the US region
+# from being served back to an EU caller (or vice versa) when a single host
+# happens to manage multiple orgs in different regions.
+_stream_keys: dict[tuple[str, str, str], tuple[str, float]] = {}
 
 
-async def get_stream_key(api_key: str, org_id: str, force_refresh: bool = False) -> str:
-    """Return a cached HLS stream JWT, refreshing when stale."""
-    cache_key = (api_key, org_id)
+async def get_stream_key(
+    api_key: str,
+    org_id: str,
+    force_refresh: bool = False,
+    base_url: str | None = None,
+) -> str:
+    """Return a cached HLS stream JWT, refreshing when stale.
+
+    ``base_url`` defaults to the US region (``api.verkada.com``); pass the
+    connection's ``region`` value (e.g. ``https://api.eu.verkada.com``)
+    for EU orgs. The token endpoint is region-specific — a token minted
+    on the US host will not authenticate against EU stream URLs.
+    """
+    base = normalize_base_url(base_url)
+    cache_key = (api_key, org_id, base)
     now = time.time()
     if not force_refresh:
         cached = _stream_keys.get(cache_key)
@@ -50,7 +67,7 @@ async def get_stream_key(api_key: str, org_id: str, force_refresh: bool = False)
             return cached[0]
     async with httpx.AsyncClient(timeout=15.0) as client:
         res = await client.get(
-            "https://api.verkada.com/cameras/v1/footage/token",
+            f"{base}/cameras/v1/footage/token",
             params={"expiration": 600, "org_id": org_id},
             headers={"accept": "application/json", "x-api-key": api_key},
         )
@@ -74,6 +91,7 @@ async def grab_video_clip(
     buffer_sec: float = 0.0,
     timeout_sec: int = 90,
     progress: Any = None,
+    base_url: str | None = None,
 ) -> int:
     """Transcode a short historical MP4 clip to ``out_path``. Returns the
     file size on success; raises ``FootageError`` otherwise.
@@ -87,14 +105,17 @@ async def grab_video_clip(
     for the run-events panel."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     end_epoch = start_epoch + int(max(2, buffer_sec + duration_sec + 2))
+    base = normalize_base_url(base_url)
 
     last_err: str | None = None
     for attempt in (1, 2):
         if progress and attempt == 2:
             await progress.log("ffmpeg retrying with fresh stream key")
-        key = await get_stream_key(api_key, org_id, force_refresh=(attempt == 2))
+        key = await get_stream_key(
+            api_key, org_id, force_refresh=(attempt == 2), base_url=base
+        )
         url = (
-            "https://api.verkada.com/stream/cameras/v1/footage/stream/stream.m3u8"
+            f"{base}/stream/cameras/v1/footage/stream/stream.m3u8"
             f"?org_id={org_id}"
             f"&camera_id={camera_id}"
             f"&resolution=high_res"
@@ -158,6 +179,7 @@ async def grab_still_frame(
     out_path: Path,
     timeout_sec: int = 45,
     progress: Any = None,
+    base_url: str | None = None,
 ) -> int:
     """Pull a single live frame from the camera's HLS stream as a JPEG.
 
@@ -169,14 +191,17 @@ async def grab_still_frame(
     Retries once with a fresh stream key on the first failure (matches
     grab_video_clip semantics — usually an expired JWT)."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    base = normalize_base_url(base_url)
 
     last_err: str | None = None
     for attempt in (1, 2):
         if progress and attempt == 2:
             await progress.log("ffmpeg retrying with fresh stream key")
-        key = await get_stream_key(api_key, org_id, force_refresh=(attempt == 2))
+        key = await get_stream_key(
+            api_key, org_id, force_refresh=(attempt == 2), base_url=base
+        )
         url = (
-            "https://api.verkada.com/stream/cameras/v1/footage/stream/stream.m3u8"
+            f"{base}/stream/cameras/v1/footage/stream/stream.m3u8"
             f"?org_id={org_id}"
             f"&camera_id={camera_id}"
             f"&resolution=high_res"
