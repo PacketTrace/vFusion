@@ -815,20 +815,20 @@ async def run_byoa_upload(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  
             return {"error": run.error}
 
         # ---- Step 1: byoa (Gemini analyze) ----
-        # Reuse the existing ``gemini_analyze_video`` action rather than
-        # hand-rolling the upload/poll/generate sequence here. That gets
-        # us the per-phase progress emission (gemini_upload →
-        # gemini_wait_active → gemini_generate) for free — identical to
-        # what camera-mode runs render on the Runs page. The action just
-        # needs a ``clip_path`` config field; we hand it the uploaded
-        # file's path on the shared volume.
-        analyze_spec = ACTIONS.get("gemini_analyze_video")
-        if analyze_spec is None:
-            run.status = "failed"
-            run.error = "gemini_analyze_video action unavailable"
-            run.finished_at = _utcnow()
-            await session.commit()
-            return {"error": run.error}
+        # Reuse the existing ``gemini_analyze_video`` module's run()
+        # rather than hand-rolling the upload/poll/generate sequence
+        # here. That gets us the per-phase progress emission
+        # (gemini_upload → gemini_wait_active → gemini_generate) for
+        # free — identical to what camera-mode runs render on the Runs
+        # page. The function takes a ``clip_path`` config field; we
+        # hand it the uploaded file's path on the shared volume.
+        #
+        # Note: ``gemini_analyze_video`` is NOT in the ACTIONS registry
+        # — it's the internal helper that the registered
+        # ``gemini_analyze_camera`` action calls after the ffmpeg grab.
+        # Calling its ``run()`` directly is the supported way to
+        # analyze a known-on-disk file.
+        from app.engine.actions.gemini_analyze_video import run as analyze_video_run
 
         byoa_record: dict[str, Any] = {
             "name": "byoa",
@@ -858,7 +858,7 @@ async def run_byoa_upload(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  
             "_progress": _progress_for(run.id, "byoa"),
         }
         try:
-            gemini_result = await analyze_spec.run(
+            gemini_result = await analyze_video_run(
                 analyze_config, analyze_ctx, gemini_conn
             )
         except Exception as e:  # noqa: BLE001
