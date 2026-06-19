@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
+  API_BASE,
   apiGet,
   apiPost,
   Connection,
@@ -493,7 +494,11 @@ export default function Byoa() {
           );
         }
       }
-      const res = await fetch("/api/byoa/dry-run", {
+      // Use the absolute backend base (same as apiPost/apiGet do) — the
+      // Vite dev server has no proxy config, so a relative ``/api/...``
+      // URL would 404 against Vite itself instead of reaching the
+      // backend on :18080.
+      const res = await fetch(`${API_BASE}/api/byoa/dry-run`, {
         method: "POST",
         body: fd,
         credentials: "include",
