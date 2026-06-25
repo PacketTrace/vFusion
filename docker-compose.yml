@@ -162,6 +162,12 @@ services:
     restart: unless-stopped
     environment:
       VITE_API_BASE: ${VITE_API_BASE:-http://localhost:18080}
+      # Optional: comma-separated hostnames Vite's dev server will
+      # accept Host headers from. Leave blank (default) to allow any
+      # host — the dashboard isn't supposed to face the public
+      # internet anyway. Set explicitly only if you want Vite's
+      # DNS-rebinding protection (e.g. ``dash.example.com,homelab.local``).
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
     ports:
       - "15173:5173"
     volumes:
