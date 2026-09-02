@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import Collapse from "../components/Collapse";
@@ -136,9 +136,18 @@ export default function Mcp() {
   const [riskFilter, setRiskFilter] = useState<Risk | "all">("all");
   const [newOnly, setNewOnly] = useState(false);
 
+  // Refresh has to bypass the backend's 15-minute response cache,
+  // otherwise the button re-renders the same catalog and looks broken.
+  const force = useRef(false);
   const catalog = useQuery({
     queryKey: ["mcp-catalog"],
-    queryFn: () => apiGet<Catalog>("/api/mcp/catalog"),
+    queryFn: () => {
+      const bypass = force.current;
+      force.current = false;
+      return apiGet<Catalog>(
+        `/api/mcp/catalog${bypass ? "?refresh=true" : ""}`,
+      );
+    },
     // The catalog is a remote round-trip through the MCP handshake;
     // don't re-run it on every window focus.
     staleTime: 5 * 60_000,
@@ -193,11 +202,14 @@ export default function Mcp() {
           </p>
         </div>
         <button
-          onClick={() => catalog.refetch()}
+          onClick={() => {
+            force.current = true;
+            catalog.refetch();
+          }}
           disabled={catalog.isFetching}
           className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-sm text-slate-200 disabled:opacity-50 whitespace-nowrap"
         >
-          {catalog.isFetching ? "Loading…" : "Refresh"}
+          {catalog.isFetching ? "Checking…" : "Check now"}
         </button>
       </div>
 

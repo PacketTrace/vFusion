@@ -33,6 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.assets import cleanup_expired as cleanup_expired_assets
 from app.config import settings
+from app.connectors.mcp.poll import poll_all_connections as poll_mcp_servers
 from app.connectors.verkada.catalog import crawl_all as crawl_verkada_catalog
 from app.connectors.verkada.footage import cleanup_old_clips
 from app.connectors.verkada.sync import sync_all_connections
@@ -611,6 +612,16 @@ async def crawl_verkada_catalog_cron(ctx: dict[str, Any]) -> list[dict[str, Any]
     return await crawl_verkada_catalog()
 
 
+async def poll_mcp_cron(ctx: dict[str, Any]) -> list[dict[str, Any]]:  # noqa: ARG001
+    """Check each configured MCP server for tools added, removed or edited.
+
+    The MCP page reads the resulting history; polling here means the
+    dates reflect roughly when a tool appeared rather than when someone
+    last opened the page.
+    """
+    return await poll_mcp_servers()
+
+
 async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
     """Sweep expired filesystem assets + (optionally) old DB rows.
 
@@ -984,6 +995,10 @@ class WorkerSettings:
         # Daily 04:11 UTC: refresh Gemini pricing snapshot. run_at_startup
         # so first deploy populates the table before any flow runs.
         cron(refresh_gemini_pricing_cron, hour=4, minute=11, run_at_startup=True),
+        # Every 6 hours: check the MCP catalogs for added/removed/edited
+        # tools. run_at_startup so a fresh deploy lays the baseline down
+        # without waiting for the first scheduled tick.
+        cron(poll_mcp_cron, hour={1, 7, 13, 19}, minute=41, run_at_startup=True),
         # Every minute: fire any due schedule-trigger flows.
         cron(tick_schedule_flows, minute=set(range(60))),
     ]
