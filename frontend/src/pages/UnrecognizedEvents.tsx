@@ -40,7 +40,7 @@ export default function UnrecognizedEvents() {
           </Link>
           <h1 className="text-2xl font-semibold text-white mt-1">Unrecognized variants</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Webhooks that arrived but don't fit any of the five known families. Each row
+            Webhooks that arrived but don't fit any of the known families. Each row
             here is a webhook shape we should add to{" "}
             <code className="bg-slate-800 px-1 rounded text-xs">
               backend/app/connectors/verkada/schemas.py

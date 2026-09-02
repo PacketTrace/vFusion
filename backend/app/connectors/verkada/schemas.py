@@ -88,6 +88,17 @@ ACCESS_EVENT_TYPES: frozenset[str] = frozenset(
         # scenario_info; door_id may be null on the debounced one.
         "door_lockdown",
         "door_lockdown_debounced",
+        # Door position / lock-state lifecycle — the plain state
+        # transitions (closed / locked / unlocked), same AccessEventData
+        # shape as door_opened. Observed 2026-09 captures.
+        "door_closed",
+        "door_locked",
+        "door_unlocked",
+        # Successful keypad entry — the accepted twin of
+        # door_code_entered_rejected (already above). ``input_value``
+        # carries the entered code as a string; treat it as a secret
+        # (real captures contain live door PINs).
+        "door_code_entered_accepted",
     }
 )
 
@@ -149,6 +160,9 @@ class AccessEventData(BaseModel):
     direction: str | None = None
     input_value: Any | None = None
     aux_info: Any | None = None
+    # Present (null so far) on the door state-transition events
+    # (door_closed / door_locked / door_unlocked / door_code_entered_*).
+    area_info: Any | None = None
     user_info: Any | None = None
     lockdown_info: Any | None = None
     scenario_info: Any | None = None

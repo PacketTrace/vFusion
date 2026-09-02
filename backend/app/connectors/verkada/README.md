@@ -18,15 +18,17 @@ Every Verkada webhook arrives as `POST application/json` with this shape:
 
 A `verkada-signature` header is included for HMAC verification (added in Phase 2).
 
-## Five families
+## Seven families
 
-| Family   | webhook_type    | Distinguisher                    | Lives in `data`                                          |
-|----------|-----------------|----------------------------------|----------------------------------------------------------|
-| camera   | `notification`  | `data.notification_type ∈ CAMERA_EVENT_TYPES` | event_id, camera_id, person_label, image_url, video_url, ... |
-| access   | `notification`  | `data.notification_type ∈ ACCESS_EVENT_TYPES` | door_id, door_info, user_info, scenario_info, ...        |
-| lpr      | `lpr`           | (no notification_type)           | license_plate_number, confidence, crop, vehicle_image_url |
-| sensor   | `sensor_alert`  | (no notification_type)           | reading, threshold, most_extreme_value, is_above_max_event |
-| intercom | `notification`  | `data.notification_type ∈ INTERCOM_EVENT_TYPES` | start_timestamp, answered_by_name, ...                    |
+| Family     | webhook_type    | Distinguisher                    | Lives in `data`                                          |
+|------------|-----------------|----------------------------------|----------------------------------------------------------|
+| camera     | `notification`  | `data.notification_type ∈ CAMERA_EVENT_TYPES` | event_id, camera_id, person_label, image_url, video_url, ... |
+| access     | `notification`  | `data.notification_type ∈ ACCESS_EVENT_TYPES` | door_id, door_info, user_info, scenario_info, ...        |
+| lpr        | `lpr`           | (no notification_type)           | license_plate_number, confidence, crop, vehicle_image_url |
+| sensor     | `sensor_alert`  | (no notification_type)           | reading, threshold, most_extreme_value, is_above_max_event |
+| intercom   | `notification`  | `data.notification_type ∈ INTERCOM_EVENT_TYPES` | start_timestamp, answered_by_name, ...                    |
+| credential | `credential-notification` | (camelCase shape, no notification_type) | eventId, eventType, grantorId, events[], ...             |
+| alarm      | `alarm_site_state_changed`, `new_alarms` | (webhook_type itself)  | site_id, event_type, trigger_type, incident_link, ...    |
 
 Use `classify(envelope)` to bucket. The `TAXONOMY` dict is exposed to the frontend so the trigger node can render family/event pickers without hardcoded strings.
 
@@ -44,6 +46,10 @@ Use `classify(envelope)` to bucket. The `TAXONOMY` dict is exposed to the fronte
 | `door_remote_unlock_accepted.json`        | access   | The action target — confirms successful remote unlock  |
 | `sensor_alert.json`                       | sensor   | Environmental sensor crossed threshold (e.g. noise)    |
 | `intercom_call_triggered.json`            | intercom | Visitor pressed intercom                               |
+| `door_unlocked.json`                      | access   | Door lock-state transition: unlocked                   |
+| `door_locked.json`                        | access   | Door lock-state transition: locked                     |
+| `door_closed.json`                        | access   | Door position transition: closed                       |
+| `door_code_entered_accepted.json`         | access   | Keypad code accepted — `input_value` holds the code (redact real captures) |
 
 These double as test fixtures: load any file, feed it to `Envelope.model_validate(json.load(...))`, and run `classify()` to confirm bucketing.
 

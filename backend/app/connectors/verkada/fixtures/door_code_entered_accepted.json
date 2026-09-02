@@ -1,0 +1,45 @@
+{
+  "org_id": "00000000-0000-0000-0000-000000000001",
+  "webhook_type": "notification",
+  "created_at": 1700000706,
+  "webhook_id": "10000000-0000-0000-0000-000000000013",
+  "data": {
+    "event_id": "20000000-0000-0000-0000-000000000013",
+    "device_id": "40000000-0000-0000-0000-000000000001",
+    "created": 1700000700,
+    "notification_type": "door_code_entered_accepted",
+    "device_type": "access_control",
+    "door_id": "40000000-0000-0000-0000-000000000001",
+    "direction": null,
+    "input_value": "1234",
+    "aux_info": null,
+    "area_info": null,
+    "user_info": {
+      "name": "Jordan Sample",
+      "email": "jordan@example.com",
+      "phone": "5555550100",
+      "user_id": "70000000-0000-0000-0000-000000000002",
+      "last_name": "Sample",
+      "first_name": "Jordan"
+    },
+    "lockdown_info": null,
+    "scenario_info": null,
+    "door_info": {
+      "acu_name": "Main ACU",
+      "acu_id": "50000000-0000-0000-0000-000000000001",
+      "name": "Front Door",
+      "door_id": "40000000-0000-0000-0000-000000000001",
+      "site": {
+        "name": "HQ",
+        "site_id": "60000000-0000-0000-0000-000000000001"
+      },
+      "api_control_enabled": true,
+      "camera_info": {
+        "inside_camera_id": null,
+        "outside_camera_id": "30000000-0000-0000-0000-000000000001",
+        "intercom_camera_id": null
+      },
+      "timezone": "America/Los_Angeles"
+    }
+  }
+}
