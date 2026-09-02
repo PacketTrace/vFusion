@@ -210,6 +210,7 @@ export default function Mcp() {
       {data && (
         <div className="mt-5 space-y-2">
           <Collapse
+            defaultOpen
             title="Server"
             summary={`${data.server_info?.name ?? "unknown"} ${
               data.server_info?.version ?? ""
@@ -237,13 +238,11 @@ export default function Mcp() {
                 hint={
                   data.last_changed_at
                     ? "a tool was added, removed or edited"
-                    : `no changes since we started watching on ${
-                        fmtDate(data.history_since) ?? "—"
-                      }`
+                    : `watching since ${fmtDate(data.history_since) ?? "—"}`
                 }
                 title="MCP publishes no timestamps, so this is derived from vFusion's own record of the catalog. It can only reflect changes since we first looked."
               >
-                {fmtDate(data.last_changed_at) ?? "—"}
+                {fmtDate(data.last_changed_at) ?? "no changes yet"}
               </Card>
               <Card
                 label="New tools (30 days)"
