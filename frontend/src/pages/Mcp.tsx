@@ -143,6 +143,21 @@ function Fact({
 
 export default function Mcp() {
   const [selected, setSelected] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+
+  function selectTool(name: string) {
+    setSelected(name);
+    // Only matters in the stacked layout; harmless side-by-side because the
+    // pane is already in view and "nearest" then does nothing.
+    requestAnimationFrame(() => {
+      detailRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "nearest",
+      });
+    });
+  }
   const [filter, setFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState<Risk | "all">("all");
   const [newOnly, setNewOnly] = useState(false);
@@ -366,7 +381,7 @@ export default function Mcp() {
               data.new_tools_30d ? ` · ${data.new_tools_30d} new in 30d` : ""
             }`}
           >
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,340px)_1fr] md:items-start">
               <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
                 <div className="p-2.5 border-b border-white/10 space-y-2">
                   <input
@@ -413,7 +428,7 @@ export default function Mcp() {
                       {list.map((t) => (
                         <button
                           key={t.name}
-                          onClick={() => setSelected(t.name)}
+                          onClick={() => selectTool(t.name)}
                           className={`w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 ${
                             selected === t.name ? "bg-white/10" : ""
                           }`}
@@ -448,7 +463,10 @@ export default function Mcp() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-white/10 bg-white/5 p-4 min-h-[300px]">
+              <div
+                ref={detailRef}
+                className="rounded-lg border border-white/10 bg-white/5 p-4 min-h-[300px] md:sticky md:top-4 md:max-h-[70vh] md:overflow-y-auto"
+              >
                 {!active && (
                   <div className="text-slate-500 text-sm">
                     Select a tool to see what it does and what it takes.
