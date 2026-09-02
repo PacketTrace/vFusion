@@ -12,6 +12,7 @@ install needs no new credential to use this.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -105,8 +106,14 @@ async def _catalog(
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:  # noqa: BLE001 — network/DNS/TLS
         raise HTTPException(status_code=502, detail=f"could not reach {url}: {e}")
+    # Roughly what this catalog costs to put in front of a model. ~4 chars
+    # per token is the usual English/JSON approximation; it is an estimate,
+    # labelled as one in the UI.
+    catalog_bytes = len(json.dumps(described.get("tools") or []))
     payload = {
         **described,
+        "catalog_bytes": catalog_bytes,
+        "catalog_tokens_estimate": catalog_bytes // 4,
         "connection_id": str(conn.id),
         "connection_name": conn.name,
         "fetched_at": time.time(),

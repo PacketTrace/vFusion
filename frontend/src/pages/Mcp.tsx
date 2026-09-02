@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import McpPlaybooks, { findPlaybookTools } from "../components/McpPlaybooks";
 import { apiGet } from "../lib/api";
 
 // Shape of one entry in an MCP server's tools/list response.
@@ -25,6 +26,9 @@ type Catalog = {
   capabilities: Record<string, unknown>;
   instructions: string;
   protocol_version: string;
+  requested_protocol_version: string;
+  catalog_bytes: number;
+  catalog_tokens_estimate: number;
   tools: McpTool[];
   connection_name: string;
   cached: boolean;
@@ -78,6 +82,7 @@ export default function Mcp() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState<Risk | "all">("all");
+  const [tab, setTab] = useState<"tools" | "playbooks">("tools");
 
   const catalog = useQuery({
     queryKey: ["mcp-catalog"],
@@ -177,16 +182,83 @@ export default function Mcp() {
                 {counts.destructive} destructive
               </div>
             </div>
-            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <div
+              className="rounded-lg border border-white/10 bg-white/5 p-3"
+              title="MCP spec revision dates, not release dates. We send the newest revision we implement; the server answers with one it supports."
+            >
               <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                Protocol
+                Protocol revision
               </div>
               <div className="text-slate-100 text-sm mt-0.5">
                 {catalog.data.protocol_version || "—"}
+                {catalog.data.requested_protocol_version &&
+                  catalog.data.requested_protocol_version !==
+                    catalog.data.protocol_version && (
+                    <span className="text-slate-500">
+                      {" "}
+                      (we asked {catalog.data.requested_protocol_version})
+                    </span>
+                  )}
               </div>
               <div className="text-[11px] text-slate-500 mt-1">
-                via {catalog.data.connection_name}
-                {catalog.data.cached ? " · cached" : ""}
+                spec version, not a release date
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                Declared capabilities
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {Object.keys(catalog.data.capabilities ?? {}).length === 0 && (
+                  <span className="text-sm text-slate-500">none declared</span>
+                )}
+                {Object.entries(catalog.data.capabilities ?? {}).map(([k, v]) => {
+                  const sub = Object.entries((v ?? {}) as Record<string, unknown>)
+                    .filter(([, on]) => on === true)
+                    .map(([n]) => n);
+                  return (
+                    <span
+                      key={k}
+                      className="text-[11px] px-1.5 py-0.5 rounded border border-white/15 text-slate-300"
+                    >
+                      {k}
+                      {sub.length > 0 && (
+                        <span className="text-slate-500"> · {sub.join(", ")}</span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+            <div
+              className="rounded-lg border border-white/10 bg-white/5 p-3"
+              title="How much context this catalog would occupy if handed to a model in full. Estimated at ~4 characters per token."
+            >
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                Catalog weight
+              </div>
+              <div className="text-slate-100 text-sm mt-0.5">
+                {(catalog.data.catalog_bytes / 1024).toFixed(0)} KB ·{" "}
+                {(catalog.data.catalog_tokens_estimate / 1000).toFixed(1)}k tokens
+                <span className="text-slate-500"> (est.)</span>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                cost per turn if every tool is exposed to a model
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                Authenticated as
+              </div>
+              <div className="text-slate-100 text-sm mt-0.5">
+                {catalog.data.connection_name}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Verkada connection key, sent as a bearer token
+                {catalog.data.cached ? " · catalog cached" : ""}
               </div>
             </div>
           </div>
@@ -206,7 +278,42 @@ export default function Mcp() {
             </details>
           )}
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
+          <div className="mt-5 flex gap-1.5 border-b border-white/10">
+            {(["tools", "playbooks"] as const).map((t) => {
+              const disabled = t === "playbooks" && !findPlaybookTools(tools);
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  disabled={disabled}
+                  title={
+                    disabled
+                      ? "This server doesn't publish playbooks"
+                      : undefined
+                  }
+                  className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors disabled:opacity-40 ${
+                    tab === t
+                      ? "border-sky-400 text-white"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {t === "tools" ? `Tools (${tools.length})` : "Playbooks"}
+                </button>
+              );
+            })}
+          </div>
+
+          {tab === "playbooks" && (
+            <div className="mt-4">
+              <McpPlaybooks tools={tools} />
+            </div>
+          )}
+
+          <div
+            className={`mt-4 gap-4 lg:grid-cols-[minmax(0,380px)_1fr] ${
+              tab === "tools" ? "grid" : "hidden"
+            }`}
+          >
             <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
               <div className="p-2.5 border-b border-white/10 space-y-2">
                 <input

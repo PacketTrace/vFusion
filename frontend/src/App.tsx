@@ -12,7 +12,6 @@ import Flows from "./pages/Flows";
 import FlowEditor from "./pages/FlowEditor";
 import Connections from "./pages/Connections";
 import Runs from "./pages/Runs";
-import ApiCatalog from "./pages/ApiCatalog";
 import Mcp from "./pages/Mcp";
 import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
@@ -103,14 +102,6 @@ function AppShell() {
               Connections
             </NavLink>
             <NavLink
-              to="/catalog"
-              className={({ isActive }) =>
-                `${navItem} ${isActive ? navActive : navInactive}`
-              }
-            >
-              API Catalog
-            </NavLink>
-            <NavLink
               to="/templates"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -168,7 +159,7 @@ function AppShell() {
           <Route path="/flows/:id/edit" element={<FlowEditor />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/connections" element={<Connections />} />
-          <Route path="/catalog" element={<ApiCatalog />} />
+          <Route path="/catalog" element={<Navigate to="/mcp" replace />} />
           <Route path="/templates" element={<Templates />} />
           {/* Keep /byoa as an alias so existing "Run it back" URLs work. */}
           <Route path="/workbench" element={<Workbench />} />

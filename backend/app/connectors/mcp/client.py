@@ -32,9 +32,16 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# The protocol revision we negotiate. Servers echo back the version they
-# actually speak; we do not currently downgrade behavior based on it.
-PROTOCOL_VERSION = "2024-11-05"
+# The newest MCP protocol revision this client is written against. These
+# are spec revision dates, not build dates — a server reporting an old one
+# is speaking an older revision of the protocol, which says nothing about
+# when the server itself shipped.
+#
+# Negotiation: we send our newest, and the server answers with a revision
+# it supports. Ask for something it doesn't know and it counters with its
+# own latest rather than failing, so the value the UI displays is what the
+# two sides actually agreed on — not simply what we asked for.
+PROTOCOL_VERSION = "2025-11-25"
 
 DEFAULT_TIMEOUT_SEC = 60.0
 
@@ -240,6 +247,7 @@ async def describe_server(
         tools = await list_tools(session, client=client)
     return {
         "url": url,
+        "requested_protocol_version": PROTOCOL_VERSION,
         "server_info": session.server_info,
         "capabilities": session.capabilities,
         "instructions": session.instructions,
