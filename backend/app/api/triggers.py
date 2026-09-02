@@ -132,6 +132,20 @@ async def sample_fields(
 # them — filtering on these matches exactly one webhook, which is never
 # what a trigger wants.
 _NOT_FILTERABLE = {
+    # Secret. On door_mobile_nfc_scan_accepted this is 100% populated and
+    # holds the raw card bits; on door_code_entered_accepted it's the
+    # keypad PIN. Offering it as a filter would print live credentials
+    # into the picker as suggested values.
+    "input_value",
+    "raw_card",
+    "rawCard",
+    # Always constant for the selected event type — notification_type is
+    # the picker above it, and device_type never varies within a family.
+    "notification_type",
+    "device_type",
+    # Duplicate: device_id is camera_id on camera events and door_id on
+    # access events, in every payload sampled.
+    "device_id",
     "event_id",
     "created",
     "start_timestamp",
