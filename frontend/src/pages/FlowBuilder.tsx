@@ -19,9 +19,18 @@ type Proposal = {
   valid: boolean;
   errors: string[];
   gemini_connection: string;
+  warnings?: string[];
+  run_cost?: {
+    per_firing_usd: number;
+    unpriced_steps: number;
+    steps: { step?: string; action_type?: string; usd: number | null; basis?: string }[];
+  };
+  draft_cost?: { tokens_in: number; tokens_out: number; usd: number | null };
   replay: {
     scanned: number;
     matched: number;
+    span_days: number | null;
+    per_day: number | null;
     samples: {
       id: string;
       received_at: string | null;
@@ -214,7 +223,11 @@ export default function FlowBuilder() {
                     <span className="font-semibold text-emerald-300">
                       {proposal.replay.matched} times
                     </span>{" "}
-                    across your last {proposal.replay.scanned} webhook events.
+                    across your last {proposal.replay.scanned} webhook events
+                    {proposal.replay.span_days
+                      ? ` (${proposal.replay.span_days.toFixed(1)} days)`
+                      : ""}
+                    .
                   </>
                 ) : (
                   <>
@@ -235,6 +248,82 @@ export default function FlowBuilder() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {proposal.run_cost && (
+            <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                What this would cost to run
+              </div>
+              <div className="text-slate-100 text-sm mt-1">
+                {proposal.run_cost.per_firing_usd > 0 ? (
+                  <>
+                    <span className="font-semibold">
+                      ${proposal.run_cost.per_firing_usd.toFixed(4)}
+                    </span>{" "}
+                    per firing
+                    {proposal.replay?.per_day ? (
+                      <>
+                        {" · at "}
+                        {Math.round(proposal.replay.per_day)} firings/day that's{" "}
+                        <span className="font-semibold text-amber-200">
+                          ${(
+                            proposal.run_cost.per_firing_usd *
+                            proposal.replay.per_day *
+                            30
+                          ).toFixed(2)}
+                          /month
+                        </span>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-slate-400">
+                    No priced model steps — nothing here bills Gemini.
+                  </span>
+                )}
+              </div>
+              {proposal.run_cost.steps.map((st, i) => (
+                <div key={i} className="text-[11px] text-slate-500 mt-1">
+                  <span className="font-mono">{st.step}</span> ·{" "}
+                  {st.usd === null ? (
+                    <span className="text-amber-300">
+                      no past runs to price this from
+                    </span>
+                  ) : (
+                    <>
+                      ${st.usd.toFixed(4)}
+                      {st.basis ? ` — averaged from ${st.basis}` : ""}
+                    </>
+                  )}
+                </div>
+              ))}
+              {proposal.draft_cost && (
+                <div className="text-[11px] text-slate-500 mt-2 pt-2 border-t border-white/5">
+                  Drafting this flow cost{" "}
+                  {proposal.draft_cost.usd !== null
+                    ? `$${proposal.draft_cost.usd.toFixed(4)}`
+                    : "—"}{" "}
+                  ({proposal.draft_cost.tokens_in.toLocaleString()} in /{" "}
+                  {proposal.draft_cost.tokens_out.toLocaleString()} out)
+                </div>
+              )}
+            </div>
+          )}
+
+          {(proposal.warnings?.length ?? 0) > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-950/25 p-4">
+              <div className="text-sm font-semibold text-amber-200">
+                Worth a look before you build this
+              </div>
+              <ul className="mt-1.5 space-y-1.5">
+                {proposal.warnings!.map((w, i) => (
+                  <li key={i} className="text-[12px] text-amber-100/90">
+                    • {w}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

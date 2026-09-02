@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -43,8 +44,10 @@ from app.crypto import decrypt_secret
 from app.db import get_session
 from app.engine.actions import ACTIONS
 from app.engine.triggers import matches as trigger_matches
+from app.pricing.gemini import cost_for
 from app.models import (
     Connection,
+    Run,
     VerkadaCamera,
     VerkadaDoor,
     VerkadaHelixEventType,
@@ -60,6 +63,9 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "data" / "flow_templates
 
 # How far back to look when answering "would this have fired?".
 REPLAY_LIMIT = 2000
+
+# How many past runs to average when pricing a proposed flow.
+RUN_HISTORY_LIMIT = 500
 
 # Both IDs are from the app's own GEMINI_MODELS list. Flash first — this is
 # structured extraction against a rich prompt, not open-ended reasoning —
@@ -213,6 +219,41 @@ __INTENT__
 """
 
 
+def _warnings(flow: dict[str, Any]) -> list[str]:
+    """Valid, but probably not what they meant.
+
+    The one that matters: a camera-family trigger with no camera filter
+    fires on every camera in the org, while the analyze step is pinned to
+    one camera_id. That flow is legal, runs constantly, and analyses the
+    wrong camera's footage every time something moves anywhere.
+    """
+    out: list[str] = []
+    trig = flow.get("trigger_config") or {}
+    filters = trig.get("filters") or {}
+    if flow.get("trigger_type") == "verkada_webhook" and trig.get("family") == "camera":
+        pinned = {
+            str((n.get("config") or {}).get("camera_id"))
+            for n in (flow.get("nodes") or [])
+            if (n.get("config") or {}).get("camera_id")
+            and "{{" not in str((n.get("config") or {}).get("camera_id"))
+        }
+        if pinned and not filters.get("camera_id"):
+            out.append(
+                "This triggers on motion from EVERY camera, but the steps are "
+                f"pinned to {'one camera' if len(pinned) == 1 else 'specific cameras'}. "
+                'Either add {"camera_id": "<id>"} to the trigger filters, or use '
+                "{{ trigger.data.camera_id }} in the steps so it follows whichever "
+                "camera fired."
+            )
+        if not filters:
+            out.append(
+                "The trigger has no filters, so every motion event runs this flow. "
+                "If you only care about a subset (a person, a vehicle, an animal), "
+                'add an objects filter — the animal template uses {"objects": "animal"}.'
+            )
+    return out
+
+
 def _validate(tpl: dict[str, Any]) -> list[str]:
     """Check a proposed template against the live system. Returns errors."""
     errors: list[str] = []
@@ -320,8 +361,8 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(t[start : end + 1])
 
 
-def _generate(api_key: str, prompt: str) -> tuple[str, str]:
-    """Returns (text, model_that_answered).
+def _generate(api_key: str, prompt: str) -> tuple[str, str, int, int]:
+    """Returns (text, model_that_answered, tokens_in, tokens_out).
 
     response_mime_type asks the API for JSON at the decoding level, which
     removes the whole class of "model wrapped it in a code fence" failures.
@@ -345,11 +386,98 @@ def _generate(api_key: str, prompt: str) -> tuple[str, str]:
             text = res.text or ""
             if not text.strip():
                 raise RuntimeError("model returned an empty response")
-            return text, model
+            usage = getattr(res, "usage_metadata", None)
+            return (
+                text,
+                model,
+                int(getattr(usage, "prompt_token_count", 0) or 0),
+                int(getattr(usage, "candidates_token_count", 0) or 0),
+            )
         except Exception as e:  # noqa: BLE001 — try the next model in the chain
             last = e
             continue
     raise RuntimeError(f"all Gemini models failed — last error: {last}")
+
+
+async def _observed_step_costs(
+    session: AsyncSession,
+) -> dict[tuple[str, str], tuple[float, int]]:
+    """Average observed cost per (action_type, model), from real runs.
+
+    Every Gemini step already records `output.cost` with the real token
+    counts the API reported, and the Stats page aggregates the same field.
+    Reusing it means the estimate is what this org actually pays, rather
+    than my arithmetic on published rates — same reasoning as replaying the
+    trigger against real events instead of asserting it looks right.
+    """
+    rows = (
+        await session.execute(
+            select(Run.steps).order_by(Run.created_at.desc()).limit(RUN_HISTORY_LIMIT)
+        )
+    ).all()
+    acc: dict[tuple[str, str], list[float]] = {}
+    for (steps,) in rows:
+        for step in steps or []:
+            if not isinstance(step, dict):
+                continue
+            out = step.get("output")
+            cost = out.get("cost") if isinstance(out, dict) else None
+            if not isinstance(cost, dict):
+                continue
+            usd = float(cost.get("cost_usd") or 0)
+            if usd <= 0:
+                continue
+            key = (str(step.get("type") or ""), str(cost.get("model") or ""))
+            acc.setdefault(key, []).append(usd)
+    return {k: (sum(v) / len(v), len(v)) for k, v in acc.items()}
+
+
+def _estimate_run_cost(
+    flow: dict[str, Any], observed: dict[tuple[str, str], tuple[float, int]]
+) -> dict[str, Any]:
+    """What one firing of this flow would cost, per step.
+
+    Prefers the same action+model seen before; falls back to the same
+    action on any model; otherwise reports unknown rather than inventing a
+    number. Conditions and Helix posts are free — only the model calls cost.
+    """
+    per_step: list[dict[str, Any]] = []
+    total = 0.0
+    unknown = 0
+    for node in flow.get("nodes") or []:
+        at = node.get("action_type")
+        if not at or not str(at).startswith("gemini"):
+            continue
+        model = str((node.get("config") or {}).get("model") or "")
+        hit = observed.get((at, model))
+        basis = f"{hit[1]} past runs of this action on {model}" if hit else None
+        if hit is None:
+            same_action = [
+                (avg, n) for (a, _m), (avg, n) in observed.items() if a == at
+            ]
+            if same_action:
+                runs = sum(n for _a, n in same_action)
+                avg = sum(a * n for a, n in same_action) / runs
+                hit = (avg, runs)
+                basis = f"{runs} past runs of this action (other models)"
+        if hit is None:
+            unknown += 1
+            per_step.append({"step": node.get("name"), "action_type": at, "usd": None})
+            continue
+        total += hit[0]
+        per_step.append(
+            {
+                "step": node.get("name"),
+                "action_type": at,
+                "usd": round(hit[0], 6),
+                "basis": basis,
+            }
+        )
+    return {
+        "per_firing_usd": round(total, 6) if per_step else 0.0,
+        "steps": per_step,
+        "unpriced_steps": unknown,
+    }
 
 
 def _replay_rows(
@@ -380,7 +508,22 @@ def _replay_rows(
                 )
         except Exception:  # noqa: BLE001 — a bad filter shouldn't break the page
             continue
-    return {"scanned": len(rows), "matched": len(hits), "samples": hits[:5]}
+    stamps = [r[1] for r in rows if r[1]]
+    span_days: float | None = None
+    if len(stamps) >= 2:
+        try:
+            newest = datetime.fromisoformat(max(stamps))
+            oldest = datetime.fromisoformat(min(stamps))
+            span_days = max((newest - oldest).total_seconds() / 86400.0, 0.0) or None
+        except ValueError:
+            span_days = None
+    return {
+        "scanned": len(rows),
+        "matched": len(hits),
+        "samples": hits[:5],
+        "span_days": span_days,
+        "per_day": (len(hits) / span_days) if span_days else None,
+    }
 
 
 @router.post("/propose")
@@ -433,6 +576,7 @@ async def propose(
         )
 
     org = await _org_context(session, payload.verkada_connection_id)
+    observed_costs = await _observed_step_costs(session)
     examples = _examples()
     catalog = _action_catalog()
     replay_rows = [
@@ -491,6 +635,8 @@ async def propose(
         )
 
         attempts: list[dict[str, Any]] = []
+        draft_tokens_in = 0
+        draft_tokens_out = 0
         tpl: dict[str, Any] | None = None
         errors: list[str] = []
         used_model = ""
@@ -509,7 +655,11 @@ async def propose(
                 ),
             )
             try:
-                raw, used_model = await asyncio.to_thread(_generate, api_key, current)
+                raw, used_model, t_in, t_out = await asyncio.to_thread(
+                    _generate, api_key, current
+                )
+                draft_tokens_in += t_in
+                draft_tokens_out += t_out
                 candidate = _extract_json(raw)
             except Exception as e:  # noqa: BLE001
                 errors = [str(e)]
@@ -552,6 +702,16 @@ async def propose(
             return
 
         flow = tpl.get("flow") or {}
+        warnings = _warnings(flow)
+        run_cost = _estimate_run_cost(flow, observed_costs)
+        draft_cost = await cost_for(used_model, draft_tokens_in, draft_tokens_out)
+        yield line(
+            stage="pricing",
+            detail=(
+                f"draft used {draft_tokens_in + draft_tokens_out} tokens; "
+                f"{run_cost['per_firing_usd']:.4f} USD per firing of this flow"
+            ),
+        )
         replay = None
         if flow.get("trigger_type") == "verkada_webhook":
             yield line(stage="replaying", detail="testing the trigger on real events")
@@ -570,6 +730,13 @@ async def propose(
                 "errors": errors,
                 "attempts": attempts,
                 "replay": replay,
+                "warnings": warnings,
+                "run_cost": run_cost,
+                "draft_cost": {
+                    "tokens_in": draft_tokens_in,
+                    "tokens_out": draft_tokens_out,
+                    "usd": float(draft_cost["cost_usd"]) if draft_cost else None,
+                },
                 "model": used_model,
                 "gemini_connection": conn_name,
             },
