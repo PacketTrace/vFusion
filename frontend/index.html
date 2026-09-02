@@ -60,6 +60,12 @@
         background: rgba(0, 0, 0, 0.15);
         pointer-events: none;
         z-index: 2;
+        /* Pin this to its own compositing layer. Without the hint the
+           compositor is free to tear the layer down and rebuild it on an
+           unrelated repaint, and for one frame the backdrop paints
+           unfiltered — the whole background flashes bright, then returns. */
+        will-change: backdrop-filter;
+        transform: translateZ(0);
       }
       #root {
         position: relative;
@@ -108,11 +114,17 @@
         // A three.js render loop painting a network nobody is looking at
         // costs battery and GPU for nothing. Park it while the tab is
         // backgrounded.
+        var vantaPaused = false;
         document.addEventListener("visibilitychange", function () {
           if (!window.__vantaInstance) return;
-          if (document.hidden) {
+          // Idempotent: only act on an actual transition. Calling play() on
+          // an already-running instance re-enters its setup path, which is
+          // a repaint nobody asked for.
+          if (document.hidden && !vantaPaused) {
+            vantaPaused = true;
             window.__vantaInstance.pause && window.__vantaInstance.pause();
-          } else {
+          } else if (!document.hidden && vantaPaused) {
+            vantaPaused = false;
             window.__vantaInstance.play && window.__vantaInstance.play();
           }
         });
