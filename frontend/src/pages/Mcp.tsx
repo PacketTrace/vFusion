@@ -19,6 +19,11 @@ type McpTool = {
     destructiveHint?: boolean;
     idempotentHint?: boolean;
   };
+  // Added by vFusion, not the server: MCP carries no timestamps, so
+  // these come from our own record of when each tool first showed up.
+  _is_baseline?: boolean;
+  _first_seen_at?: string | null;
+  _schema_changed_at?: string | null;
 };
 
 type Catalog = {
@@ -33,6 +38,11 @@ type Catalog = {
   tools: McpTool[];
   connection_name: string;
   cached: boolean;
+  // Tool history, derived from our own observations over time.
+  history_since: string | null;
+  last_changed_at: string | null;
+  new_tools_30d: number;
+  tracked_tools: number;
 };
 
 // A server's own annotations are the only machine-readable safety signal
@@ -79,6 +89,20 @@ function familyOf(name: string): string {
   return name.split("_")[0] ?? "other";
 }
 
+const fmtDate = (iso?: string | null) =>
+  iso
+    ? new Date(iso).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+const isNew30d = (t: McpTool) =>
+  !t._is_baseline &&
+  !!t._first_seen_at &&
+  Date.now() - new Date(t._first_seen_at).getTime() < 30 * 864e5;
+
 function Card({
   label,
   children,
@@ -110,6 +134,7 @@ export default function Mcp() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState<Risk | "all">("all");
+  const [newOnly, setNewOnly] = useState(false);
 
   const catalog = useQuery({
     queryKey: ["mcp-catalog"],
@@ -132,6 +157,7 @@ export default function Mcp() {
     const q = filter.trim().toLowerCase();
     return tools
       .filter((t) => (riskFilter === "all" ? true : riskOf(t) === riskFilter))
+      .filter((t) => (newOnly ? isNew30d(t) : true))
       .filter(
         (t) =>
           !q ||
@@ -139,7 +165,7 @@ export default function Mcp() {
           (t.description ?? "").toLowerCase().includes(q),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [tools, filter, riskFilter]);
+  }, [tools, filter, riskFilter, newOnly]);
 
   const grouped = useMemo(() => {
     const g = new Map<string, McpTool[]>();
@@ -190,7 +216,11 @@ export default function Mcp() {
             } · ${tools.length} tools · protocol ${data.protocol_version || "—"}`}
           >
             <div className="grid gap-3 md:grid-cols-3">
-              <Card label="Server" hint={data.url}>
+              <Card
+                label="Server"
+                hint={`${data.url} · protocol ${data.protocol_version || "—"}`}
+                title="MCP protocol revision dates are spec versions, not release dates. We send the newest revision we implement; the server answers with one it supports."
+              >
                 {data.server_info?.name ?? "unknown"}{" "}
                 <span className="text-slate-500">
                   {data.server_info?.version}
@@ -203,18 +233,28 @@ export default function Mcp() {
                 {tools.length} total
               </Card>
               <Card
-                label="Protocol revision"
-                hint="spec version, not a release date"
-                title="MCP spec revision dates, not release dates. We send the newest revision we implement; the server answers with one it supports."
+                label="MCP last updated"
+                hint={
+                  data.last_changed_at
+                    ? "a tool was added, removed or edited"
+                    : `no changes since we started watching on ${
+                        fmtDate(data.history_since) ?? "—"
+                      }`
+                }
+                title="MCP publishes no timestamps, so this is derived from vFusion's own record of the catalog. It can only reflect changes since we first looked."
               >
-                {data.protocol_version || "—"}
-                {data.requested_protocol_version &&
-                  data.requested_protocol_version !== data.protocol_version && (
-                    <span className="text-slate-500">
-                      {" "}
-                      (we asked {data.requested_protocol_version})
-                    </span>
-                  )}
+                {fmtDate(data.last_changed_at) ?? "—"}
+              </Card>
+              <Card
+                label="New tools (30 days)"
+                hint={`${data.tracked_tools} tools tracked since ${
+                  fmtDate(data.history_since) ?? "—"
+                }`}
+              >
+                {data.new_tools_30d}
+                {data.new_tools_30d === 0 && data.history_since && (
+                  <span className="text-slate-500"> · none yet</span>
+                )}
               </Card>
               <Card label="Declared capabilities">
                 <div className="flex flex-wrap gap-1.5">
@@ -277,7 +317,9 @@ export default function Mcp() {
 
           <Collapse
             title="Tools"
-            summary={`${tools.length} · ${counts.read} read-only · ${counts.write} write · ${counts.destructive} destructive`}
+            summary={`${tools.length} · ${counts.read} read-only · ${counts.write} write · ${counts.destructive} destructive${
+              data.new_tools_30d ? ` · ${data.new_tools_30d} new in 30d` : ""
+            }`}
           >
             <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
               <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
@@ -304,6 +346,17 @@ export default function Mcp() {
                         </button>
                       ),
                     )}
+                    <button
+                      onClick={() => setNewOnly((v) => !v)}
+                      title="Tools first seen in the last 30 days"
+                      className={`px-2 py-1 rounded border transition-colors ${
+                        newOnly
+                          ? "bg-sky-500/20 border-sky-500/40 text-sky-200"
+                          : "bg-transparent border-white/10 text-slate-400 hover:bg-white/5"
+                      }`}
+                    >
+                      new
+                    </button>
                   </div>
                 </div>
                 <div className="max-h-[55vh] overflow-y-auto">
@@ -325,6 +378,18 @@ export default function Mcp() {
                               {t.name}
                             </span>
                             <RiskBadge risk={riskOf(t)} />
+                          </div>
+                          <div
+                            className={`text-[10px] mt-0.5 ${
+                              t._is_baseline
+                                ? "text-slate-600"
+                                : "text-sky-300/80"
+                            }`}
+                          >
+                            {t._is_baseline
+                              ? "original"
+                              : `added ${fmtDate(t._first_seen_at) ?? "—"}`}
+                            {isNew30d(t) && " · new"}
                           </div>
                         </button>
                       ))}
@@ -351,6 +416,30 @@ export default function Mcp() {
                         {active.name}
                       </h2>
                       <RiskBadge risk={riskOf(active)} />
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                          active._is_baseline
+                            ? "border-white/15 text-slate-400"
+                            : "border-sky-500/30 bg-sky-500/15 text-sky-300"
+                        }`}
+                        title={
+                          active._is_baseline
+                            ? "Present the first time vFusion looked at this server — its real add date predates our records."
+                            : "First seen by vFusion on this date."
+                        }
+                      >
+                        {active._is_baseline
+                          ? "original"
+                          : `added ${fmtDate(active._first_seen_at) ?? "—"}`}
+                      </span>
+                      {active._schema_changed_at && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-slate-400"
+                          title="Description, schema or annotations changed since we first recorded this tool."
+                        >
+                          edited {fmtDate(active._schema_changed_at)}
+                        </span>
+                      )}
                       {active.annotations?.idempotentHint && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-slate-400">
                           idempotent

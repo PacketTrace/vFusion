@@ -12,9 +12,11 @@ install needs no new credential to use this.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -27,7 +29,7 @@ from app.connectors.mcp import MCPError, describe_server
 from app.connectors.verkada.client import normalize_base_url
 from app.crypto import decrypt_secret
 from app.db import get_session
-from app.models import Connection
+from app.models import Connection, McpToolObservation
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,8 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 
 # The catalog is ~140KB and changes about as often as Verkada ships, so a
-# short in-process TTL keeps the page snappy without a table + migration.
+# short in-process TTL keeps the page snappy. This is a response cache
+# only — the tool history in mcp_tool_observations is the durable part.
 # Keyed by (connection_id, url). Cleared by ?refresh=true.
 _CATALOG_TTL_SEC = 900
 _catalog_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
@@ -90,6 +93,136 @@ async def _resolve(
     return conn, _mcp_url_for(secret), token
 
 
+def _tool_hash(tool: dict[str, Any]) -> str:
+    """Fingerprint the parts of a tool an operator would call a change."""
+    payload = json.dumps(
+        {
+            "description": tool.get("description"),
+            "inputSchema": tool.get("inputSchema"),
+            "annotations": tool.get("annotations"),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+async def _record_observations(
+    session: AsyncSession, url: str, tools: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Diff this catalog against what we've seen before on this server.
+
+    Returns the history the UI needs: per-tool first-seen dates, and the
+    server-level "last changed" derived from tools appearing, disappearing,
+    or being edited in place.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(McpToolObservation).where(
+                    McpToolObservation.server_url == url
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing = {r.tool_name: r for r in rows}
+    now = datetime.now(timezone.utc)
+    # Nothing on record means this is our first look at this server: we
+    # can't date anything that's already here, so it's all baseline.
+    first_ever = not existing
+
+    seen: set[str] = set()
+    for tool in tools:
+        name = tool.get("name")
+        if not name:
+            continue
+        seen.add(name)
+        digest = _tool_hash(tool)
+        row = existing.get(name)
+        if row is None:
+            session.add(
+                McpToolObservation(
+                    server_url=url,
+                    tool_name=name,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    is_baseline=first_ever,
+                    schema_hash=digest,
+                )
+            )
+            continue
+        row.last_seen_at = now
+        # A tool that vanished and came back isn't "new" — keep its
+        # original first_seen_at and just clear the removal.
+        row.removed_at = None
+        if row.schema_hash != digest:
+            row.schema_hash = digest
+            row.schema_changed_at = now
+
+    for name, row in existing.items():
+        if name not in seen and row.removed_at is None:
+            row.removed_at = now
+
+    await session.commit()
+
+    fresh = {
+        r.tool_name: r
+        for r in (
+            (
+                await session.execute(
+                    select(McpToolObservation).where(
+                        McpToolObservation.server_url == url
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+
+    def _iso(dt: datetime | None) -> str | None:
+        return dt.isoformat() if dt else None
+
+    # "Last updated" means the last time this server's surface actually
+    # moved — a tool added, removed, or edited. Baseline arrivals don't
+    # count: those are just when we started watching.
+    change_times: list[datetime] = []
+    for r in fresh.values():
+        if not r.is_baseline:
+            change_times.append(r.first_seen_at)
+        if r.schema_changed_at:
+            change_times.append(r.schema_changed_at)
+        if r.removed_at:
+            change_times.append(r.removed_at)
+
+    cutoff = now - timedelta(days=30)
+    new_30d = sum(
+        1
+        for r in fresh.values()
+        if not r.is_baseline and r.removed_at is None and r.first_seen_at >= cutoff
+    )
+    baseline_at = min(
+        (r.first_seen_at for r in fresh.values() if r.is_baseline), default=None
+    )
+
+    for tool in tools:
+        r = fresh.get(tool.get("name", ""))
+        if r is None:
+            continue
+        tool["_is_baseline"] = r.is_baseline
+        tool["_first_seen_at"] = _iso(r.first_seen_at)
+        tool["_schema_changed_at"] = _iso(r.schema_changed_at)
+
+    return {
+        "history_since": _iso(baseline_at),
+        "last_changed_at": _iso(max(change_times)) if change_times else None,
+        "new_tools_30d": new_30d,
+        "tracked_tools": len(fresh),
+    }
+
+
 async def _catalog(
     session: AsyncSession, conn_id: UUID | None, refresh: bool
 ) -> dict[str, Any]:
@@ -109,9 +242,11 @@ async def _catalog(
     # Roughly what this catalog costs to put in front of a model. ~4 chars
     # per token is the usual English/JSON approximation; it is an estimate,
     # labelled as one in the UI.
+    history = await _record_observations(session, url, described.get("tools") or [])
     catalog_bytes = len(json.dumps(described.get("tools") or []))
     payload = {
         **described,
+        **history,
         "catalog_bytes": catalog_bytes,
         "catalog_tokens_estimate": catalog_bytes // 4,
         "connection_id": str(conn.id),
