@@ -881,7 +881,7 @@ export default function Byoa() {
                         // mapping is the new source of truth.
                         setRestoredMapping(null);
                       }}
-                      className={`text-left p-3 rounded-md border transition-all ${
+                      className={`text-left p-3 rounded-md border transition duration-200 ease-out-strong ${
                         active
                           ? "border-sky-400/80 bg-sky-950/40 scale-[1.02] shadow-[0_0_14px_rgba(56,189,248,0.35)]"
                           : "border-white/15 bg-white/5 hover:border-sky-700/60 hover:bg-sky-950/20"
@@ -1261,7 +1261,7 @@ function SourceCard({
     <button
       type="button"
       onClick={onClick}
-      className={`relative text-left px-4 py-3 rounded-lg border-2 transition-all duration-150 ${
+      className={`relative text-left px-4 py-3 rounded-lg border-2 transition duration-150 ease-out-strong ${
         active
           ? "bg-sky-950/50 border-sky-500 ring-2 ring-sky-500/30 shadow-[0_0_20px_rgba(56,189,248,0.25)]"
           : "bg-white/5 border-white/10 hover:border-sky-500/60 hover:bg-white/10"

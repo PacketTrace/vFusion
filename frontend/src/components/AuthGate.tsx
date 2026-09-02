@@ -144,9 +144,13 @@ function SetupWizard({ status }: { status: AuthStatus }) {
         {password.length > 0 && (
           <div>
             <div className="h-1.5 rounded bg-slate-800 overflow-hidden">
+              {/* Driven by scaleX rather than width: this updates on every
+               * keystroke, and width is a layout property — animating it
+               * forces layout + paint off the GPU on the busiest input in
+               * the app. scaleX composites. */}
               <div
-                className={`h-full ${strength.className} transition-all`}
-                style={{ width: `${Math.round(strength.ratio * 100)}%` }}
+                className={`h-full w-full origin-left ${strength.className} transition-transform duration-200 ease-out-strong`}
+                style={{ transform: `scaleX(${strength.ratio})` }}
               />
             </div>
             <div className="text-[11px] text-slate-500 mt-1 flex justify-between">

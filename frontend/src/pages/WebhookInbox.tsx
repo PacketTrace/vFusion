@@ -699,10 +699,13 @@ function AssetHeaderPreview({
     <div className="shrink-0 border border-slate-800 rounded overflow-visible bg-slate-950 w-40 relative group">
       <div className="bg-black flex items-center justify-center min-h-[80px] max-h-[120px] overflow-visible">
         {a.status === "ready" && isImage ? (
+          // The hover:hover gate keeps the zoom on real pointers — on touch a
+          // tap fires a false hover, ballooning the thumbnail under the finger
+          // before the click lands.
           <button
             type="button"
             onClick={() => onZoom({ url: fileUrl, alt: a.source_field })}
-            className="block cursor-zoom-in transition-transform duration-200 group-hover:scale-[2] group-hover:z-50 origin-right relative"
+            className="block cursor-zoom-in transition-transform duration-200 ease-out-strong group-hover:scale-[2] group-hover:z-50 origin-right relative"
             title="Hover to preview · click to enlarge"
           >
             <img

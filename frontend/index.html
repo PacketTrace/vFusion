@@ -77,6 +77,14 @@
       // Defer init until DOM is ready so the #vanta-bg div exists.
       window.addEventListener("DOMContentLoaded", function () {
         if (!window.VANTA || !window.VANTA.NET) return;
+        // Constant decorative motion is exactly what this setting is for.
+        // Bail before init rather than starting a WebGL loop and hiding it.
+        if (
+          window.matchMedia &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ) {
+          return;
+        }
         // We turn off Vanta's own mouseControls so the cursor doesn't yank
         // the network around at full strength, then forward dampened
         // mousemoves into it via the SDK's hooks. Effect: cursor still
@@ -96,6 +104,18 @@
           spacing: 18.0,
         });
         window.__vantaInstance = instance;
+
+        // A three.js render loop painting a network nobody is looking at
+        // costs battery and GPU for nothing. Park it while the tab is
+        // backgrounded.
+        document.addEventListener("visibilitychange", function () {
+          if (!window.__vantaInstance) return;
+          if (document.hidden) {
+            window.__vantaInstance.pause && window.__vantaInstance.pause();
+          } else {
+            window.__vantaInstance.play && window.__vantaInstance.play();
+          }
+        });
 
         const DAMPEN = 0.5;
         window.addEventListener(

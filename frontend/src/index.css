@@ -10,6 +10,63 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* ---------------------------------------------------------------------
+ * Motion tokens
+ *
+ * Tailwind's default transition curve is a symmetric ease-in-out, which
+ * is wrong for the thing UI does most: entering and exiting. Those want
+ * a strong ease-out — fast at the start, so the interface answers the
+ * instant you act. These are the two curves the whole app should use;
+ * reach for a token rather than hand-typing a bezier.
+ * ------------------------------------------------------------------ */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --duration-press: 160ms;
+  --duration-panel: 200ms;
+}
+
+/* Press feedback, applied once rather than per-button.
+ *
+ * A dashboard is clicked all day and every button in this app was
+ * previously inert on press — no :active state existed anywhere in the
+ * codebase. Buttons must feel like they respond to being pressed; 0.97
+ * is deliberately subtle (the useful range is 0.95–0.98).
+ *
+ * Scoped to real <button>s: nav items are links, and press-scaling
+ * navigation would be motion on a high-frequency action. */
+button:not(:disabled) {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Reduced motion.
+ *
+ * Not a blanket "disable everything" — that removes feedback people
+ * rely on. Movement goes; colour and opacity stay. The decorative
+ * infinite loops stop entirely, since constant motion is the thing
+ * this setting most exists to prevent. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    /* Keep the transitions that communicate state; drop the ones that
+     * move things around. */
+    transition-property: opacity, color, background-color, border-color,
+      fill, stroke, box-shadow !important;
+  }
+  button:not(:disabled):active {
+    transform: none;
+  }
+  #vanta-bg {
+    display: none;
+  }
+}
+
 /* React Flow ships light-themed Controls (white background + faint
  * borders) that disappear against the Vanta canvas. Repaint them as
  * a glass card so the zoom / fit / lock buttons read on the dark

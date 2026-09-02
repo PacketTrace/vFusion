@@ -20,16 +20,24 @@ export default function Collapse({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  // Latches on first open. Children stay mounted afterwards so collapsing
+  // can animate — but a section nobody has opened still does no work, which
+  // is what keeps the playbooks panel from firing an MCP call on mount.
+  const [everOpened, setEverOpened] = useState(defaultOpen);
+
   return (
     <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((o) => !o);
+          setEverOpened(true);
+        }}
         aria-expanded={open}
         className="w-full flex items-baseline gap-2 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
       >
         <span
-          className={`text-slate-500 text-[10px] leading-none transition-transform ${
+          className={`text-slate-500 text-[10px] leading-none transition-transform duration-200 ease-out-strong ${
             open ? "rotate-90" : ""
           }`}
           aria-hidden
@@ -41,9 +49,23 @@ export default function Collapse({
           <span className="text-[12px] text-slate-500 truncate">{summary}</span>
         )}
       </button>
-      {open && (
-        <div className="px-3 pb-3 pt-3 border-t border-white/10">{children}</div>
-      )}
+      {/* grid-template-rows 0fr→1fr animates to the content's natural
+       * height without measuring it, and because it's a transition rather
+       * than a keyframe it retargets mid-flight — spam the header and it
+       * reverses from wherever it is instead of restarting. */}
+      <div
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out-strong ${
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          {everOpened && (
+            <div className="px-3 pb-3 pt-3 border-t border-white/10">
+              {children}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

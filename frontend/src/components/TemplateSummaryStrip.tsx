@@ -74,7 +74,7 @@ function StepPill({
   const tone = toneFor(step);
   return (
     <div
-      className={`flex flex-col items-center justify-center w-16 px-1 py-1 rounded border text-center transition-all duration-300 ${tone} ${
+      className={`flex flex-col items-center justify-center w-16 px-1 py-1 rounded border text-center transition duration-300 ease-out-strong ${tone} ${
         highlighted
           ? "scale-105 shadow-[0_0_12px_rgba(56,189,248,0.45)] border-sky-400/80"
           : ""
