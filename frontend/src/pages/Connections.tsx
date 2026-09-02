@@ -302,11 +302,14 @@ function VerkadaRow({
   });
 
   // Streaming-permission probe — fires a real live frame + historical
-  // clip pull against the first synced camera and reports which Verkada
-  // streaming permission tier the API key has.
+  // clip pull against an online synced camera and reports which Verkada
+  // streaming permission tier the API key has. Offline cameras fail the
+  // pull for reasons unrelated to the key, so the backend only picks from
+  // cameras Verkada reports as online.
   const [streamingResult, setStreamingResult] = useState<{
     camera_id: string;
     camera_name: string | null;
+    camera_status: string | null;
     live: { ok: boolean; error?: string };
     historical: { ok: boolean; error?: string };
     tier: string;
@@ -423,6 +426,9 @@ function VerkadaRow({
               {streamingResult.camera_name && (
                 <span className="text-slate-500">
                   {" "}· tested via {streamingResult.camera_name}
+                  {streamingResult.camera_status
+                    ? ` (${streamingResult.camera_status})`
+                    : ""}
                 </span>
               )}
             </div>

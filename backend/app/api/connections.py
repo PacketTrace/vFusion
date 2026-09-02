@@ -208,14 +208,22 @@ async def trigger_door_sync(
     return result
 
 
+class TestStreamingRequest(BaseModel):
+    # Optional override so the operator can aim the probe at a specific
+    # camera instead of taking whichever online one we pick.
+    camera_id: str | None = None
+
+
 @router.post("/{conn_id}/test-streaming")
 async def test_streaming(
     conn_id: UUID,
+    payload: TestStreamingRequest | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Probe the connection's streaming permissions by attempting a real
-    HLS pull against the first synced camera — one single live frame and
-    one short historical clip from ~5 minutes ago.
+    HLS pull against an online synced camera — one single live frame and
+    one short historical clip from ~5 minutes ago. Pass ``camera_id`` to
+    probe a specific camera instead.
 
     Verkada has two streaming permission tiers on API keys: "Streaming -
     Live/Historical" grants both; "Streaming - Live Only" grants only the
@@ -238,23 +246,71 @@ async def test_streaming(
     if conn is None:
         raise HTTPException(status_code=404, detail="not found")
 
-    # Pick the first synced camera for this connection — we need a real
-    # camera_id to test against, and the synced cache is the closest
-    # source of truth without a live API call.
-    cam = (
-        await session.execute(
-            select(VerkadaCamera)
-            .where(VerkadaCamera.connection_id == conn.id)
-            .order_by(VerkadaCamera.name.asc().nullslast())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    # Pick a camera to probe. Offline cameras fail the stream pull for
+    # reasons that have nothing to do with the key's permissions, so an
+    # arbitrary pick produces a misleading "your key can't stream" result.
+    # Restrict to cameras Verkada reports as online — same rule the
+    # Workbench camera picker uses: a status that is set and isn't
+    # "Offline" (that covers "Live" plus any healthy state Verkada adds
+    # later without us chasing the enum).
+    online_only = (
+        VerkadaCamera.status.is_not(None)
+        & (func.lower(VerkadaCamera.status) != "offline")
+    )
+    requested = (payload.camera_id or "").strip() if payload else ""
+    if requested:
+        # Explicit pick: honor it even if it looks offline — the operator
+        # may be testing that specific camera on purpose.
+        cam = (
+            await session.execute(
+                select(VerkadaCamera).where(
+                    VerkadaCamera.connection_id == conn.id,
+                    VerkadaCamera.camera_id == requested,
+                )
+            )
+        ).scalar_one_or_none()
+        if cam is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Camera {requested} isn't in the synced cache for this "
+                    'connection. Re-run "Sync cameras", or omit camera_id to '
+                    "let the probe pick an online camera."
+                ),
+            )
+    else:
+        cam = (
+            await session.execute(
+                select(VerkadaCamera)
+                .where(VerkadaCamera.connection_id == conn.id, online_only)
+                .order_by(VerkadaCamera.name.asc().nullslast())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
     if cam is None:
+        total = (
+            await session.execute(
+                select(func.count())
+                .select_from(VerkadaCamera)
+                .where(VerkadaCamera.connection_id == conn.id)
+            )
+        ).scalar_one()
+        if total == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No cameras synced yet for this connection. Click "
+                    '"Sync cameras" first so we have a camera_id to test '
+                    "against."
+                ),
+            )
         raise HTTPException(
             status_code=400,
             detail=(
-                "No cameras synced yet for this connection. Click "
-                '"Sync cameras" first so we have a camera_id to test against.'
+                f"None of the {total} synced cameras are online, so a "
+                "streaming test can't tell a permissions problem from an "
+                'offline camera. Re-run "Sync cameras" if this looks stale, '
+                "or pass camera_id to probe a specific one."
             ),
         )
 
@@ -295,6 +351,7 @@ async def test_streaming(
     result: dict[str, Any] = {
         "camera_id": cam.camera_id,
         "camera_name": cam.name,
+        "camera_status": cam.status,
     }
 
     # Live frame test.

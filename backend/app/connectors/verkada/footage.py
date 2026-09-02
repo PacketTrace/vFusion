@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,28 @@ STREAM_KEY_TTL_SEC = 500  # Verkada grants 600s; refresh a bit early
 
 class FootageError(RuntimeError):
     pass
+
+
+# Query params whose values are credentials. ffmpeg echoes the full input
+# URL back in its stderr, so anything we surface from stderr — exception
+# message, log line, or run-event log — carries a live stream JWT unless
+# it's scrubbed first. The token is valid for ~10 minutes and grants
+# footage access to the whole org.
+_SECRET_QS_KEYS = ("jwt", "api_key", "token", "x-verkada-auth")
+_SECRET_QS_RE = re.compile(
+    r"\b(" + "|".join(_SECRET_QS_KEYS) + r")=([^&\s\"']+)",
+    re.IGNORECASE,
+)
+
+
+def redact(text: str) -> str:
+    """Strip credential query-string values out of ffmpeg/HTTP noise.
+
+    Keeps the parameter name (useful when reading a failure) and drops the
+    value. Always run this over subprocess stderr before it reaches a user,
+    a log, or an exception message.
+    """
+    return _SECRET_QS_RE.sub(lambda m: f"{m.group(1)}=***redacted***", text)
 
 
 # Module-level cache keyed by (api_key, org_id, base_url) — refreshed lazily.
@@ -154,7 +177,9 @@ async def grab_video_clip(
             continue
         if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
             return out_path.stat().st_size
-        last_err = stderr_bytes.decode(errors="replace").strip()[:500] or f"rc={proc.returncode}"
+        last_err = redact(
+            stderr_bytes.decode(errors="replace").strip()
+        )[:500] or f"rc={proc.returncode}"
         if progress:
             await progress.log(f"ffmpeg attempt {attempt} failed: {last_err}")
         logger.warning(
@@ -231,7 +256,9 @@ async def grab_still_frame(
             continue
         if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
             return out_path.stat().st_size
-        last_err = stderr_bytes.decode(errors="replace").strip()[:500] or f"rc={proc.returncode}"
+        last_err = redact(
+            stderr_bytes.decode(errors="replace").strip()
+        )[:500] or f"rc={proc.returncode}"
         if progress:
             await progress.log(f"ffmpeg attempt {attempt} failed: {last_err}")
         logger.warning(
