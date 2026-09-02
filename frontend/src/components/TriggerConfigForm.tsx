@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiGet, Flow, Taxonomy, TriggerField } from "../lib/api";
+import {
+  apiGet,
+  FilterFieldProfile,
+  Flow,
+  Taxonomy,
+  TriggerField,
+} from "../lib/api";
 import { useCameras } from "../lib/cameras";
 
 
@@ -60,6 +66,30 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
     enabled: !!value.family,
     staleTime: 60_000,
   });
+
+  // What actually arrives for THIS event type — presence rates and the
+  // values each field takes. Replaces the fixed per-family field list,
+  // which offered objects/person_label on event types that never carry them.
+  const profile = useQuery({
+    queryKey: ["filter-fields", value.family, value.notificationType],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (value.family) params.set("family", value.family);
+      if (value.notificationType)
+        params.set("notification_type", value.notificationType);
+      return apiGet<FilterFieldProfile[]>(
+        `/api/triggers/filter-fields?${params.toString()}`,
+      );
+    },
+    enabled: !!value.family,
+    staleTime: 60_000,
+  });
+  const profiled = profile.data ?? [];
+  // Anything under 5% of events is almost certainly noise — a stray LPR
+  // field on a Person of Interest webhook, say. Still offered, but parked
+  // under a "rarely present" group so it doesn't sit next to the real ones.
+  const commonFields = profiled.filter((f) => f.present_pct >= 5);
+  const rareFields = profiled.filter((f) => f.present_pct < 5);
 
   const familyEntry = taxonomy.data?.[value.family];
   const filterFieldOptions = buildFilterFieldOptions(
@@ -149,7 +179,9 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
               }
               className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
             >
-              <option value="">Anything in this family</option>
+              <option value="" disabled>
+                Choose an event type…
+              </option>
               {[...groups.entries()].map(([g, list]) => (
                 <optgroup key={g} label={g}>
                   {list.map((nt) => (
@@ -189,16 +221,25 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                   className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm"
                 >
                   <option value="">— field —</option>
-                  {filterFieldOptions.map((opt) => (
-                    <option key={opt.name} value={opt.name}>
-                      {opt.name}
+                  {commonFields.map((opt) => (
+                    <option key={opt.field} value={opt.field}>
+                      {opt.field} — on {opt.present_pct}% of these
                     </option>
                   ))}
+                  {rareFields.length > 0 && (
+                    <optgroup label="Rarely present (likely noise)">
+                      {rareFields.map((opt) => (
+                        <option key={opt.field} value={opt.field}>
+                          {opt.field} — {opt.present_pct}%
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                   {/* If the user already picked a field that no longer
                       appears (e.g. because the sample changed), keep it
                       selectable rather than silently dropping it. */}
                   {f.field &&
-                    !filterFieldOptions.some((o) => o.name === f.field) && (
+                    !profiled.some((o) => o.field === f.field) && (
                       <option value={f.field}>{f.field}</option>
                     )}
                 </select>
@@ -225,15 +266,49 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                     onChange={(v) => setFilter(i, { value: v })}
                   />
                 ) : (
-                  <input
-                    value={f.value}
-                    onChange={(e) => setFilter(i, { value: e.target.value })}
-                    className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
-                    placeholder="value to match"
-                    spellCheck={false}
-                  />
+                  <>
+                    <input
+                      value={f.value}
+                      onChange={(e) => setFilter(i, { value: e.target.value })}
+                      list={`vals-${i}`}
+                      className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
+                      placeholder="value to match"
+                      spellCheck={false}
+                    />
+                    <datalist id={`vals-${i}`}>
+                      {(
+                        profiled.find((o) => o.field === f.field)?.values ?? []
+                      ).map((v) => (
+                        <option key={String(v)} value={String(v)} />
+                      ))}
+                    </datalist>
+                  </>
                 )}
               </div>
+              {(() => {
+                const prof = profiled.find((o) => o.field === f.field);
+                if (!prof) return null;
+                return (
+                  <div className="text-[11px] text-slate-500">
+                    Seen on {prof.present} of {prof.sample_size} recent{" "}
+                    {value.notificationType || value.family} events
+                    {prof.values.length > 0 ? (
+                      <>
+                        {" "}
+                        · values:{" "}
+                        <span className="font-mono text-slate-400">
+                          {prof.values.slice(0, 6).join(", ")}
+                        </span>
+                        {prof.distinct_count > 6
+                          ? ` +${prof.distinct_count - 6} more`
+                          : ""}
+                      </>
+                    ) : prof.distinct_count > 0 ? (
+                      ` · ${prof.distinct_count} distinct values (too many to list)`
+                    ) : null}
+                  </div>
+                );
+              })()}
             </div>
           ))}
           <button

@@ -398,6 +398,18 @@ export interface VerkadaCamera {
 
 // ---- Verkada taxonomy ----
 
+/** How often a data.* field is populated for a given event type, and the
+ *  values it takes. Drives the trigger filter picker. */
+export interface FilterFieldProfile {
+  field: string;
+  present: number;
+  sample_size: number;
+  present_pct: number;
+  values: (string | number | boolean)[];
+  distinct_count: number;
+  type: string;
+}
+
 export interface NotificationTypeMeta {
   label: string;
   description: string;
