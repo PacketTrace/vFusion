@@ -9,6 +9,7 @@ from app.api import (
     byoa,
     config as config_api,
     connections,
+    flow_builder,
     flow_templates,
     flows,
     hooks,
@@ -120,6 +121,7 @@ app.include_router(triggers.router)
 app.include_router(stats.router)
 app.include_router(prompt_templates.router)
 app.include_router(flow_templates.router)
+app.include_router(flow_builder.router)
 app.include_router(byoa.router)
 app.include_router(mcp_api.router)
 app.include_router(config_api.router)

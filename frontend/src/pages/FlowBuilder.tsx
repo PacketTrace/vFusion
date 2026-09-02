@@ -1,0 +1,288 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+
+import { apiPost } from "../lib/api";
+
+type ProposedNode = {
+  id?: string;
+  name?: string;
+  label?: string;
+  kind?: string;
+  action_type?: string;
+  config?: Record<string, unknown>;
+};
+
+type Proposal = {
+  intent: string;
+  valid: boolean;
+  errors: string[];
+  gemini_connection: string;
+  replay: {
+    scanned: number;
+    matched: number;
+    samples: {
+      id: string;
+      received_at: string | null;
+      family: string | null;
+      notification_type: string | null;
+    }[];
+  } | null;
+  template: {
+    name?: string;
+    tagline?: string;
+    explanation?: string;
+    assumptions?: string[];
+    flow?: {
+      trigger_type?: string;
+      trigger_config?: Record<string, unknown>;
+      nodes?: ProposedNode[];
+      edges?: { source?: string; target?: string; branch?: string }[];
+      helix_event_types?: {
+        event_type_uid?: string;
+        name?: string;
+        event_schema?: Record<string, string>;
+      }[];
+    };
+  };
+};
+
+const EXAMPLES = [
+  "I have a fox problem and I want to be notified when one shows up",
+  "Check the garage camera every morning and tell me if the door is blocked",
+  "When someone badges in after midnight, grab a still and log it",
+];
+
+export default function FlowBuilder() {
+  const [intent, setIntent] = useState("");
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+
+  const propose = useMutation({
+    mutationFn: (text: string) =>
+      apiPost<Proposal>("/api/flow-builder/propose", { intent: text }),
+    onSuccess: setProposal,
+  });
+
+  const flow = proposal?.template?.flow;
+  const nodes = flow?.nodes ?? [];
+
+  return (
+    <div className="max-w-[1100px] mx-auto px-4 py-6">
+      <h1 className="text-2xl font-semibold text-white">Build a flow</h1>
+      <p className="text-slate-400 text-sm mt-1 max-w-3xl">
+        Describe what you want to happen and this drafts a flow for it —
+        trigger, steps, and any Helix event type it needs. Nothing is saved;
+        this is a proposal you read before deciding.
+      </p>
+
+      <form
+        className="mt-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (intent.trim()) propose.mutate(intent.trim());
+        }}
+      >
+        <textarea
+          value={intent}
+          onChange={(e) => setIntent(e.target.value)}
+          rows={3}
+          placeholder="e.g. I have a fox problem and I want to be notified when one shows up"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-sm resize-y focus:outline-none focus:border-sky-600"
+        />
+        <div className="flex items-center justify-between gap-3 mt-2 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap">
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                onClick={() => setIntent(ex)}
+                className="text-[11px] px-2 py-1 rounded border border-white/10 text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              >
+                {ex.length > 46 ? ex.slice(0, 46) + "…" : ex}
+              </button>
+            ))}
+          </div>
+          <button
+            type="submit"
+            disabled={!intent.trim() || propose.isPending}
+            className="px-4 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40"
+          >
+            {propose.isPending ? "Thinking…" : "Draft it"}
+          </button>
+        </div>
+      </form>
+
+      {propose.isError && (
+        <div className="mt-5 rounded-lg border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-200">
+          {(propose.error as Error).message}
+        </div>
+      )}
+
+      {proposal && (
+        <div className="mt-6 space-y-3">
+          {/* Whether it fires is the question that matters, so it goes first
+           * — and it's answered with real traffic rather than an opinion. */}
+          {proposal.replay && (
+            <div
+              className={`rounded-lg border p-4 ${
+                proposal.replay.matched > 0
+                  ? "border-emerald-500/30 bg-emerald-950/20"
+                  : "border-amber-500/30 bg-amber-950/20"
+              }`}
+            >
+              <div className="text-sm text-slate-100">
+                {proposal.replay.matched > 0 ? (
+                  <>
+                    This trigger would have fired{" "}
+                    <span className="font-semibold text-emerald-300">
+                      {proposal.replay.matched} times
+                    </span>{" "}
+                    across your last {proposal.replay.scanned} webhook events.
+                  </>
+                ) : (
+                  <>
+                    This trigger matched{" "}
+                    <span className="font-semibold text-amber-300">nothing</span>{" "}
+                    in your last {proposal.replay.scanned} webhook events — it
+                    may be watching for something that doesn't happen here.
+                  </>
+                )}
+              </div>
+              {proposal.replay.samples.length > 0 && (
+                <div className="mt-2 space-y-0.5">
+                  {proposal.replay.samples.map((s) => (
+                    <div key={s.id} className="text-[11px] text-slate-400">
+                      {s.received_at?.replace("T", " ").slice(0, 19)} ·{" "}
+                      <span className="font-mono">{s.notification_type}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!proposal.valid && proposal.errors.length > 0 && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-950/25 p-4">
+              <div className="text-sm font-semibold text-rose-200">
+                This draft didn't validate
+              </div>
+              <ul className="mt-1.5 space-y-1">
+                {proposal.errors.map((e, i) => (
+                  <li key={i} className="text-[12px] text-rose-200/90">
+                    • {e}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+            <h2 className="text-lg font-semibold text-white">
+              {proposal.template.name ?? "Proposed flow"}
+            </h2>
+            {proposal.template.explanation && (
+              <p className="text-sm text-slate-300 mt-1">
+                {proposal.template.explanation}
+              </p>
+            )}
+
+            <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
+              Trigger
+            </div>
+            <div className="mt-1 rounded border border-white/10 bg-black/20 px-3 py-2">
+              <div className="text-[13px] text-slate-100">
+                {flow?.trigger_type === "schedule"
+                  ? "On a schedule"
+                  : "Verkada webhook"}
+              </div>
+              <pre className="text-[11px] text-slate-400 mt-1 whitespace-pre-wrap font-mono">
+                {JSON.stringify(flow?.trigger_config ?? {}, null, 1)}
+              </pre>
+            </div>
+
+            <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
+              Steps
+            </div>
+            <ol className="mt-1 space-y-1.5">
+              {nodes.map((n, i) => (
+                <li
+                  key={n.id ?? i}
+                  className="rounded border border-white/10 bg-black/20 px-3 py-2"
+                >
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-slate-500 text-[11px]">{i + 1}</span>
+                    <span className="text-[13px] text-slate-100">
+                      {n.label ?? n.name}
+                    </span>
+                    <span className="font-mono text-[11px] text-sky-300/80">
+                      {n.kind === "condition" ? "condition" : n.action_type}
+                    </span>
+                  </div>
+                  {n.config && Object.keys(n.config).length > 0 && (
+                    <pre className="text-[11px] text-slate-400 mt-1 whitespace-pre-wrap font-mono">
+                      {JSON.stringify(n.config, null, 1)}
+                    </pre>
+                  )}
+                </li>
+              ))}
+            </ol>
+
+            {(flow?.helix_event_types?.length ?? 0) > 0 && (
+              <>
+                <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
+                  Helix event types it would create
+                </div>
+                {flow!.helix_event_types!.map((h) => (
+                  <div
+                    key={h.event_type_uid}
+                    className="mt-1 rounded border border-white/10 bg-black/20 px-3 py-2"
+                  >
+                    <div className="text-[13px] text-slate-100">{h.name}</div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      {Object.entries(h.event_schema ?? {})
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {(proposal.template.assumptions?.length ?? 0) > 0 && (
+              <>
+                <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
+                  What it assumed — read this bit
+                </div>
+                <ul className="mt-1 space-y-1">
+                  {proposal.template.assumptions!.map((a, i) => (
+                    <li key={i} className="text-[12px] text-amber-200/90">
+                      • {a}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+
+          <details className="rounded-lg border border-white/10 bg-white/5">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm text-slate-300">
+              Raw template JSON
+              <span className="text-slate-500">
+                {" "}
+                — drafted with {proposal.gemini_connection}
+              </span>
+            </summary>
+            <pre className="px-3 pb-3 text-[11px] text-slate-400 whitespace-pre-wrap font-mono">
+              {JSON.stringify(proposal.template, null, 2)}
+            </pre>
+          </details>
+
+          <p className="text-[12px] text-slate-500">
+            Nothing here has been saved. Installing a proposal — binding
+            connections and provisioning the Helix types — is the next piece to
+            build.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

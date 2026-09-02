@@ -8,6 +8,7 @@ import { apiPost } from "./lib/api";
 import { useBrand } from "./lib/brand";
 import WebhookInbox from "./pages/WebhookInbox";
 import UnrecognizedEvents from "./pages/UnrecognizedEvents";
+import FlowBuilder from "./pages/FlowBuilder";
 import Flows from "./pages/Flows";
 import FlowEditor from "./pages/FlowEditor";
 import Connections from "./pages/Connections";
@@ -86,6 +87,15 @@ function AppShell() {
               Flows
             </NavLink>
             <NavLink
+              to="/build"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+              title="Describe a flow in plain language and have it drafted"
+            >
+              Build
+            </NavLink>
+            <NavLink
               to="/runs"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -154,6 +164,7 @@ function AppShell() {
           <Route path="/" element={<Navigate to="/inbox" replace />} />
           <Route path="/inbox" element={<WebhookInbox />} />
           <Route path="/unrecognized" element={<UnrecognizedEvents />} />
+          <Route path="/build" element={<FlowBuilder />} />
           <Route path="/flows" element={<Flows />} />
           <Route path="/flows/new" element={<FlowEditor />} />
           <Route path="/flows/:id/edit" element={<FlowEditor />} />
