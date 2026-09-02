@@ -12,6 +12,7 @@ from app.api import (
     flow_templates,
     flows,
     hooks,
+    mcp as mcp_api,
     prompt_templates,
     runs,
     settings as settings_api,
@@ -120,6 +121,7 @@ app.include_router(stats.router)
 app.include_router(prompt_templates.router)
 app.include_router(flow_templates.router)
 app.include_router(byoa.router)
+app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(settings_api.router)
 

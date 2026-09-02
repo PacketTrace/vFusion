@@ -13,6 +13,7 @@ import FlowEditor from "./pages/FlowEditor";
 import Connections from "./pages/Connections";
 import Runs from "./pages/Runs";
 import ApiCatalog from "./pages/ApiCatalog";
+import Mcp from "./pages/Mcp";
 import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
@@ -135,6 +136,15 @@ function AppShell() {
               Stats
             </NavLink>
             <NavLink
+              to="/mcp"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+              title="MCP — browse the tools a Model Context Protocol server exposes"
+            >
+              MCP
+            </NavLink>
+            <NavLink
               to="/settings"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -164,6 +174,7 @@ function AppShell() {
           <Route path="/workbench" element={<Workbench />} />
           <Route path="/byoa" element={<Workbench />} />
           <Route path="/stats" element={<Stats />} />
+          <Route path="/mcp" element={<Mcp />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
