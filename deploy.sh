@@ -30,31 +30,40 @@ SERVICES=("$@")
 
 # ---- Pre-flight checks ----
 
-if ! command -v op >/dev/null 2>&1; then
-    echo "ERROR: 'op' CLI not found in PATH." >&2
-    exit 1
-fi
-
 if ! command -v docker >/dev/null 2>&1; then
     echo "ERROR: 'docker' not found in PATH." >&2
     exit 1
 fi
 
-if [[ ! -r "$TOKEN_FILE" ]]; then
-    echo "ERROR: ${TOKEN_FILE} is not readable by $(id -un)." >&2
-    echo "Expected: root:docker, mode 0640." >&2
-    exit 1
-fi
-
-if [[ ! -f "$ENV_TEMPLATE" ]]; then
-    echo "ERROR: ${ENV_TEMPLATE} not found. Did the git pull succeed?" >&2
+# The 1Password path is optional. A host that manages .env by hand (the
+# common case if you don't use a secrets manager) just needs the .env to
+# exist — only the templated path needs `op` and the service-account token.
+USE_OP=0
+if [[ -f "$ENV_TEMPLATE" ]]; then
+    USE_OP=1
+    if ! command -v op >/dev/null 2>&1; then
+        echo "ERROR: ${ENV_TEMPLATE} exists but the 'op' CLI is not in PATH." >&2
+        echo "Install the 1Password CLI, or delete .env.tpl and manage .env by hand." >&2
+        exit 1
+    fi
+    if [[ ! -r "$TOKEN_FILE" ]]; then
+        echo "ERROR: ${TOKEN_FILE} is not readable by $(id -un)." >&2
+        echo "Expected: root:docker, mode 0640." >&2
+        exit 1
+    fi
+elif [[ ! -f "$ENV_FILE" ]]; then
+    echo "ERROR: neither ${ENV_TEMPLATE} nor ${ENV_FILE} exists." >&2
+    echo "Create .env (copy .env.example and fill it in), or add a .env.tpl" >&2
+    echo "with 1Password secret references to have this script render it." >&2
     exit 1
 fi
 
 # ---- Load service account token ----
 
-export OP_SERVICE_ACCOUNT_TOKEN
-OP_SERVICE_ACCOUNT_TOKEN="$(cat "$TOKEN_FILE")"
+if [[ "$USE_OP" -eq 1 ]]; then
+    export OP_SERVICE_ACCOUNT_TOKEN
+    OP_SERVICE_ACCOUNT_TOKEN="$(cat "$TOKEN_FILE")"
+fi
 
 cd "$SERVICE_DIR"
 
@@ -66,10 +75,15 @@ echo
 
 # ---- Render .env from template ----
 
-echo "==> Rendering .env from .env.tpl via 1Password..."
-op inject --force -i "$ENV_TEMPLATE" -o "$ENV_FILE"
-chmod 600 "$ENV_FILE"
-echo "    wrote $ENV_FILE ($(wc -c < "$ENV_FILE") bytes, mode 600)"
+if [[ "$USE_OP" -eq 1 ]]; then
+    echo "==> Rendering .env from .env.tpl via 1Password..."
+    op inject --force -i "$ENV_TEMPLATE" -o "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    echo "    wrote $ENV_FILE ($(wc -c < "$ENV_FILE") bytes, mode 600)"
+else
+    echo "==> No .env.tpl — using the existing $ENV_FILE as-is."
+    chmod 600 "$ENV_FILE"
+fi
 echo
 
 # ---- Rebuild and recreate ----
