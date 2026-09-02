@@ -103,7 +103,21 @@ const isNew30d = (t: McpTool) =>
   !!t._first_seen_at &&
   Date.now() - new Date(t._first_seen_at).getTime() < 30 * 864e5;
 
-function Card({
+/** A titled group of related facts. Three of these beat seven loose cards:
+ *  the reader gets "where it connects / what it exposes / what changed"
+ *  rather than a flat wall of equally-weighted boxes. */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500 pb-2 mb-1 border-b border-white/5">
+        {title}
+      </div>
+      <dl className="space-y-2.5">{children}</dl>
+    </div>
+  );
+}
+
+function Fact({
   label,
   children,
   hint,
@@ -115,16 +129,13 @@ function Card({
   title?: string;
 }) {
   return (
-    <div
-      className="rounded-lg border border-white/10 bg-white/5 p-3"
-      title={title}
-    >
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      <div className="text-slate-100 text-sm mt-0.5">{children}</div>
+    <div title={title}>
+      <dt className="text-[11px] text-slate-500">{label}</dt>
+      <dd className="text-slate-100 text-[13px] mt-0.5 break-words">
+        {children}
+      </dd>
       {hint && (
-        <div className="text-[11px] text-slate-500 mt-1 break-all">{hint}</div>
+        <dd className="text-[11px] text-slate-500 mt-0.5">{hint}</dd>
       )}
     </div>
   );
@@ -229,89 +240,112 @@ export default function Mcp() {
             } · ${tools.length} tools · protocol ${data.protocol_version || "—"}`}
           >
             <div className="grid gap-3 md:grid-cols-3">
-              <Card
-                label="Server"
-                hint={`${data.url} · protocol ${data.protocol_version || "—"}`}
-                title="MCP protocol revision dates are spec versions, not release dates. We send the newest revision we implement; the server answers with one it supports."
-              >
-                {data.server_info?.name ?? "unknown"}{" "}
-                <span className="text-slate-500">
-                  {data.server_info?.version}
-                </span>
-              </Card>
-              <Card
-                label="Tools"
-                hint={`${counts.read} read-only · ${counts.write} write · ${counts.destructive} destructive`}
-              >
-                {tools.length} total
-              </Card>
-              <Card
-                label="MCP last updated"
-                hint={
-                  data.last_changed_at
-                    ? "a tool was added, removed or edited"
-                    : `watching since ${fmtDate(data.history_since) ?? "—"}`
-                }
-                title="MCP publishes no timestamps, so this is derived from vFusion's own record of the catalog. It can only reflect changes since we first looked."
-              >
-                {fmtDate(data.last_changed_at) ?? "no changes yet"}
-              </Card>
-              <Card
-                label="New tools (30 days)"
-                hint={`${data.tracked_tools} tools tracked since ${
-                  fmtDate(data.history_since) ?? "—"
-                }`}
-              >
-                {data.new_tools_30d}
-                {data.new_tools_30d === 0 && data.history_since && (
-                  <span className="text-slate-500"> · none yet</span>
-                )}
-              </Card>
-              <Card label="Declared capabilities">
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.keys(data.capabilities ?? {}).length === 0 && (
-                    <span className="text-slate-500">none declared</span>
-                  )}
-                  {Object.entries(data.capabilities ?? {}).map(([k, v]) => {
-                    const sub = Object.entries(
-                      (v ?? {}) as Record<string, unknown>,
-                    )
-                      .filter(([, on]) => on === true)
-                      .map(([n]) => n);
-                    return (
-                      <span
-                        key={k}
-                        className="text-[11px] px-1.5 py-0.5 rounded border border-white/15 text-slate-300"
-                      >
-                        {k}
-                        {sub.length > 0 && (
-                          <span className="text-slate-500">
-                            {" "}
-                            · {sub.join(", ")}
-                          </span>
-                        )}
+              <Group title="Connection">
+                <Fact label="Endpoint">
+                  <span className="font-mono text-[12px]">{data.url}</span>
+                </Fact>
+                <Fact
+                  label="Protocol revision"
+                  hint="spec version, not a release date"
+                  title="MCP protocol revisions are spec version dates. We send the newest we implement; the server answers with one it supports."
+                >
+                  {data.protocol_version || "—"}
+                  {data.requested_protocol_version &&
+                    data.requested_protocol_version !==
+                      data.protocol_version && (
+                      <span className="text-slate-500">
+                        {" "}
+                        (we asked {data.requested_protocol_version})
                       </span>
-                    );
-                  })}
-                </div>
-              </Card>
-              <Card
-                label="Catalog weight"
-                hint="cost per turn if every tool is exposed to a model"
-                title="How much context this catalog would occupy if handed to a model in full. Estimated at ~4 characters per token."
-              >
-                {(data.catalog_bytes / 1024).toFixed(0)} KB ·{" "}
-                {(data.catalog_tokens_estimate / 1000).toFixed(1)}k tokens
-                <span className="text-slate-500"> (est.)</span>
-              </Card>
-              <Card
-                label="Authenticated as"
-                hint={`Verkada connection key, sent as a bearer token${
-                  data.cached ? " · catalog cached" : ""
-                }`}
-              >
-                {data.connection_name}
-              </Card>
+                    )}
+                </Fact>
+                <Fact
+                  label="Authenticated as"
+                  hint="that connection's key, sent as a bearer token"
+                >
+                  {data.connection_name}
+                </Fact>
+                <Fact label="Declared capabilities">
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {Object.keys(data.capabilities ?? {}).length === 0 && (
+                      <span className="text-slate-500">none declared</span>
+                    )}
+                    {Object.entries(data.capabilities ?? {}).map(([k, v]) => {
+                      const sub = Object.entries(
+                        (v ?? {}) as Record<string, unknown>,
+                      )
+                        .filter(([, on]) => on === true)
+                        .map(([n]) => n);
+                      return (
+                        <span
+                          key={k}
+                          className="text-[11px] px-1.5 py-0.5 rounded border border-white/15 text-slate-300"
+                        >
+                          {k}
+                          {sub.length > 0 && (
+                            <span className="text-slate-500">
+                              {" "}
+                              · {sub.join(", ")}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </Fact>
+              </Group>
+
+              <Group title="Surface">
+                <Fact label="Tools">
+                  {tools.length} total
+                </Fact>
+                <Fact label="By risk">
+                  <span className="text-emerald-300">
+                    {counts.read} read-only
+                  </span>
+                  <span className="text-slate-600"> · </span>
+                  <span className="text-amber-300">{counts.write} write</span>
+                  <span className="text-slate-600"> · </span>
+                  <span className="text-rose-300">
+                    {counts.destructive} destructive
+                  </span>
+                </Fact>
+                <Fact
+                  label="Catalog weight"
+                  hint="what it costs per turn to hand every tool to a model"
+                  title="Estimated at ~4 characters per token."
+                >
+                  {(data.catalog_bytes / 1024).toFixed(0)} KB ·{" "}
+                  {(data.catalog_tokens_estimate / 1000).toFixed(1)}k tokens
+                  <span className="text-slate-500"> (est.)</span>
+                </Fact>
+              </Group>
+
+              <Group title="Changes">
+                <Fact
+                  label="Last updated"
+                  hint={
+                    data.last_changed_at
+                      ? "a tool was added, removed or edited"
+                      : "nothing has moved since we started watching"
+                  }
+                  title="MCP publishes no timestamps, so this comes from vFusion's own record of the catalog. It can only reflect changes since we first looked."
+                >
+                  {fmtDate(data.last_changed_at) ?? "no changes yet"}
+                </Fact>
+                <Fact label="New in last 30 days">
+                  {data.new_tools_30d}
+                  {data.new_tools_30d === 0 && (
+                    <span className="text-slate-500"> tools</span>
+                  )}
+                </Fact>
+                <Fact
+                  label="Watching since"
+                  hint={`${data.tracked_tools} tools tracked`}
+                >
+                  {fmtDate(data.history_since) ?? "—"}
+                </Fact>
+              </Group>
             </div>
           </Collapse>
 

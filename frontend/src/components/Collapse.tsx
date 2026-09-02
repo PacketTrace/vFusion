@@ -49,16 +49,30 @@ export default function Collapse({
           <span className="text-[12px] text-slate-500 truncate">{summary}</span>
         )}
       </button>
-      {/* grid-template-rows 0fr→1fr animates to the content's natural
-       * height without measuring it, and because it's a transition rather
-       * than a keyframe it retargets mid-flight — spam the header and it
-       * reverses from wherever it is instead of restarting. */}
+      {/* grid-template-rows 0fr→1fr animates to the content's natural height
+       * without measuring it, and being a transition rather than a keyframe
+       * it retargets mid-flight — spam the header and it reverses from where
+       * it is instead of restarting.
+       *
+       * Written as inline styles on purpose. Expressed as Tailwind arbitrary
+       * utilities (`grid-rows-[0fr]`, `transition-[grid-template-rows]`) this
+       * silently failed to collapse: if the class never makes it through the
+       * JIT there is no error, the row just never shrinks and the section
+       * appears stuck open. Inline styles can't miss.
+       *
+       * min-height on the row is also load-bearing. A grid item's automatic
+       * minimum size is its content, so a 0fr track still renders full height
+       * unless the item is allowed to shrink. */}
       <div
-        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out-strong ${
-          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        }`}
+        style={{
+          display: "grid",
+          gridTemplateRows: open ? "1fr" : "0fr",
+          opacity: open ? 1 : 0,
+          transition:
+            "grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms cubic-bezier(0.23, 1, 0.32, 1)",
+        }}
       >
-        <div className="overflow-hidden">
+        <div style={{ minHeight: 0, overflow: "hidden" }}>
           {everOpened && (
             <div className="px-3 pb-3 pt-3 border-t border-white/10">
               {children}
