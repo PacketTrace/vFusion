@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import McpPlaybooks, { findPlaybookTools } from "../components/McpPlaybooks";
+import McpPlaybooks from "../components/McpPlaybooks";
 import { apiGet } from "../lib/api";
 
 // Shape of one entry in an MCP server's tools/list response.
@@ -82,7 +82,6 @@ export default function Mcp() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState<Risk | "all">("all");
-  const [tab, setTab] = useState<"tools" | "playbooks">("tools");
 
   const catalog = useQuery({
     queryKey: ["mcp-catalog"],
@@ -277,43 +276,12 @@ export default function Mcp() {
               </pre>
             </details>
           )}
+          <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-200">
+            Tools
+            <span className="text-slate-500 font-normal"> · {tools.length}</span>
+          </h2>
 
-          <div className="mt-5 flex gap-1.5 border-b border-white/10">
-            {(["tools", "playbooks"] as const).map((t) => {
-              const disabled = t === "playbooks" && !findPlaybookTools(tools);
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  disabled={disabled}
-                  title={
-                    disabled
-                      ? "This server doesn't publish playbooks"
-                      : undefined
-                  }
-                  className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors disabled:opacity-40 ${
-                    tab === t
-                      ? "border-sky-400 text-white"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {t === "tools" ? `Tools (${tools.length})` : "Playbooks"}
-                </button>
-              );
-            })}
-          </div>
-
-          {tab === "playbooks" && (
-            <div className="mt-4">
-              <McpPlaybooks tools={tools} />
-            </div>
-          )}
-
-          <div
-            className={`mt-4 gap-4 lg:grid-cols-[minmax(0,380px)_1fr] ${
-              tab === "tools" ? "grid" : "hidden"
-            }`}
-          >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
             <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
               <div className="p-2.5 border-b border-white/10 space-y-2">
                 <input
@@ -338,7 +306,7 @@ export default function Mcp() {
                   ))}
                 </div>
               </div>
-              <div className="max-h-[62vh] overflow-y-auto">
+              <div className="max-h-[48vh] overflow-y-auto">
                 {grouped.map(([family, list]) => (
                   <div key={family}>
                     <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-slate-500 bg-white/5 sticky top-0">
@@ -441,6 +409,15 @@ export default function Mcp() {
               )}
             </div>
           </div>
+          <h2 className="mt-8 mb-2 text-sm font-semibold text-slate-200">
+            Playbooks
+            <span className="text-slate-500 font-normal">
+              {" "}
+              · prose guides the server tells a model to read before it calls
+              anything
+            </span>
+          </h2>
+          <McpPlaybooks tools={tools} />
         </>
       )}
     </div>
