@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -67,16 +67,24 @@ REPLAY_LIMIT = 2000
 # How many past runs to average when pricing a proposed flow.
 RUN_HISTORY_LIMIT = 500
 
-# Both IDs are from the app's own GEMINI_MODELS list. Flash first — this is
-# structured extraction against a rich prompt, not open-ended reasoning —
-# with Pro as the fallback when Flash can't produce valid JSON.
-MODEL_CHAIN = ("gemini-2.5-flash", "gemini-2.5-pro")
+# Pro first. Drafting a flow is a one-off cost per attempt, not a per-firing
+# one, and the difference in output quality is worth more than the fraction
+# of a cent. Flash is the fallback if Pro is unavailable.
+MODEL_CHAIN = ("gemini-2.5-pro", "gemini-2.5-flash")
 
 
 class ProposeRequest(BaseModel):
     intent: str
     verkada_connection_id: UUID | None = None
     gemini_connection_id: UUID | None = None
+    # Answers to the questions asked before drafting.
+    run_mode: str | None = None  # "webhook" | "schedule"
+    # A real event of the kind that should trigger this. Grounding the
+    # trigger in something that actually happened is what stops the model
+    # proposing an unfiltered trigger that fires on everything.
+    example_event_id: UUID | None = None
+    # Or roughly when it last happened, if they don't want to browse.
+    example_epoch: int | None = None
 
 
 def _action_catalog() -> list[dict[str, Any]]:
@@ -213,6 +221,9 @@ __ORG__
 
 === WORKED EXAMPLES OF CORRECT OUTPUT ===
 __EXAMPLES__
+
+=== HOW IT SHOULD RUN ===
+__RUNMODE__
 
 === USER REQUEST ===
 __INTENT__
@@ -526,6 +537,122 @@ def _replay_rows(
     }
 
 
+@router.get("/event-kinds")
+async def event_kinds(
+    limit: int = 4000,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Distinct kinds of webhook this org actually receives.
+
+    Picking a *kind* beats picking a row: 2000 near-identical motion events
+    are unusable as a list, but "alert_rule_motion on Front Door, 412 in the
+    last week" is a thing someone can recognise. Each kind carries a
+    representative event id, which is what grounds the trigger.
+    """
+    rows = (
+        await session.execute(
+            select(WebhookEvent)
+            .order_by(WebhookEvent.received_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    # camera_id -> friendly name, so the list reads in human terms
+    cams = {
+        c.camera_id: c.name
+        for c in (await session.execute(select(VerkadaCamera))).scalars().all()
+    }
+
+    kinds: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in rows:
+        body = r.body_json if isinstance(r.body_json, dict) else {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        cam = str(data.get("camera_id") or "")
+        key = (r.family or "?", r.notification_type or "?", cam)
+        entry = kinds.get(key)
+        if entry is None:
+            objects = data.get("objects")
+            kinds[key] = {
+                "family": r.family,
+                "notification_type": r.notification_type,
+                "camera_id": cam or None,
+                "camera_name": cams.get(cam),
+                "door_name": (data.get("door_info") or {}).get("name")
+                if isinstance(data.get("door_info"), dict)
+                else None,
+                "objects": objects if isinstance(objects, list) else None,
+                "count": 0,
+                "last_seen": r.received_at.isoformat() if r.received_at else None,
+                "sample_event_id": str(r.id),
+            }
+            entry = kinds[key]
+        entry["count"] += 1
+
+    out = sorted(kinds.values(), key=lambda k: k["count"], reverse=True)
+    return {"scanned": len(rows), "kinds": out[:60]}
+
+
+async def _example_event(
+    session: AsyncSession, event_id: UUID | None, epoch: int | None
+) -> dict[str, Any] | None:
+    """The event the trigger should be modelled on.
+
+    Either one they picked, or the event closest to a timestamp they
+    remember. Returns the classified shape plus the handful of data fields
+    a trigger can filter on — not the whole payload, which would be mostly
+    noise in the prompt.
+    """
+    row = None
+    if event_id is not None:
+        row = await session.get(WebhookEvent, event_id)
+    elif epoch is not None:
+        target = datetime.fromtimestamp(epoch, tz=timezone.utc)
+        # Nearest on either side, so a rough guess still lands on something.
+        before = (
+            await session.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.received_at <= target)
+                .order_by(WebhookEvent.received_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        after = (
+            await session.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.received_at >= target)
+                .order_by(WebhookEvent.received_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        candidates = [c for c in (before, after) if c is not None]
+        if candidates:
+            row = min(
+                candidates,
+                key=lambda c: abs((c.received_at - target).total_seconds()),
+            )
+    if row is None:
+        return None
+    body = row.body_json if isinstance(row.body_json, dict) else {}
+    data = body.get("data") if isinstance(body.get("data"), dict) else {}
+    return {
+        "received_at": row.received_at.isoformat() if row.received_at else None,
+        "family": row.family,
+        "notification_type": row.notification_type,
+        "filterable_fields": {
+            k: data.get(k)
+            for k in (
+                "camera_id",
+                "door_id",
+                "objects",
+                "person_label",
+                "license_plate_number",
+                "direction",
+            )
+            if data.get(k) is not None
+        },
+    }
+
+
 @router.post("/propose")
 async def propose(
     payload: ProposeRequest,
@@ -599,6 +726,40 @@ async def propose(
     ]
     conn_name = gemini.name
 
+    example = await _example_event(
+        session, payload.example_event_id, payload.example_epoch
+    )
+    if payload.run_mode == "schedule":
+        run_mode_block = (
+            "Use trigger_type \"schedule\". Pick a sensible interval for the task "
+            "and say what you chose in assumptions. Do NOT use a webhook trigger."
+        )
+    elif example:
+        run_mode_block = (
+            "Use trigger_type \"verkada_webhook\". The user pointed at a REAL "
+            "event of the kind that should fire this flow:\n"
+            + json.dumps(example, indent=1)
+            + "\n\nSet trigger_config.family and notification_type to match it "
+            "exactly. Build trigger_config.filters from its filterable_fields so "
+            "the flow fires on THIS kind of event and not on everything — if the "
+            "event names a camera_id, filter on it, unless the user clearly wants "
+            "every camera. Steps that act on the triggering camera should use "
+            "{{ trigger.data.camera_id }} rather than hardcoding the id."
+        )
+    elif payload.run_mode == "webhook":
+        run_mode_block = (
+            "Use trigger_type \"verkada_webhook\". The user has no example event "
+            "yet — this hasn't happened before. Choose the family and "
+            "notification_type from the taxonomy, and add filters narrow enough "
+            "that the flow doesn't fire on unrelated traffic. List in assumptions "
+            "which trigger you chose and that it is unverified."
+        )
+    else:
+        run_mode_block = (
+            "The user didn't say how it should run. Choose whichever fits, and "
+            "state the choice in assumptions."
+        )
+
     # Deliberately not str.format(): the prompt contains literal {{ }}
     # template refs that format() would collapse to single braces.
     prompt = (
@@ -615,6 +776,7 @@ async def propose(
         .replace("__ACTIONS__", json.dumps(catalog, indent=1))
         .replace("__ORG__", json.dumps(org, indent=1)[:20000])
         .replace("__EXAMPLES__", json.dumps(examples, indent=1))
+        .replace("__RUNMODE__", run_mode_block)
         .replace("__INTENT__", intent)
     )
 
@@ -629,6 +791,16 @@ async def propose(
                 f"{len(catalog)} action types, {len(examples)} example flows"
             ),
         )
+        if example:
+            yield line(
+                stage="grounded",
+                detail=(
+                    f"trigger modelled on a real {example['notification_type']} "
+                    f"event from {example['received_at']}"
+                ),
+            )
+        elif payload.run_mode:
+            yield line(stage="run-mode", detail=f"building a {payload.run_mode} trigger")
         yield line(
             stage="replay-ready",
             detail=f"{len(replay_rows)} past webhook events loaded to test against",

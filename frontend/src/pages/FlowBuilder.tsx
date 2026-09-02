@@ -1,6 +1,18 @@
 import { useRef, useState } from "react";
 
-import { API_BASE } from "../lib/api";
+import { API_BASE, apiGet } from "../lib/api";
+
+type EventKind = {
+  family: string | null;
+  notification_type: string | null;
+  camera_id: string | null;
+  camera_name: string | null;
+  door_name: string | null;
+  objects: string[] | null;
+  count: number;
+  last_seen: string | null;
+  sample_event_id: string;
+};
 
 type ProposedNode = {
   id?: string;
@@ -65,6 +77,15 @@ const EXAMPLES = [
 
 export default function FlowBuilder() {
   const [intent, setIntent] = useState("");
+  // Answers to the questions asked before drafting.
+  const [runMode, setRunMode] = useState<"webhook" | "schedule" | null>(null);
+  const [eventSource, setEventSource] = useState<
+    "browse" | "epoch" | "never" | null
+  >(null);
+  const [pickedKind, setPickedKind] = useState<EventKind | null>(null);
+  const [epochInput, setEpochInput] = useState("");
+  const [kinds, setKinds] = useState<EventKind[] | null>(null);
+  const [kindsLoading, setKindsLoading] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [running, setRunning] = useState(false);
@@ -74,6 +95,21 @@ export default function FlowBuilder() {
   // Reads the newline-delimited progress stream. Building runs two model
   // calls and takes several seconds; showing the stages as they land is the
   // difference between "working" and "hung".
+  async function loadKinds() {
+    if (kinds || kindsLoading) return;
+    setKindsLoading(true);
+    try {
+      const r = await apiGet<{ kinds: EventKind[] }>(
+        "/api/flow-builder/event-kinds",
+      );
+      setKinds(r.kinds);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setKindsLoading(false);
+    }
+  }
+
   async function run(text: string) {
     abort.current?.abort();
     const ctrl = new AbortController();
@@ -87,7 +123,16 @@ export default function FlowBuilder() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: text }),
+        body: JSON.stringify({
+          intent: text,
+          run_mode: runMode,
+          example_event_id:
+            eventSource === "browse" ? pickedKind?.sample_event_id ?? null : null,
+          example_epoch:
+            eventSource === "epoch" && epochInput.trim()
+              ? Number(epochInput.trim())
+              : null,
+        }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -124,6 +169,15 @@ export default function FlowBuilder() {
     }
   }
 
+  // Don't let them draft until the questions are answered — an ungrounded
+  // trigger is what produced a flow that fired on every camera in the org.
+  const ready =
+    runMode === "schedule" ||
+    (runMode === "webhook" &&
+      (eventSource === "never" ||
+        (eventSource === "browse" && !!pickedKind) ||
+        (eventSource === "epoch" && !!epochInput.trim())));
+
   const flow = proposal?.template?.flow;
   const nodes = flow?.nodes ?? [];
 
@@ -150,6 +204,133 @@ export default function FlowBuilder() {
           placeholder="e.g. I have a fox problem and I want to be notified when one shows up"
           className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-sm resize-y focus:outline-none focus:border-sky-600"
         />
+        <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3 space-y-3">
+          <div>
+            <div className="text-[12px] text-slate-300 font-medium">
+              How should it run?
+            </div>
+            <div className="flex gap-1.5 mt-1.5 flex-wrap">
+              {(
+                [
+                  ["webhook", "When something happens", "Reacts to a Verkada event"],
+                  ["schedule", "On a schedule", "Checks every so often"],
+                ] as const
+              ).map(([val, label, hint]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setRunMode(val)}
+                  className={`text-left px-3 py-2 rounded border transition-colors ${
+                    runMode === val
+                      ? "border-sky-500/50 bg-sky-950/40 text-white"
+                      : "border-white/10 text-slate-300 hover:bg-white/5"
+                  }`}
+                >
+                  <div className="text-[12px]">{label}</div>
+                  <div className="text-[11px] text-slate-500">{hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {runMode === "webhook" && (
+            <div>
+              <div className="text-[12px] text-slate-300 font-medium">
+                Point at an example of the event
+              </div>
+              <div className="text-[11px] text-slate-500 mb-1.5">
+                A real event pins down the trigger. Without one it has to guess,
+                and a guess tends to fire on everything.
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {(
+                  [
+                    ["browse", "Browse what's come in"],
+                    ["epoch", "I know roughly when"],
+                    ["never", "It hasn't happened yet"],
+                  ] as const
+                ).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      setEventSource(val);
+                      if (val === "browse") loadKinds();
+                    }}
+                    className={`text-[11px] px-2 py-1 rounded border transition-colors ${
+                      eventSource === val
+                        ? "border-sky-500/50 bg-sky-950/40 text-white"
+                        : "border-white/10 text-slate-400 hover:bg-white/5"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {eventSource === "browse" && (
+                <div className="mt-2 max-h-56 overflow-y-auto rounded border border-white/10">
+                  {kindsLoading && (
+                    <div className="px-3 py-3 text-[12px] text-slate-500">
+                      Reading your webhook history…
+                    </div>
+                  )}
+                  {kinds?.length === 0 && (
+                    <div className="px-3 py-3 text-[12px] text-slate-500">
+                      No webhook events captured yet.
+                    </div>
+                  )}
+                  {kinds?.map((k) => (
+                    <button
+                      key={k.sample_event_id}
+                      type="button"
+                      onClick={() => setPickedKind(k)}
+                      className={`w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 ${
+                        pickedKind?.sample_event_id === k.sample_event_id
+                          ? "bg-sky-950/40"
+                          : ""
+                      }`}
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-[12px] text-slate-200">
+                          {k.notification_type}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {k.count}×
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {k.camera_name ?? k.door_name ?? k.family}
+                        {k.objects?.length ? ` · ${k.objects.join(", ")}` : ""}
+                        {k.last_seen
+                          ? ` · last ${k.last_seen.replace("T", " ").slice(0, 16)}`
+                          : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {eventSource === "epoch" && (
+                <input
+                  value={epochInput}
+                  onChange={(e) => setEpochInput(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="Unix epoch seconds, e.g. 1788370089 — we'll use the closest event"
+                  className="mt-2 w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+                />
+              )}
+
+              {eventSource === "never" && (
+                <div className="mt-2 text-[11px] text-amber-200/80">
+                  It'll pick a trigger from the taxonomy and flag it as unverified
+                  — the replay check below will show whether anything matches.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center justify-between gap-3 mt-2 flex-wrap">
           <div className="flex gap-1.5 flex-wrap">
             {EXAMPLES.map((ex) => (
@@ -165,7 +346,7 @@ export default function FlowBuilder() {
           </div>
           <button
             type="submit"
-            disabled={!intent.trim() || running}
+            disabled={!intent.trim() || running || !ready}
             className="px-4 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40"
           >
             {running ? "Working…" : "Draft it"}
@@ -300,13 +481,16 @@ export default function FlowBuilder() {
                 </div>
               ))}
               {proposal.draft_cost && (
-                <div className="text-[11px] text-slate-500 mt-2 pt-2 border-t border-white/5">
-                  Drafting this flow cost{" "}
+                <div className="text-[12px] text-slate-300 mt-2 pt-2 border-t border-white/5">
+                  This draft cost{" "}
+                  <span className="font-semibold text-slate-100">
                   {proposal.draft_cost.usd !== null
-                    ? `$${proposal.draft_cost.usd.toFixed(4)}`
-                    : "—"}{" "}
-                  ({proposal.draft_cost.tokens_in.toLocaleString()} in /{" "}
-                  {proposal.draft_cost.tokens_out.toLocaleString()} out)
+                    ? "$" + proposal.draft_cost.usd.toFixed(4)
+                    : "—"}
+                  </span>{" "}
+                  to generate on {proposal.model} —{" "}
+                  {proposal.draft_cost.tokens_in.toLocaleString()} tokens in,{" "}
+                  {proposal.draft_cost.tokens_out.toLocaleString()} out
                 </div>
               )}
             </div>
