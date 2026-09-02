@@ -1,6 +1,7 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
 
 import { Flow } from "../../lib/api";
+import { useNotificationLabel } from "../../lib/taxonomy";
 import { triggerIcon } from "./icons";
 
 
@@ -155,6 +156,7 @@ const FAMILY_PRETTY: Record<string, { emoji: string; label: string }> = {
 
 
 function WebhookSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
+  const notificationLabel = useNotificationLabel();
   const family = String((cfg as Record<string, unknown>).family ?? "");
   const nt = String((cfg as Record<string, unknown>).notification_type ?? "");
   const filters = (cfg as Record<string, unknown>).filters ?? {};
@@ -171,7 +173,7 @@ function WebhookSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
         ) : (
           <Pill>{family || "any"}</Pill>
         )}
-        {nt && <Pill subtle>{prettifyNotificationType(nt)}</Pill>}
+        {nt && <Pill subtle>{notificationLabel(family, nt)}</Pill>}
       </div>
       {filterEntries.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -208,9 +210,3 @@ function Pill({
 }
 
 
-/** Strip the noisy ``alert_rule_`` prefix and underscore-to-space the
- *  rest so things like ``alert_rule_motion`` read as ``motion`` in the
- *  pill. Original string is preserved for tooltips elsewhere. */
-function prettifyNotificationType(nt: string): string {
-  return nt.replace(/^alert_rule_/, "").replace(/_/g, " ");
-}

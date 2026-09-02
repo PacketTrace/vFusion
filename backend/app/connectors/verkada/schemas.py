@@ -307,6 +307,88 @@ def classify(envelope: Envelope) -> Family:
     return "unknown"
 
 
+# Human labels for the raw notification_type strings.
+#
+# The wire values are fine as identifiers and unreadable as UI: nobody
+# scanning a dropdown knows that "alert_rule_dwell" is the thing Command
+# calls Loitering. Names here follow Verkada's own product language where
+# it exists — their alerts API enumerates crowd / loitering / line_crossing
+# / tamper, and the access playbook groups door events into successful
+# entry, denied attempts, physical exceptions and hardware.
+#
+# (label, one-line description, group). Group drives <optgroup> ordering.
+NOTIFICATION_TYPE_META: dict[str, tuple[str, str, str]] = {
+    # ---- camera ----
+    "alert_rule_motion": ("Motion", "Something moved in a monitored area.", "Detections"),
+    "contextual_trigger_people_motion": ("Person motion", "Motion specifically attributed to a person.", "Detections"),
+    "alert_rule_line_crossing": ("Line crossing", "Something crossed a line drawn on the camera view.", "Detections"),
+    "alert_rule_dwell": ("Loitering", "Someone stayed in an area longer than the configured dwell time.", "Detections"),
+    "alert_rule_crowd": ("Crowd forming", "More people in view than the configured crowd threshold.", "Detections"),
+    "alert_rule_inactivity": ("Inactivity", "An area that normally sees activity has gone quiet.", "Detections"),
+    "alert_rule_activity_recognition": ("Activity recognised", "A configured activity type was recognised in view.", "Detections"),
+    "natural_language_event": ("Natural-language match", "Footage matched a plain-language search you saved.", "Detections"),
+    "person_of_interest": ("Person of Interest seen", "A face matched someone on a Person of Interest list.", "Watchlists"),
+    "license_plate_of_interest": ("Plate of Interest seen", "A plate matched a License Plate of Interest list.", "Watchlists"),
+    "smart_list": ("Smart List match", "A face, plate or object matched a Smart List.", "Watchlists"),
+    "tamper": ("Camera tampered with", "The camera was moved, covered or otherwise interfered with.", "Device health"),
+    "occlusion": ("View blocked", "Something is obstructing the camera's view.", "Device health"),
+    "camera_status": ("Camera went online / offline", "The camera changed connection state.", "Device health"),
+    "custom_event": ("Custom event", "An event your own integration raised.", "Other"),
+    # ---- access: it worked ----
+    "door_opened": ("Door opened", "The door physically opened.", "Entry"),
+    "door_unlocked": ("Door unlocked", "The lock released.", "Entry"),
+    "door_keycard_entered_accepted": ("Badge accepted", "A keycard was presented and granted.", "Entry"),
+    "door_code_entered_accepted": ("Keypad code accepted", "A PIN was entered and granted.", "Entry"),
+    "door_mobile_nfc_scan_accepted": ("Phone tap accepted", "A mobile NFC credential was granted.", "Entry"),
+    "door_ble_unlock_attempt_accepted": ("Bluetooth unlock accepted", "An unlock from the Pass app was granted.", "Entry"),
+    "door_face_presented_accepted": ("Face accepted", "Face authentication succeeded.", "Entry"),
+    "door_lp_presented_accepted": ("Plate accepted", "A license plate credential was granted.", "Entry"),
+    "door_remote_unlock_accepted": ("Remote unlock accepted", "Someone unlocked the door from Command or the API.", "Entry"),
+    # ---- access: it didn't ----
+    "door_keycard_entered_rejected": ("Badge rejected", "A keycard was presented and denied.", "Denied"),
+    "door_code_entered_rejected": ("Keypad code rejected", "A PIN was entered and denied.", "Denied"),
+    "door_mobile_nfc_scan_rejected": ("Phone tap rejected", "A mobile NFC credential was denied.", "Denied"),
+    "door_ble_unlock_attempt_rejected": ("Bluetooth unlock rejected", "An unlock from the Pass app was denied.", "Denied"),
+    "door_face_presented_rejected": ("Face rejected", "Face authentication failed.", "Denied"),
+    "door_lp_presented_rejected": ("Plate rejected", "A license plate credential was denied.", "Denied"),
+    "door_deactivated_credential_used": ("Deactivated credential used", "Someone tried a credential that has been turned off.", "Denied"),
+    # ---- access: physical exceptions ----
+    "door_forced_open": ("Door forced open", "The door opened without being unlocked.", "Exceptions"),
+    "door_held_open": ("Door held open", "The door stayed open longer than allowed.", "Exceptions"),
+    "door_tailgating": ("Tailgating", "More people went through than credentials presented.", "Exceptions"),
+    # ---- access: state and hardware ----
+    "door_closed": ("Door closed", "The door returned to closed.", "Door state"),
+    "door_locked": ("Door locked", "The lock engaged.", "Door state"),
+    "door_lockdown": ("Lockdown applied", "An Access scenario locked this door.", "Door state"),
+    "door_lockdown_debounced": ("Lockdown (repeat suppressed)", "A duplicate lockdown event Verkada collapsed.", "Door state"),
+    "door_schedule_override_removed": ("Schedule override cleared", "A manual override of the door schedule ended.", "Door state"),
+    "door_auxoutput_activated": ("Aux output on", "An auxiliary output on the controller switched on.", "Hardware"),
+    "door_auxoutput_deactivated": ("Aux output off", "An auxiliary output on the controller switched off.", "Hardware"),
+    "door_acu_offline": ("Controller offline", "The access control unit lost connection.", "Hardware"),
+    # ---- intercom ----
+    "intercom_call_triggered": ("Someone rang the intercom", "A visitor pressed the call button.", "Calls"),
+    "intercom_missed_call": ("Intercom call missed", "Nobody answered the intercom.", "Calls"),
+    "intercom_receiver_admitted": ("Visitor admitted", "Someone answered and let the visitor in.", "Calls"),
+    "intercom_status": ("Intercom went online / offline", "The intercom changed connection state.", "Device health"),
+}
+
+
+def notification_type_meta(nt: str) -> dict[str, str]:
+    """Label/description/group for a notification type.
+
+    Falls back to a de-underscored version of the raw value so a type
+    Verkada adds tomorrow still reads sensibly instead of vanishing.
+    """
+    hit = NOTIFICATION_TYPE_META.get(nt)
+    if hit:
+        return {"label": hit[0], "description": hit[1], "group": hit[2]}
+    return {
+        "label": nt.replace("alert_rule_", "").replace("_", " ").capitalize(),
+        "description": "",
+        "group": "Other",
+    }
+
+
 # Surfaced to the frontend so the trigger node can render family choices
 # and field-level filter pickers without hardcoding strings in JS.
 TAXONOMY: dict[str, dict[str, Any]] = {
@@ -314,6 +396,9 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "label": "Camera event",
         "webhook_type": "notification",
         "notification_types": sorted(CAMERA_EVENT_TYPES),
+        "notification_type_meta": {
+            nt: notification_type_meta(nt) for nt in sorted(CAMERA_EVENT_TYPES)
+        },
         # The picker is sample-driven, so each of these only surfaces when
         # an actual webhook of the selected notification_type carries the
         # field. Ordering here is "most likely to be the meaningful filter
@@ -333,6 +418,9 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "label": "Access / Door Event",
         "webhook_type": "notification",
         "notification_types": sorted(ACCESS_EVENT_TYPES),
+        "notification_type_meta": {
+            nt: notification_type_meta(nt) for nt in sorted(ACCESS_EVENT_TYPES)
+        },
         "filter_fields": ["door_id", "user_info", "direction"],
     },
     "lpr": {
@@ -351,6 +439,9 @@ TAXONOMY: dict[str, dict[str, Any]] = {
         "label": "Intercom Event",
         "webhook_type": "notification",
         "notification_types": sorted(INTERCOM_EVENT_TYPES),
+        "notification_type_meta": {
+            nt: notification_type_meta(nt) for nt in sorted(INTERCOM_EVENT_TYPES)
+        },
         "filter_fields": ["device_name", "answered_by_name"],
     },
     "credential": {

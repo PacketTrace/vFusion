@@ -124,22 +124,53 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
         </select>
       </Field>
 
-      {familyEntry?.notification_types && (
-        <Field label="Notification type">
-          <select
-            value={value.notificationType}
-            onChange={(e) => onChange({ ...value, notificationType: e.target.value })}
-            className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
-          >
-            <option value="">(any in this family)</option>
-            {familyEntry.notification_types.map((nt) => (
-              <option key={nt} value={nt}>
-                {nt}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      {familyEntry?.notification_types && (() => {
+        const meta = familyEntry.notification_type_meta ?? {};
+        const labelOf = (nt: string) => meta[nt]?.label ?? nt;
+        // Group the options the way Verkada talks about them — entry,
+        // denied, exceptions, hardware — so a long list is scannable.
+        const groups = new Map<string, string[]>();
+        for (const nt of familyEntry.notification_types!) {
+          const g = meta[nt]?.group ?? "Other";
+          if (!groups.has(g)) groups.set(g, []);
+          groups.get(g)!.push(nt);
+        }
+        for (const list of groups.values())
+          list.sort((x, y) => labelOf(x).localeCompare(labelOf(y)));
+        const selected = value.notificationType
+          ? meta[value.notificationType]
+          : undefined;
+        return (
+          <Field label="What happened">
+            <select
+              value={value.notificationType}
+              onChange={(e) =>
+                onChange({ ...value, notificationType: e.target.value })
+              }
+              className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
+            >
+              <option value="">Anything in this family</option>
+              {[...groups.entries()].map(([g, list]) => (
+                <optgroup key={g} label={g}>
+                  {list.map((nt) => (
+                    <option key={nt} value={nt}>
+                      {labelOf(nt)}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {selected && (
+              <div className="mt-1 text-[11px] text-slate-400">
+                {selected.description}{" "}
+                <span className="text-slate-600 font-mono">
+                  {value.notificationType}
+                </span>
+              </div>
+            )}
+          </Field>
+        );
+      })()}
 
       <Field
         label="Filters"

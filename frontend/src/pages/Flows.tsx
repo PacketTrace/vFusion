@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { apiDelete, apiGet, apiPost, apiPut, Flow, FlowExportFormat } from "../lib/api";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
+import { useNotificationLabel } from "../lib/taxonomy";
 
 
 export default function Flows() {
+  const notificationLabel = useNotificationLabel();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -183,7 +185,10 @@ export default function Flows() {
                       <>
                         {f.trigger_config.family ?? "(any)"}
                         {f.trigger_config.notification_type
-                          ? ` / ${f.trigger_config.notification_type}`
+                          ? ` / ${notificationLabel(
+                              f.trigger_config.family as string | undefined,
+                              f.trigger_config.notification_type as string,
+                            )}`
                           : ""}
                         {f.trigger_config.filters &&
                           Object.entries(f.trigger_config.filters).length > 0 && (

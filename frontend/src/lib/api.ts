@@ -398,10 +398,18 @@ export interface VerkadaCamera {
 
 // ---- Verkada taxonomy ----
 
+export interface NotificationTypeMeta {
+  label: string;
+  description: string;
+  group: string;
+}
+
 export interface TaxonomyEntry {
   label: string;
   webhook_type: string;
   notification_types: string[] | null;
+  /** Human label / description / group per raw notification_type. */
+  notification_type_meta?: Record<string, NotificationTypeMeta>;
   filter_fields: string[];
 }
 
