@@ -33,6 +33,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,9 +61,10 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "data" / "flow_templates
 # How far back to look when answering "would this have fired?".
 REPLAY_LIMIT = 2000
 
-# Cheap and fast; the task is structured extraction against a rich prompt,
-# not open-ended reasoning. Falls back down the chain on 503/429.
-MODEL_CHAIN = ("gemini-2.5-flash", "gemini-2.0-flash")
+# Both IDs are from the app's own GEMINI_MODELS list. Flash first — this is
+# structured extraction against a rich prompt, not open-ended reasoning —
+# with Pro as the fallback when Flash can't produce valid JSON.
+MODEL_CHAIN = ("gemini-2.5-flash", "gemini-2.5-pro")
 
 
 class ProposeRequest(BaseModel):
@@ -98,7 +100,6 @@ def _action_catalog() -> list[dict[str, Any]]:
                 "description": spec.description,
                 "default_step_name": spec.default_step_name,
                 "config_fields": fields,
-                "output_sample": spec.output_sample,
             }
         )
     return out
@@ -111,7 +112,15 @@ def _examples() -> list[dict[str, Any]]:
         return examples
     for path in sorted(TEMPLATE_DIR.glob("*.json")):
         try:
-            examples.append(json.loads(path.read_text()))
+            j = json.loads(path.read_text())
+            # Only the parts that demonstrate correct structure.
+            examples.append(
+                {
+                    "name": j.get("name"),
+                    "summary": j.get("summary"),
+                    "flow": j.get("flow"),
+                }
+            )
         except (OSError, json.JSONDecodeError) as e:  # noqa: BLE001
             logger.warning("skipping unreadable template %s: %s", path, e)
     return examples
@@ -298,54 +307,6 @@ def _validate(tpl: dict[str, Any]) -> list[str]:
     return errors
 
 
-async def _replay(
-    session: AsyncSession, trigger_config: dict[str, Any]
-) -> dict[str, Any]:
-    """Would this trigger have fired on real traffic?
-
-    Uses the same matcher the live ingest path uses, so this is the actual
-    firing decision rather than an approximation of it.
-    """
-    rows = (
-        (
-            await session.execute(
-                select(WebhookEvent)
-                .order_by(WebhookEvent.received_at.desc())
-                .limit(REPLAY_LIMIT)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    hits: list[dict[str, Any]] = []
-    for row in rows:
-        body = row.body_json if isinstance(row.body_json, dict) else {}
-        event = {
-            "family": row.family,
-            "notification_type": row.notification_type,
-            "data": body.get("data") if isinstance(body.get("data"), dict) else {},
-        }
-        try:
-            if trigger_matches(trigger_config, event):
-                hits.append(
-                    {
-                        "id": str(row.id),
-                        "received_at": row.received_at.isoformat()
-                        if row.received_at
-                        else None,
-                        "notification_type": row.notification_type,
-                        "family": row.family,
-                    }
-                )
-        except Exception:  # noqa: BLE001 — a bad filter shouldn't 500 the page
-            continue
-    return {
-        "scanned": len(rows),
-        "matched": len(hits),
-        "samples": hits[:5],
-    }
-
-
 def _extract_json(text: str) -> dict[str, Any]:
     """Models fence JSON even when told not to. Strip and parse."""
     t = text.strip()
@@ -359,27 +320,84 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(t[start : end + 1])
 
 
-def _generate(api_key: str, prompt: str) -> str:
+def _generate(api_key: str, prompt: str) -> tuple[str, str]:
+    """Returns (text, model_that_answered).
+
+    response_mime_type asks the API for JSON at the decoding level, which
+    removes the whole class of "model wrapped it in a code fence" failures.
+    max_output_tokens is generous because a truncated response is invalid
+    JSON, and that reads as a model failure rather than a length problem.
+    """
     from google import genai
 
     client = genai.Client(api_key=api_key)
     last: Exception | None = None
     for model in MODEL_CHAIN:
         try:
-            res = client.models.generate_content(model=model, contents=prompt)
-            return res.text or ""
+            res = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": 8192,
+                },
+            )
+            text = res.text or ""
+            if not text.strip():
+                raise RuntimeError("model returned an empty response")
+            return text, model
         except Exception as e:  # noqa: BLE001 — try the next model in the chain
             last = e
             continue
-    raise RuntimeError(f"all Gemini models failed: {last}")
+    raise RuntimeError(f"all Gemini models failed — last error: {last}")
+
+
+def _replay_rows(
+    rows: list[tuple[str, str | None, str | None, str | None, dict[str, Any]]],
+    trigger_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Pure-function replay over rows already pulled from the database.
+
+    Split out so the streaming response doesn't hold a DB session open
+    across a multi-second model call.
+    """
+    hits: list[dict[str, Any]] = []
+    for rid, received, family, nt, body in rows:
+        event = {
+            "family": family,
+            "notification_type": nt,
+            "data": body.get("data") if isinstance(body.get("data"), dict) else {},
+        }
+        try:
+            if trigger_matches(trigger_config, event):
+                hits.append(
+                    {
+                        "id": rid,
+                        "received_at": received,
+                        "family": family,
+                        "notification_type": nt,
+                    }
+                )
+        except Exception:  # noqa: BLE001 — a bad filter shouldn't break the page
+            continue
+    return {"scanned": len(rows), "matched": len(hits), "samples": hits[:5]}
 
 
 @router.post("/propose")
 async def propose(
     payload: ProposeRequest,
     session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    """Turn a sentence into a proposed flow template. Never saves."""
+) -> StreamingResponse:
+    """Draft a flow from a sentence, streaming progress as it goes.
+
+    Emits newline-delimited JSON: a series of {"stage", "detail"} lines
+    while it works, then one {"stage": "done", "result": {...}}. Building
+    takes several seconds across two model calls, and a spinner that says
+    nothing for that long reads as a hang.
+
+    Everything touching the database is read up front so the session isn't
+    held open for the duration of the stream.
+    """
     intent = payload.intent.strip()
     if not intent:
         raise HTTPException(status_code=400, detail="Describe what you want built.")
@@ -415,6 +433,28 @@ async def propose(
         )
 
     org = await _org_context(session, payload.verkada_connection_id)
+    examples = _examples()
+    catalog = _action_catalog()
+    replay_rows = [
+        (
+            str(r.id),
+            r.received_at.isoformat() if r.received_at else None,
+            r.family,
+            r.notification_type,
+            r.body_json if isinstance(r.body_json, dict) else {},
+        )
+        for r in (
+            await session.execute(
+                select(WebhookEvent)
+                .order_by(WebhookEvent.received_at.desc())
+                .limit(REPLAY_LIMIT)
+            )
+        )
+        .scalars()
+        .all()
+    ]
+    conn_name = gemini.name
+
     # Deliberately not str.format(): the prompt contains literal {{ }}
     # template refs that format() would collapse to single braces.
     prompt = (
@@ -428,56 +468,111 @@ async def propose(
                 indent=1,
             ),
         )
-        .replace("__ACTIONS__", json.dumps(_action_catalog(), indent=1))
+        .replace("__ACTIONS__", json.dumps(catalog, indent=1))
         .replace("__ORG__", json.dumps(org, indent=1)[:20000])
-        .replace("__EXAMPLES__", json.dumps(_examples(), indent=1))
+        .replace("__EXAMPLES__", json.dumps(examples, indent=1))
         .replace("__INTENT__", intent)
     )
 
-    attempts: list[dict[str, Any]] = []
-    tpl: dict[str, Any] | None = None
-    errors: list[str] = []
-    current = prompt
-    # One repair round. If the model can't produce a valid flow twice, the
-    # honest move is to show the errors rather than keep paying for retries.
-    for attempt in range(2):
-        try:
-            raw = await asyncio.to_thread(_generate, api_key, current)
-            candidate = _extract_json(raw)
-        except Exception as e:  # noqa: BLE001
-            attempts.append({"attempt": attempt + 1, "error": str(e)[:300]})
-            errors = [f"model call failed: {e}"]
-            break
-        errors = _validate(candidate)
-        attempts.append({"attempt": attempt + 1, "errors": errors})
-        tpl = candidate
-        if not errors:
-            break
-        current = (
-            prompt
-            + "\n\n=== YOUR PREVIOUS ATTEMPT WAS INVALID ===\n"
-            + json.dumps(candidate, indent=1)
-            + "\n\nFix exactly these problems and return the corrected JSON:\n- "
-            + "\n- ".join(errors)
+    async def stream() -> Any:
+        def line(**kw: Any) -> bytes:
+            return (json.dumps(kw) + "\n").encode()
+
+        yield line(
+            stage="context",
+            detail=(
+                f"{len(org['cameras'])} cameras, {len(org['doors'])} doors, "
+                f"{len(catalog)} action types, {len(examples)} example flows"
+            ),
+        )
+        yield line(
+            stage="replay-ready",
+            detail=f"{len(replay_rows)} past webhook events loaded to test against",
         )
 
-    if tpl is None:
-        raise HTTPException(
-            status_code=502,
-            detail=(errors[0] if errors else "the model returned nothing usable"),
+        attempts: list[dict[str, Any]] = []
+        tpl: dict[str, Any] | None = None
+        errors: list[str] = []
+        used_model = ""
+        current = prompt
+
+        # Two rounds. A parse failure retries like any other failure — an
+        # earlier version treated it as fatal, so one malformed reply killed
+        # the whole request.
+        for attempt in range(2):
+            yield line(
+                stage="drafting",
+                detail=(
+                    f"asking {MODEL_CHAIN[0]} ({len(current) // 1000}k chars of context)"
+                    if attempt == 0
+                    else "sending the validation errors back for a fix"
+                ),
+            )
+            try:
+                raw, used_model = await asyncio.to_thread(_generate, api_key, current)
+                candidate = _extract_json(raw)
+            except Exception as e:  # noqa: BLE001
+                errors = [str(e)]
+                attempts.append({"attempt": attempt + 1, "error": str(e)[:300]})
+                yield line(stage="error", detail=str(e)[:300])
+                continue
+            yield line(stage="validating", detail=f"{used_model} answered")
+            errors = _validate(candidate)
+            attempts.append({"attempt": attempt + 1, "errors": errors})
+            tpl = candidate
+            if not errors:
+                yield line(stage="valid", detail="draft passed validation")
+                break
+            yield line(
+                stage="invalid",
+                detail=f"{len(errors)} problem(s): {errors[0]}",
+            )
+            current = (
+                prompt
+                + "\n\n=== YOUR PREVIOUS ATTEMPT WAS INVALID ===\n"
+                + json.dumps(candidate, indent=1)
+                + "\n\nFix exactly these problems and return the corrected JSON:\n- "
+                + "\n- ".join(errors)
+            )
+
+        if tpl is None:
+            yield line(
+                stage="done",
+                result={
+                    "intent": intent,
+                    "template": {},
+                    "valid": False,
+                    "errors": errors or ["the model returned nothing usable"],
+                    "attempts": attempts,
+                    "replay": None,
+                    "model": used_model,
+                    "gemini_connection": conn_name,
+                },
+            )
+            return
+
+        flow = tpl.get("flow") or {}
+        replay = None
+        if flow.get("trigger_type") == "verkada_webhook":
+            yield line(stage="replaying", detail="testing the trigger on real events")
+            replay = _replay_rows(replay_rows, flow.get("trigger_config") or {})
+            yield line(
+                stage="replayed",
+                detail=f"matched {replay['matched']} of {replay['scanned']}",
+            )
+
+        yield line(
+            stage="done",
+            result={
+                "intent": intent,
+                "template": tpl,
+                "valid": not errors,
+                "errors": errors,
+                "attempts": attempts,
+                "replay": replay,
+                "model": used_model,
+                "gemini_connection": conn_name,
+            },
         )
 
-    flow = tpl.get("flow") or {}
-    replay = None
-    if flow.get("trigger_type") == "verkada_webhook":
-        replay = await _replay(session, flow.get("trigger_config") or {})
-
-    return {
-        "intent": intent,
-        "template": tpl,
-        "valid": not errors,
-        "errors": errors,
-        "attempts": attempts,
-        "replay": replay,
-        "gemini_connection": gemini.name,
-    }
+    return StreamingResponse(stream(), media_type="application/x-ndjson")

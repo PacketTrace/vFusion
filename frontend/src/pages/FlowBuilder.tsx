@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 
-import { apiPost } from "../lib/api";
+import { API_BASE } from "../lib/api";
 
 type ProposedNode = {
   id?: string;
@@ -12,8 +11,11 @@ type ProposedNode = {
   config?: Record<string, unknown>;
 };
 
+type Stage = { stage: string; detail?: string };
+
 type Proposal = {
   intent: string;
+  model: string;
   valid: boolean;
   errors: string[];
   gemini_connection: string;
@@ -55,12 +57,63 @@ const EXAMPLES = [
 export default function FlowBuilder() {
   const [intent, setIntent] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
 
-  const propose = useMutation({
-    mutationFn: (text: string) =>
-      apiPost<Proposal>("/api/flow-builder/propose", { intent: text }),
-    onSuccess: setProposal,
-  });
+  // Reads the newline-delimited progress stream. Building runs two model
+  // calls and takes several seconds; showing the stages as they land is the
+  // difference between "working" and "hung".
+  async function run(text: string) {
+    abort.current?.abort();
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    setRunning(true);
+    setError(null);
+    setStages([]);
+    setProposal(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/flow-builder/propose`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: text }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) {
+        let detail = `Draft failed (${res.status})`;
+        try {
+          const j = await res.json();
+          if (j?.detail) detail = j.detail;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(detail);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        // Keep the trailing partial line in the buffer for the next chunk.
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const raw of lines) {
+          if (!raw.trim()) continue;
+          const msg = JSON.parse(raw);
+          if (msg.stage === "done") setProposal(msg.result as Proposal);
+          else setStages((prev) => [...prev, msg as Stage]);
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   const flow = proposal?.template?.flow;
   const nodes = flow?.nodes ?? [];
@@ -78,7 +131,7 @@ export default function FlowBuilder() {
         className="mt-5"
         onSubmit={(e) => {
           e.preventDefault();
-          if (intent.trim()) propose.mutate(intent.trim());
+          if (intent.trim()) run(intent.trim());
         }}
       >
         <textarea
@@ -103,17 +156,42 @@ export default function FlowBuilder() {
           </div>
           <button
             type="submit"
-            disabled={!intent.trim() || propose.isPending}
+            disabled={!intent.trim() || running}
             className="px-4 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40"
           >
-            {propose.isPending ? "Thinking…" : "Draft it"}
+            {running ? "Working…" : "Draft it"}
           </button>
         </div>
       </form>
 
-      {propose.isError && (
+      {stages.length > 0 && (
+        <div className="mt-5 rounded-lg border border-white/10 bg-black/25 p-3 font-mono text-[11.5px] space-y-0.5">
+          {stages.map((s2, i) => (
+            <div key={i} className="flex gap-2">
+              <span
+                className={
+                  s2.stage === "error" || s2.stage === "invalid"
+                    ? "text-amber-300 w-24 shrink-0"
+                    : "text-sky-300/80 w-24 shrink-0"
+                }
+              >
+                {s2.stage}
+              </span>
+              <span className="text-slate-400">{s2.detail}</span>
+            </div>
+          ))}
+          {running && (
+            <div className="flex gap-2">
+              <span className="text-slate-500 w-24 shrink-0">…</span>
+              <span className="text-slate-500">working</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
         <div className="mt-5 rounded-lg border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-200">
-          {(propose.error as Error).message}
+          {error}
         </div>
       )}
 
@@ -268,7 +346,7 @@ export default function FlowBuilder() {
               Raw template JSON
               <span className="text-slate-500">
                 {" "}
-                — drafted with {proposal.gemini_connection}
+                — {proposal.model || "gemini"} via {proposal.gemini_connection}
               </span>
             </summary>
             <pre className="px-3 pb-3 text-[11px] text-slate-400 whitespace-pre-wrap font-mono">
