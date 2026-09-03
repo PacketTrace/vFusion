@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 
@@ -57,6 +57,25 @@ function LogoutButton() {
 
 function AppShell() {
   const brand = useBrand();
+  // Hover speeds the orbit up. Doing this by swapping animation-duration
+  // in CSS makes the particles jump: progress is elapsed % duration, so
+  // a new duration maps the same elapsed time to a different point on
+  // the path. updatePlaybackRate changes speed while keeping the current
+  // position, which is the difference between throttling up and
+  // restarting.
+  const markRef = useRef<HTMLDivElement>(null);
+  const setOrbitRate = (rate: number) => {
+    markRef.current?.querySelectorAll(".brand-dot").forEach((el) => {
+      for (const anim of el.getAnimations()) {
+        if (typeof anim.updatePlaybackRate === "function") {
+          anim.updatePlaybackRate(rate);
+        } else {
+          anim.playbackRate = rate;
+        }
+      }
+    });
+  };
+
   // Keep the tab title in sync with the brand. Cheap to run; useEffect
   // only fires when ``brand`` actually changes.
   useEffect(() => {
@@ -72,7 +91,12 @@ function AppShell() {
               rotating a box moves a dot in a circle whose radius is half
               the word's width, which is why earlier versions flung them
               out of the header. */}
-          <div className="brand-mark font-semibold text-white tracking-tight relative select-none">
+          <div
+            ref={markRef}
+            onMouseEnter={() => setOrbitRate(3)}
+            onMouseLeave={() => setOrbitRate(1)}
+            className="brand-mark font-semibold text-white tracking-tight relative select-none"
+          >
             <i className="brand-dot brand-dot-a" aria-hidden="true" />
             <i className="brand-dot brand-dot-b" aria-hidden="true" />
             <span className="relative">{brand}</span>

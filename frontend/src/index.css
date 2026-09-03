@@ -288,13 +288,9 @@ button:not(:disabled):active {
     offset-distance: 50%;
   }
 
-  .brand-mark:hover .brand-dot {
-    animation-duration: 1.2s;
-  }
-
-  .brand-mark:hover .brand-dot-b {
-    animation-duration: 1.55s;
-  }
+  /* Speed is changed at runtime via updatePlaybackRate — see App.tsx.
+     Overriding animation-duration here would restart the orbit from a
+     different point on the path instead of accelerating it. */
 }
 
 @keyframes brand-orbit {
