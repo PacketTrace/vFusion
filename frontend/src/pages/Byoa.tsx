@@ -537,7 +537,7 @@ export default function Byoa() {
   const noConnections = verkadaConns.length === 0 || geminiConns.length === 0;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {noConnections && (
         <Card>
           <div className="text-sm text-amber-200">
@@ -904,7 +904,7 @@ export default function Byoa() {
                   operators can see the pairing at a glance. The
                   active card gets a sky border + scale-up so the
                   current pick is unmistakable. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 mb-3">
                 {allTemplates.map((t) => {
                   const active = pickedTemplate?.name === t.name;
                   // Paired templates carry an emoji in their helix

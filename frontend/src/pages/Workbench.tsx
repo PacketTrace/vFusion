@@ -48,7 +48,7 @@ export default function Workbench() {
 
   return (
     <div className="space-y-6">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <h1 className="text-2xl font-semibold text-white">Workbench</h1>
         <p className="text-slate-300 text-sm mt-1">{meta.blurb}</p>
 
@@ -78,7 +78,7 @@ export default function Workbench() {
       <div>
         {tab === "byoa" && <Byoa />}
         {tab === "helixr" && (
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <Helixr />
           </div>
         )}
