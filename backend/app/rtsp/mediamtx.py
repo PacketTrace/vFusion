@@ -164,6 +164,19 @@ def write(state: dict[str, Any]) -> bool:
 
 
 def _write_text(text: str) -> bool:
+    """Write only if the contents actually changed.
+
+    MediaMTX does not reload its config in place -- it shuts down and
+    starts again, which drops every session including the one publishing
+    the stream. Rewriting an identical file therefore costs the Command
+    Connector a reconnect for nothing, and vFusion rewrites this on every
+    boot and every settings save. Comparing first turns those into no-ops.
+    """
+    try:
+        if settings.CONFIG_PATH.exists() and settings.CONFIG_PATH.read_text() == text:
+            return True
+    except OSError:
+        pass  # unreadable is a reason to write, not to give up
     try:
         settings.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = settings.CONFIG_PATH.with_suffix(".tmp")

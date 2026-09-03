@@ -53,8 +53,10 @@ async def status() -> dict:
 async def update_settings(body: SettingsIn) -> dict:
     entry = {k: v for k, v in body.model_dump().items() if v is not None}
     state = await settings.put(entry)
-    # The config carries the credentials, so it is rewritten on every
-    # change. MediaMTX reloads it on its own.
+    # The config carries the credentials, so it is rewritten whenever they
+    # or the stream name change. Writing is a no-op when the contents
+    # match, which matters: MediaMTX restarts itself to pick a config up,
+    # and that drops whoever is watching.
     mediamtx.write(settings.get())
     return state
 
