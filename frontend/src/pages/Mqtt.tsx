@@ -806,6 +806,19 @@ function TrackReplay({
 }) {
   const progressRef = useRef(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // ffmpeg cuts the clip out of HLS, which can only start on a segment
+  // boundary — up to four seconds before the timestamp we asked for, and
+  // a different amount each time. So the offset between the two panels
+  // is per-clip and cannot be a constant; this is the correction, kept
+  // per camera so it only has to be found once.
+  const alignKey = `mqtt-align-${track.camera_id}`;
+  const [align, setAlign] = useState(() => {
+    const saved = Number(localStorage.getItem(alignKey));
+    return Number.isFinite(saved) ? saved : 0;
+  });
+  useEffect(() => {
+    localStorage.setItem(alignKey, String(align));
+  }, [alignKey, align]);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(true);
   const startEpoch = Math.floor(new Date(track.started_at).getTime() / 1000);
@@ -823,7 +836,7 @@ function TrackReplay({
   // and a sprint across the same ground do not look identical. Scrubbing
   // rebases the clock to wherever the handle was dropped, so play
   // continues from there rather than snapping back.
-  const pad = clip.data?.pad_sec ?? 0;
+  const pad = (clip.data?.pad_sec ?? 0) + align;
 
   // Two players drifting apart is worse than one: the whole point is
   // comparing them frame for frame. Once the clip exists it owns the
@@ -980,6 +993,40 @@ function TrackReplay({
               {(progress * track.duration_sec).toFixed(1)}s /{" "}
               {track.duration_sec.toFixed(1)}s
             </span>
+          </div>
+          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500">
+            <span title="Shift the footage against the replay. The clip starts on a segment boundary, so the gap differs per clip; this is remembered per camera.">
+              Align
+            </span>
+            <button
+              type="button"
+              onClick={() => setAlign((a) => Math.round((a - 0.25) * 100) / 100)}
+              className="px-1.5 py-0.5 rounded border border-slate-700 hover:border-sky-500 hover:text-slate-300"
+              aria-label="Footage earlier"
+            >
+              −0.25s
+            </button>
+            <span className="font-mono text-slate-300 w-14 text-center">
+              {align > 0 ? "+" : ""}
+              {align.toFixed(2)}s
+            </span>
+            <button
+              type="button"
+              onClick={() => setAlign((a) => Math.round((a + 0.25) * 100) / 100)}
+              className="px-1.5 py-0.5 rounded border border-slate-700 hover:border-sky-500 hover:text-slate-300"
+              aria-label="Footage later"
+            >
+              +0.25s
+            </button>
+            {align !== 0 && (
+              <button
+                type="button"
+                onClick={() => setAlign(0)}
+                className="underline underline-offset-2 hover:text-slate-300"
+              >
+                reset
+              </button>
+            )}
           </div>
         </div>
 
