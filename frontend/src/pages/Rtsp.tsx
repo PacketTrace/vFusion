@@ -126,6 +126,10 @@ export default function Rtsp() {
     onSuccess: () => invalidate(),
     onError: (e: Error) => setToggleError(e.message),
   });
+  const setLoop = useMutation({
+    mutationFn: (loop: boolean) => apiPut<Status>("/api/rtsp/settings", { loop }),
+    onSuccess: () => invalidate(),
+  });
   const rotate = useMutation({
     mutationFn: () => apiPost<Status>("/api/rtsp/rotate-password", {}),
     onSuccess: () => invalidate(),
@@ -438,6 +442,29 @@ export default function Rtsp() {
             stretched.
           </span>
         </div>
+
+        {/* Looping is a property of the queue, not of one item: a
+            finished clip goes back to the end rather than being marked
+            played, so one item repeats and several cycle. Standby only
+            appears when there is nothing queued at all. */}
+        <label className="flex items-center gap-2 mt-3 text-[11px] text-slate-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={!!s?.loop}
+            onChange={(e) => setLoop.mutate(e.target.checked)}
+            disabled={setLoop.isPending}
+            className="accent-sky-500"
+          />
+          <span>
+            Loop the queue
+            <span className="text-slate-500">
+              {" "}
+              — a clip goes back to the end when it finishes instead of
+              stopping. One item repeats; several cycle in order. Switching it
+              on does not interrupt what is playing.
+            </span>
+          </span>
+        </label>
 
         {uploadError && (
           <div className="mt-2 text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
