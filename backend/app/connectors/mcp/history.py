@@ -170,6 +170,26 @@ async def record(url: str, tools: list[dict[str, Any]]) -> dict[str, Any]:
         if e.get("baseline") and (d := _parse(e.get("first_seen"))) is not None
     ]
 
+    # Tools that were here and are not any more. This is written to disk
+    # above and, until now, read by nothing: a tool could vanish from a
+    # server you depend on and the only trace was the total quietly
+    # dropping by one. The loop below cannot carry it, because it only
+    # annotates tools present in this fetch — a removed one has no row to
+    # hang the date on. So it comes back separately.
+    removed = sorted(
+        (
+            {
+                "name": name,
+                "removed_at": entry.get("removed_at"),
+                "first_seen": entry.get("first_seen"),
+            }
+            for name, entry in updated.items()
+            if entry.get("removed_at")
+        ),
+        key=lambda e: e["removed_at"] or "",
+        reverse=True,
+    )
+
     for tool in tools:
         entry = updated.get(tool.get("name", ""))
         if not entry:
@@ -183,4 +203,5 @@ async def record(url: str, tools: list[dict[str, Any]]) -> dict[str, Any]:
         "last_changed_at": _iso(max(changes)) if changes else None,
         "new_tools_30d": new_30d,
         "tracked_tools": len(updated),
+        "removed_tools": removed,
     }

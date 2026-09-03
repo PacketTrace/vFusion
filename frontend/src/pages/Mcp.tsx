@@ -44,6 +44,11 @@ type Catalog = {
   history_since: string | null;
   last_changed_at: string | null;
   new_tools_30d: number;
+  removed_tools?: {
+    name: string;
+    removed_at: string | null;
+    first_seen: string | null;
+  }[];
   tracked_tools: number;
 };
 
@@ -312,6 +317,31 @@ export default function Mcp() {
                     {counts.destructive} destructive
                   </span>
                 </Fact>
+                {/* A tool disappearing off a server you depend on is the
+                    most consequential thing this page can tell you, and
+                    it was the one thing it could not: removals were
+                    recorded to disk and read by nothing, so the only
+                    trace was the total quietly dropping by one. */}
+                {(data.removed_tools ?? []).length > 0 && (
+                  <Fact label="Removed">
+                    <div className="flex flex-col gap-0.5">
+                      {(data.removed_tools ?? []).slice(0, 8).map((r) => (
+                        <span key={r.name} className="text-rose-300/90">
+                          <span className="font-mono">{r.name}</span>
+                          <span className="text-slate-500">
+                            {" "}
+                            — gone since {fmtDate(r.removed_at) ?? "?"}
+                          </span>
+                        </span>
+                      ))}
+                      {(data.removed_tools ?? []).length > 8 && (
+                        <span className="text-slate-500">
+                          and {(data.removed_tools ?? []).length - 8} more
+                        </span>
+                      )}
+                    </div>
+                  </Fact>
+                )}
                 {/* Zero destructive is not a finding about the tools, it
                     is a finding about the annotations — and read as
                     reassurance it is exactly backwards. A server that
