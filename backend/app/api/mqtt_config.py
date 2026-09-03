@@ -264,6 +264,7 @@ async def get_config(
 async def set_config(
     camera_id: str,
     body: ConfigureRequest,
+    dry_run: bool = Query(default=False, description="Show the request without sending it"),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Point a camera at this broker, then read it back to prove it stuck.
@@ -300,6 +301,10 @@ async def set_config(
         raise HTTPException(status_code=400, detail="no Verkada connection configured")
 
     ca = CA_PATH.read_text()
+    preview = _request_preview(camera_id, body.broker_host_port, creds, ca)
+    if dry_run:
+        return {"dry_run": True, "request": preview}
+
     try:
         await client.set_object_position_mqtt_config(
             camera_id=camera_id,
@@ -310,7 +315,14 @@ async def set_config(
         )
         readback = await client.get_object_position_mqtt_config(camera_id)
     except VerkadaApiError as e:
-        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+        # Hand back the request alongside the error: "insufficient
+        # permissions" on an endpoint the operator has rights to is
+        # almost always a malformed request, and guessing which is
+        # which without seeing it wastes an afternoon.
+        raise HTTPException(
+            status_code=400,
+            detail={"error": _permission_hint(e), "request": preview},
+        ) from e
 
     persisted = bool(readback.get("broker_host_port")) and bool(
         readback.get("client_username")
@@ -318,11 +330,49 @@ async def set_config(
     return {
         "persisted": persisted,
         "config": readback,
+        "request": preview,
         "note": (
             "Camera reconnects within ~5–25s of a config change."
             if persisted
             else "Verkada accepted the call but stored nothing — re-send with both credentials."
         ),
+    }
+
+
+def _request_preview(
+    camera_id: str, broker_host_port: str, creds: dict[str, str], ca: str
+) -> dict[str, Any]:
+    """Exactly what we send Verkada, with the secrets rendered inert.
+
+    A 403 from an endpoint you believe you have rights to is usually the
+    request being wrong rather than the key, and there is no way to tell
+    those apart without seeing what actually went out. The API key never
+    appears -- not even partially -- because this is meant to be
+    screenshot-able.
+    """
+    ca_lines = ca.strip().splitlines()
+    return {
+        "method": "POST",
+        "url": "https://api.verkada.com/cameras/v1/analytics/object_position_mqtt",
+        "headers": {
+            "x-verkada-auth": "<token minted from the connection's API key>",
+            "content-type": "application/json",
+        },
+        "body": {
+            "camera_id": camera_id,
+            "broker_host_port": broker_host_port,
+            "client_username": creds["username"],
+            "client_password": f"<{len(creds['password'])} chars>",
+            "broker_cert": (
+                f"{ca_lines[0] if ca_lines else ''} … "
+                f"{len(ca_lines)} lines, {len(ca)} chars"
+            ),
+        },
+        "notes": [
+            "Auth is a short-lived token from POST /token, not the API key itself.",
+            "Both credentials must be present or Verkada 200s and stores nothing.",
+            "broker_cert must be the CA, not the server leaf.",
+        ],
     }
 
 

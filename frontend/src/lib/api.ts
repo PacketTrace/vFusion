@@ -26,7 +26,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     let detail = `${method} ${path} → ${res.status}`;
     try {
       const j = await res.json();
-      if (j?.detail) detail = `${detail}: ${j.detail}`;
+      if (j?.detail) {
+        // FastAPI details are usually strings but may be structured — a
+        // 403 on the MQTT config carries the request that caused it.
+        const d =
+          typeof j.detail === "string"
+            ? j.detail
+            : (j.detail.error ?? JSON.stringify(j.detail));
+        detail = `${detail}: ${d}`;
+      }
     } catch {
       /* ignore */
     }

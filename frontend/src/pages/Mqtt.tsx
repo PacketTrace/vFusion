@@ -104,6 +104,15 @@ export default function Mqtt() {
     },
   });
 
+  // Dry run: build the outbound request and show it without sending.
+  const preview = useMutation({
+    mutationFn: () =>
+      apiPost<{ dry_run: boolean; request: unknown }>(
+        `/api/mqtt/config/${cameraId}?dry_run=true`,
+        { broker_host_port: brokerHostPort },
+      ),
+  });
+
   const reset = useMutation({
     mutationFn: () => apiPost<{ removed: string[]; note: string }>("/api/mqtt/reset", {}),
     onSuccess: () => {
@@ -276,6 +285,14 @@ export default function Mqtt() {
                 {configure.isPending ? "Pushing…" : "Push config to camera"}
               </button>
               <button
+                onClick={() => preview.mutate()}
+                disabled={!cameraId || !brokerHostPort || preview.isPending}
+                className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
+                title="Build the request and show it without sending"
+              >
+                Show request
+              </button>
+              <button
                 onClick={() => clearCamera.mutate()}
                 disabled={!cameraId || clearCamera.isPending}
                 className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
@@ -286,6 +303,14 @@ export default function Mqtt() {
             </div>
             {clearCamera.isError && (
               <p className="text-xs text-rose-300">{(clearCamera.error as Error).message}</p>
+            )}
+            {preview.data && (
+              <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 border border-slate-800 rounded p-2 overflow-x-auto max-h-72">
+                {JSON.stringify(preview.data.request, null, 2)}
+              </pre>
+            )}
+            {preview.isError && (
+              <p className="text-xs text-rose-300">{(preview.error as Error).message}</p>
             )}
             {configure.isError && (
               <p className="text-xs text-rose-300">{(configure.error as Error).message}</p>
