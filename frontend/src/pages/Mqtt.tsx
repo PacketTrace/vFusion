@@ -21,6 +21,7 @@ interface MqttStatus {
   credentials_present: boolean;
   broker_username: string | null;
   broker_host_port: string | null;
+  mode: "builtin" | "external";
 }
 
 interface PreflightCheck {
@@ -202,6 +203,10 @@ export default function Mqtt() {
       <StatusBar status={status.data} />
 
       <Card title="0 · Set up the broker">
+        <BrokerMode onChanged={() => status.refetch()} />
+
+        {status.data?.mode !== "external" && (
+        <>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[16rem]">
             <Labeled label="Address cameras will connect to">
@@ -240,15 +245,21 @@ export default function Mqtt() {
           </button>
         </div>
         <p className="text-[11px] text-slate-500 mt-2 max-w-2xl">
-          Host or IP only — the port is always 443. This address is written into
-          the certificate, so changing it later means regenerating and re-pushing
-          every camera. Use something that will not move: a static IP, a DHCP
-          reservation or a DNS name.
+          Host or IP only — the port is always 443. Use something that will
+          not move: a static IP, a DHCP reservation or a DNS name.
         </p>
+        <p className="text-[11px] text-slate-500 mt-1 max-w-2xl">
+          It must be <span className="text-slate-300">this machine</span>.
+          Cameras connect to whatever address is here and publish there —
+          point it at another host and they will work perfectly, sending
+          their data somewhere else, while everything below stays empty.
+        </p>
+        </>
+        )}
         {setup.isError && (
           <p className="text-xs text-rose-300 mt-2">{(setup.error as Error).message}</p>
         )}
-        {setup.data && (
+        {status.data?.mode !== "external" && setup.data && (
           <div className="mt-3 text-xs space-y-2">
             <p className="text-emerald-300">
               Certificate written for {setup.data.san}, valid to {setup.data.expires}.
@@ -412,6 +423,21 @@ export default function Mqtt() {
         </Card>
       </div>
 
+      {status.data?.mode === "external" && (
+        <Card title="Viewing is off in external mode">
+          <p className="text-sm text-slate-400">
+            Cameras are publishing to your own broker, so vFusion never sees the
+            stream — the live view, the noise filter and the history below only
+            show what arrives here.
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Everything above still works: vFusion pushes the address,
+            credentials and certificate to each camera and verifies they took.
+          </p>
+        </Card>
+      )}
+
+      {status.data?.mode !== "external" && (
       <Card title="3 · What this broker is receiving">
         <LiveView
           cameraId={cameraId}
@@ -422,13 +448,20 @@ export default function Mqtt() {
         />
       </Card>
 
+      )}
+
+      {status.data?.mode !== "external" && (
       <Card title="Noise filter">
         <NoiseFilter cameraId={cameraId} />
       </Card>
 
+      )}
+
+      {status.data?.mode !== "external" && (
       <Card title="4 · What it saw earlier">
         <TrackHistory cameraId={cameraId} />
       </Card>
+      )}
     </div>
   );
 }
@@ -1555,6 +1588,188 @@ function TrackRows({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+
+/** Whether vFusion is the broker, or is only pointing cameras at one.
+ *
+ *  These are different deployments, not a setting. Running the broker
+ *  means vFusion can generate the certificate, invent the credentials
+ *  and show what arrives. Pointing at somebody else's broker means it
+ *  can do none of those: the camera validates against that broker's CA,
+ *  which we do not hold, and the data goes somewhere we are not
+ *  listening.
+ */
+function BrokerMode({ onChanged }: { onChanged: () => void }) {
+  const qc = useQueryClient();
+  const current = useQuery({
+    queryKey: ["mqtt-broker-mode"],
+    queryFn: () =>
+      apiGet<{
+        mode: "builtin" | "external";
+        host: string;
+        port: number;
+        username: string;
+        password_set: boolean;
+        cert_present: boolean;
+      }>("/api/mqtt/broker-mode"),
+  });
+
+  const [draft, setDraft] = useState<{
+    mode: "builtin" | "external";
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    broker_cert: string;
+  } | null>(null);
+
+  const value = draft ?? {
+    mode: current.data?.mode ?? "builtin",
+    host: current.data?.host ?? "",
+    port: current.data?.port ?? 443,
+    username: current.data?.username ?? "",
+    password: "",
+    broker_cert: "",
+  };
+  const set = (patch: Partial<typeof value>) => setDraft({ ...value, ...patch });
+
+  const save = useMutation({
+    mutationFn: () => apiPut("/api/mqtt/broker-mode", value),
+    onSuccess: () => {
+      setDraft(null);
+      qc.invalidateQueries({ queryKey: ["mqtt-broker-mode"] });
+      onChanged();
+    },
+  });
+
+  return (
+    <div className="mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => set({ mode: "builtin" })}
+          className={`text-left rounded-lg border p-3 transition-colors duration-150 ease-out-strong ${
+            value.mode === "builtin"
+              ? "border-sky-500/60 bg-sky-500/10"
+              : "border-white/15 bg-white/5 hover:border-white/30"
+          }`}
+        >
+          <div className="text-sm text-slate-100">vFusion is the broker</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">
+            It generates the certificate and credentials, cameras publish here,
+            and everything below this card works.
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => set({ mode: "external" })}
+          className={`text-left rounded-lg border p-3 transition-colors duration-150 ease-out-strong ${
+            value.mode === "external"
+              ? "border-sky-500/60 bg-sky-500/10"
+              : "border-white/15 bg-white/5 hover:border-white/30"
+          }`}
+        >
+          <div className="text-sm text-slate-100">Point at another broker</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">
+            You supply its address, credentials and CA certificate. vFusion
+            configures the cameras and stops — the data goes there, not here.
+          </div>
+        </button>
+      </div>
+
+      {value.mode === "external" && (
+        <div className="mt-3 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Labeled label="Broker host">
+              <input
+                value={value.host}
+                onChange={(e) => set({ host: e.target.value })}
+                placeholder="mqtt.example.com"
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+                spellCheck={false}
+              />
+            </Labeled>
+            <Labeled label="Port">
+              <select
+                value={value.port}
+                onChange={(e) => set({ port: Number(e.target.value) })}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                <option value={443}>443</option>
+                <option value={123}>123</option>
+                <option value={53}>53</option>
+              </select>
+            </Labeled>
+            <Labeled label="Username">
+              <input
+                value={value.username}
+                onChange={(e) => set({ username: e.target.value })}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+                spellCheck={false}
+              />
+            </Labeled>
+          </div>
+          <Labeled label="Password">
+            <input
+              type="password"
+              value={value.password}
+              onChange={(e) => set({ password: e.target.value })}
+              placeholder={
+                current.data?.password_set ? "unchanged" : "broker password"
+              }
+              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+            />
+          </Labeled>
+          <Labeled label="Broker CA certificate">
+            <textarea
+              value={value.broker_cert}
+              onChange={(e) => set({ broker_cert: e.target.value })}
+              rows={3}
+              placeholder={
+                current.data?.cert_present
+                  ? "unchanged — paste a new PEM to replace it"
+                  : "-----BEGIN CERTIFICATE----- …"
+              }
+              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs font-mono"
+              spellCheck={false}
+            />
+          </Labeled>
+          <p className="text-[11px] text-slate-500">
+            The CA that signs your broker's certificate, not the broker's own
+            certificate. The camera uses it as its only trust anchor — a leaf
+            gets rejected as "unknown ca". Port is limited to 443, 123 or 53
+            because Verkada refuses anything else.
+          </p>
+        </div>
+      )}
+
+      {draft && (
+        <div className="flex items-center gap-3 mt-3">
+          <button
+            type="button"
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+          >
+            {save.isPending ? "Saving…" : "Save broker setup"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraft(null)}
+            className="text-[11px] text-slate-500 hover:text-slate-300"
+          >
+            Cancel
+          </button>
+          {save.isError && (
+            <span className="text-xs text-rose-300">
+              {(save.error as Error).message}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

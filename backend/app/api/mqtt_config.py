@@ -37,7 +37,7 @@ from app.connectors.verkada.footage import (
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
-from app.mqtt import filters, history, provision
+from app.mqtt import broker_mode, filters, history, provision
 from app.mqtt.ingest import ingest
 
 
@@ -67,6 +67,7 @@ class MqttStatus(BaseModel):
     ca_present: bool
     credentials_present: bool
     broker_username: str | None
+    mode: str
     # host:port cameras should be pointed at, from the certificate.
     broker_host_port: str | None
 
@@ -80,7 +81,8 @@ async def status() -> MqttStatus:
         ca_present=bool(state["ca_present"]),
         credentials_present=bool(state["credentials_present"]),
         broker_username=state["username"],
-        broker_host_port=(f"{state['broker_host']}:443" if state.get("broker_host") else None),
+        broker_host_port=broker_mode.camera_target()["broker_host_port"] or None,
+        mode=broker_mode.get()["mode"],
     )
 
 
@@ -235,8 +237,7 @@ async def _existing_config_check(
             fix="Push the config below.",
         )
 
-    expected_host = provision.broker_host()
-    expected = f"{expected_host}:443" if expected_host else ""
+    expected = broker_mode.camera_target()["broker_host_port"]
     if expected and host_port != expected:
         return PreflightCheck(
             id="pushed",
@@ -246,7 +247,7 @@ async def _existing_config_check(
             fix="Push the config below to move it here.",
         )
 
-    ca = CA_PATH.read_text() if CA_PATH.is_file() else ""
+    ca = broker_mode.camera_target()["broker_cert"]
     if ca and _normalise_pem(config.get("broker_cert", "")) != _normalise_pem(ca):
         return PreflightCheck(
             id="pushed",
@@ -352,7 +353,8 @@ async def _client_for(
 
 
 class ConfigureRequest(BaseModel):
-    broker_host_port: str
+    # No address: it comes from the configured broker, because it has to
+    # match the certificate sent alongside it.
     connection_id: UUID | None = None
 
 
@@ -385,42 +387,56 @@ async def set_config(
     silently discards the config if either credential is missing, so the
     only way to know it took is to ask.
     """
-    host, _, port = body.broker_host_port.rpartition(":")
-    if not host or port not in ALLOWED_PORTS:
+    host_port = broker_mode.camera_target()["broker_host_port"]
+    _, _, port = host_port.rpartition(":")
+    if port not in ALLOWED_PORTS:
         raise HTTPException(
             status_code=400,
             detail=(
-                "broker_host_port must be host:port with port 443, 123 or 53 — "
-                "Verkada rejects everything else."
+                f"Broker port {port or '(none)'} is not usable — Verkada only "
+                "accepts 443, 123 or 53."
             ),
         )
-    creds = provision.load_credentials()
-    if creds is None:
-        # Both credentials are mandatory: the API accepts the request
-        # without them and then silently discards the whole config.
+    # Built in: generated certificate and stored credentials. External:
+    # whatever was entered, because vFusion cannot derive either.
+    target = broker_mode.camera_target()
+    missing = [
+        name
+        for name, value in (
+            ("broker address", target["broker_host_port"]),
+            ("username", target["client_username"]),
+            ("password", target["client_password"]),
+            ("broker certificate", target["broker_cert"]),
+        )
+        if not value
+    ]
+    if missing:
         raise HTTPException(
             status_code=400,
-            detail="Run setup first — no broker credentials have been generated.",
+            detail=(
+                "Broker setup is incomplete — missing "
+                + ", ".join(missing)
+                + ". Finish step 0 first."
+            ),
         )
-    if not CA_PATH.is_file():
-        raise HTTPException(
-            status_code=400,
-            detail="No CA at mqtt/certs/root_ca.pem — run ./mqtt/gen-certs.sh first.",
-        )
+    creds = {
+        "username": target["client_username"],
+        "password": target["client_password"],
+    }
 
     client = await _client_for(session, body.connection_id)
     if client is None:
         raise HTTPException(status_code=400, detail="no Verkada connection configured")
 
-    ca = CA_PATH.read_text()
-    preview = _request_preview(camera_id, body.broker_host_port, creds, ca)
+    ca = target["broker_cert"]
+    preview = _request_preview(camera_id, target["broker_host_port"], creds, ca)
     if dry_run:
         return {"dry_run": True, "request": preview}
 
     try:
         await client.set_object_position_mqtt_config(
             camera_id=camera_id,
-            broker_host_port=body.broker_host_port,
+            broker_host_port=target["broker_host_port"],
             client_username=creds["username"],
             client_password=creds["password"],
             broker_cert=ca,
@@ -979,6 +995,45 @@ class FiltersRequest(BaseModel):
     # Fraction of the frame, both of them.
     min_area: float
     min_movement: float
+
+
+class BrokerModeRequest(BaseModel):
+    mode: str
+    host: str = ""
+    port: int = 443
+    username: str = ""
+    # Blank means "leave as is" — the UI never receives these back.
+    password: str = ""
+    broker_cert: str = ""
+
+
+@router.get("/broker-mode")
+async def get_broker_mode() -> dict[str, Any]:
+    return broker_mode.public()
+
+
+@router.put("/broker-mode")
+async def set_broker_mode(body: BrokerModeRequest) -> dict[str, Any]:
+    if body.mode not in ("builtin", "external"):
+        raise HTTPException(status_code=400, detail="mode must be builtin or external")
+    if body.mode == "external":
+        if not body.host.strip():
+            raise HTTPException(status_code=400, detail="an external broker needs a host")
+        if body.port not in (443, 123, 53):
+            raise HTTPException(
+                status_code=400,
+                detail="Verkada only accepts port 443, 123 or 53 in broker_host_port",
+            )
+        existing = broker_mode.get()
+        if not (body.broker_cert.strip() or existing.get("broker_cert")):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "an external broker needs its CA certificate — the camera "
+                    "validates against it and rejects anything else"
+                ),
+            )
+    return await broker_mode.put(body.model_dump())
 
 
 @router.get("/filters")
