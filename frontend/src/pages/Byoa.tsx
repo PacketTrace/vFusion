@@ -1267,6 +1267,7 @@ export default function Byoa() {
 
         {source === "camera" && (
           <MakeItRun
+            defaultOpen={searchParams.get("automate") === "1"}
             analyticName={pickedTemplate?.name ?? "Analytic"}
             prompt={prompt}
             model={model}
@@ -1840,6 +1841,7 @@ function AnalyticComposer({
  *  and assembles the rest.
  */
 function MakeItRun({
+  defaultOpen = false,
   analyticName,
   prompt,
   model,
@@ -1852,6 +1854,7 @@ function MakeItRun({
   helixMapping,
   durationSec,
 }: {
+  defaultOpen?: boolean;
   analyticName: string;
   prompt: string;
   model: string;
@@ -1967,7 +1970,20 @@ function MakeItRun({
   // call to action — first time through, it is not obvious whether to
   // press Brew it or Build the flow. Brewing comes first; this is what
   // you do once it works, so it is a line until asked for.
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Arriving from a run means the intent is already "automate this", so
+  // put it on screen rather than leaving it below the fold.
+  useEffect(() => {
+    if (!defaultOpen) return;
+    panelRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+  }, [defaultOpen]);
 
   if (!open) {
     return (
@@ -1988,7 +2004,7 @@ function MakeItRun({
   }
 
   return (
-    <div className="border-t border-white/10 mt-4 pt-4">
+    <div ref={panelRef} className="border-t border-white/10 mt-4 pt-4">
       <div>
         <div className="flex items-baseline justify-between gap-3 mb-1">
           <div className="text-sm text-slate-100">Make this run on its own</div>

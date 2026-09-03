@@ -198,6 +198,22 @@ function RunDetailView({ run }: { run: RunDetail }) {
               ↻ Run it back
             </button>
           )}
+          {isByoa && (
+            // This is the "it worked, now keep it running" moment — you
+            // are looking at a result you like. Rather than rebuilding
+            // the flow assembler here, it reopens the Workbench with
+            // this run's config and the automation panel already open,
+            // so there is one implementation of the wiring.
+            <button
+              onClick={() =>
+                navigate(`/workbench?from_run=${run.id}&automate=1`)
+              }
+              className="text-xs px-2 py-1 rounded-md border border-white/15 text-slate-200 hover:border-sky-500"
+              title="Turn this run into a flow that runs on its own"
+            >
+              Automate
+            </button>
+          )}
           {canFlowReplay && (
             <button
               onClick={() => flowReplay.mutate()}
