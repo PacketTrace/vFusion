@@ -1887,7 +1887,10 @@ function MakeItRun({
           label: "Analyze the camera",
           kind: "action",
           action_type: "gemini_analyze_camera",
-          position: { x: 220, y: 0 },
+          // No position: the editor computes the layout when one is
+          // absent, which is the same thing "Auto arrange" does. Guessing
+          // coordinates here put this node on top of the trigger the
+          // canvas draws above it.
           config: analyzeConfig,
         },
       ];
@@ -1908,7 +1911,6 @@ function MakeItRun({
           label: "Post to Helix",
           kind: "action",
           action_type: "verkada_helix_event",
-          position: { x: 220, y: 240 },
           config: {
             connection_id: verkadaConnId,
             camera_id: byEvent ? "{{ trigger.data.camera_id }}" : cameraId,
