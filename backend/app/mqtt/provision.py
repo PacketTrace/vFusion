@@ -240,14 +240,44 @@ def broker_host() -> str | None:
 
     Cameras must be pointed at exactly this — it is in the certificate's
     SAN, so a different address that still routes will fail the
-    handshake. Storing it means the UI can fill the field in rather than
+    handshake. Knowing it means the UI can fill the field in rather than
     asking someone to remember it per camera.
+
+    Reads the note written at generation time, and falls back to the
+    certificate itself when that note is missing. The fallback matters:
+    a deployment that generated certs before the note existed would
+    otherwise have to regenerate — and regenerating means re-pushing
+    every camera — to get back something the certificate already says.
     """
     try:
         host = HOST_PATH.read_text().strip()
+        if host:
+            return host
+    except OSError:
+        pass
+    return _host_from_cert()
+
+
+def _host_from_cert() -> str | None:
+    """Pull the SAN back out of the server certificate."""
+    try:
+        pem = (CERT_DIR / "server.pem").read_bytes()
     except OSError:
         return None
-    return host or None
+    try:
+        cert = x509.load_pem_x509_certificate(pem)
+        san = cert.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName
+        ).value
+    except Exception as e:  # noqa: BLE001 — a malformed cert is not fatal here
+        logger.warning("could not read SAN from server cert: %s", e)
+        return None
+
+    for entry in san.get_values_for_type(x509.DNSName):
+        return str(entry)
+    for entry in san.get_values_for_type(x509.IPAddress):
+        return str(entry)
+    return None
 
 
 def state() -> dict[str, object]:

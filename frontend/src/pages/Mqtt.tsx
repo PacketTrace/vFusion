@@ -152,9 +152,12 @@ export default function Mqtt() {
   // routes fine and then fails the TLS handshake — so asking anyone to
   // retype it per camera is inviting a mismatch.
   const knownBroker = status.data?.broker_host_port ?? null;
+  const [brokerTouched, setBrokerTouched] = useState(false);
   useEffect(() => {
-    if (knownBroker && !brokerHostPort) setBrokerHostPort(knownBroker);
-  }, [knownBroker, brokerHostPort]);
+    // Fill until someone edits it themselves. Before, an address typed
+    // once blocked the known-good one from ever appearing.
+    if (knownBroker && !brokerTouched) setBrokerHostPort(knownBroker);
+  }, [knownBroker, brokerTouched]);
 
   const live = useLiveTracks(cameraId);
 
@@ -294,7 +297,10 @@ export default function Mqtt() {
             <Labeled label="Broker address (host:port)">
               <input
                 value={brokerHostPort}
-                onChange={(e) => setBrokerHostPort(e.target.value)}
+                onChange={(e) => {
+                  setBrokerTouched(true);
+                  setBrokerHostPort(e.target.value);
+                }}
                 placeholder="192.168.1.10:443"
                 className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
                 spellCheck={false}
