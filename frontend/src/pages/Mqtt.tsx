@@ -412,8 +412,14 @@ export default function Mqtt() {
         </Card>
       </div>
 
-      <Card title="3 · What the camera sees">
-        <LiveView cameraId={cameraId} live={live} />
+      <Card title="3 · What this broker is receiving">
+        <LiveView
+          cameraId={cameraId}
+          live={live}
+          everPublished={
+            !!cameraId && (status.data?.cameras ?? []).includes(cameraId)
+          }
+        />
       </Card>
 
       <Card title="Noise filter">
@@ -454,7 +460,15 @@ function useLiveTracks(cameraId: string) {
   return data;
 }
 
-function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | null }) {
+function LiveView({
+  cameraId,
+  live,
+  everPublished,
+}: {
+  cameraId: string;
+  live: LiveCamera | null;
+  everPublished: boolean;
+}) {
   const [frameKey, setFrameKey] = useState(0);
   const [loadingFrame, setLoadingFrame] = useState(false);
   const [frameError, setFrameError] = useState(false);
@@ -524,8 +538,20 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
           <TrackedBox key={o.obj_id} object={o} />
         ))}
         {objects.length === 0 && !loadingFrame && !frameError && (
-          <div className="absolute inset-0 grid place-items-center text-xs text-slate-500">
-            No objects in view
+          <div className="absolute inset-0 grid place-items-center px-6 text-center">
+            {everPublished ? (
+              <span className="text-xs text-slate-500">No objects in view</span>
+            ) : (
+              <span className="text-xs text-slate-400 max-w-sm">
+                This camera has never published to this broker.
+                <span className="block text-slate-500 mt-1">
+                  Boxes only appear for cameras pointed at this machine. Check
+                  the address in step 0 is this server, that the config was
+                  pushed in step 2, and that the camera has an Occupancy Trends
+                  line drawn.
+                </span>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -768,7 +794,11 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
   if (tracks.length === 0) {
     return (
       <div className="text-sm text-slate-500">
-        No completed tracks yet. An object is recorded once it leaves view.
+        No completed tracks yet — an object is recorded once it leaves view.
+        <span className="block text-[11px] mt-1">
+          This is what this broker received, so it stays empty unless cameras
+          are publishing here. Nothing recorded elsewhere shows up.
+        </span>
       </div>
     );
   }
@@ -1304,7 +1334,13 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         </div>
       </div>
 
-      {preview.data && (
+      {preview.data?.considered === 0 && (
+        <p className="text-[11px] text-slate-500">
+          Nothing recorded yet, so there is nothing to tune against. These
+          thresholds only see detections cameras published to this broker.
+        </p>
+      )}
+      {preview.data && preview.data.considered > 0 && (
         <div className="flex flex-wrap items-center gap-4 text-xs">
           <span className="text-slate-400">
             Against {preview.data.considered.toLocaleString()} recorded tracks:
