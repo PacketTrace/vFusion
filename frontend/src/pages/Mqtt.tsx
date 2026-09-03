@@ -1261,29 +1261,44 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-3">
-        <button
-          type="button"
-          onClick={() => save.mutate()}
-          disabled={!dirty || save.isPending}
-          className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
-        >
-          {save.isPending ? "Saving…" : dirty ? "Apply going forward" : "Applied"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmPurge(true)}
-          disabled={!preview.data?.dropped || purge.isPending}
-          className="text-sm px-3 py-1.5 rounded-md border border-rose-700/60 bg-rose-900/30 text-rose-200 hover:bg-rose-900/50 disabled:opacity-40"
-        >
-          {purge.isPending
-            ? "Removing…"
-            : `Also remove ${preview.data?.dropped ?? 0} past tracks`}
-        </button>
-        <span className="text-[11px] text-slate-500">
-          Applying affects the live view and new recordings. Removing past
-          tracks rewrites the history and cannot be undone.
-        </span>
+      {/* Two separate decisions, so two separate captions. Sharing one
+          sentence between them meant neither button said what it did. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-white/10 pt-4">
+        <div>
+          <button
+            type="button"
+            onClick={() => save.mutate()}
+            disabled={!dirty || save.isPending}
+            className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+          >
+            {save.isPending
+              ? "Saving…"
+              : dirty
+                ? "Save these settings"
+                : "Settings saved"}
+          </button>
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            Detections below the threshold stop appearing in the live view and
+            stop being recorded. Nothing already recorded changes.
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setConfirmPurge(true)}
+            disabled={!preview.data?.dropped || purge.isPending}
+            className="text-sm px-3 py-1.5 rounded-md border border-rose-700/60 bg-rose-900/30 text-rose-200 hover:bg-rose-900/50 disabled:opacity-40"
+          >
+            {purge.isPending
+              ? "Deleting…"
+              : `Delete the ${preview.data?.dropped ?? 0} old tracks too`}
+          </button>
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            Clears them out of the history above as well, so past noise stops
+            cluttering it. Permanent.
+          </p>
+        </div>
       </div>
       {purge.data && (
         <p className="text-xs text-emerald-300">
@@ -1296,11 +1311,11 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
 
       <ConfirmDialog
         open={confirmPurge}
-        title={`Remove ${preview.data?.dropped ?? 0} recorded tracks?`}
-        body={`Every track below ${(minArea * 100).toFixed(1)}% of frame${
-          minMove > 0 ? ` or under ${(minMove * 100).toFixed(1)}% movement` : ""
-        } is deleted from the history. Look through the list above first — this rewrites the files and cannot be undone.`}
-        confirmLabel="Remove them"
+        title={`Delete ${preview.data?.dropped ?? 0} tracks from the history?`}
+        body={`Anything smaller than ${(minArea * 100).toFixed(1)}% of the frame${
+          minMove > 0 ? ` or that moved less than ${(minMove * 100).toFixed(1)}%` : ""
+        } is removed for good. ${preview.data?.kept ?? 0} tracks stay. Worth checking the list above first — there is no undo.`}
+        confirmLabel="Delete them"
         busy={purge.isPending}
         onCancel={() => setConfirmPurge(false)}
         onConfirm={() => purge.mutate()}
