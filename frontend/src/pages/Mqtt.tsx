@@ -721,7 +721,7 @@ function StatusBar({ status }: { status?: MqttStatus }) {
       label: "Cameras publishing",
       value: String(status.cameras.length),
       good: status.cameras.length > 0,
-      hint: "Cameras that have sent object positions since the last restart",
+      hint: "Cameras that have sent object positions since the backend restarted",
     },
     {
       label: "Data",
@@ -740,7 +740,7 @@ function StatusBar({ status }: { status?: MqttStatus }) {
       label: "Messages",
       value: status.total_messages.toLocaleString(),
       good: status.total_messages > 0,
-      hint: "Total received since the backend started",
+      hint: "Received since the backend restarted — cameras only publish while something is being tracked",
     },
   ];
 
@@ -769,6 +769,19 @@ function StatusBar({ status }: { status?: MqttStatus }) {
           {status.last_error}
         </div>
       )}
+      {!status.last_error &&
+        status.connected &&
+        status.total_messages === 0 &&
+        status.uptime_sec != null && (
+          <div className="col-span-2 sm:col-span-4 text-[11px] text-slate-500">
+            Counting since the backend restarted{" "}
+            {status.uptime_sec < 90
+              ? Math.round(status.uptime_sec) + "s"
+              : Math.round(status.uptime_sec / 60) + "m"}{" "}
+            ago. Cameras only publish while something is being tracked, so
+            zero here means nothing has moved — not that anything is wrong.
+          </div>
+        )}
     </div>
   );
 }
