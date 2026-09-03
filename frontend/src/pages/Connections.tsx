@@ -80,13 +80,13 @@ export default function Connections() {
           )}
         </div>
 
-        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-hidden">
+        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-x-auto">
           {conns.isLoading ? (
             <div className="p-6 text-sm text-slate-400">Loading…</div>
           ) : verkadaConns.length === 0 ? (
             <FirstRunState />
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[64rem] text-sm">
               <thead className="text-slate-400 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2">Name</th>
@@ -138,13 +138,13 @@ export default function Connections() {
             ))}
         </div>
 
-        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-hidden">
+        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-x-auto">
           {thirdPartyConns.length === 0 ? (
             <div className="p-6 text-sm text-slate-400">
               No 3rd-party API keys yet. Add a Gemini key to enable AI analysis actions.
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[64rem] text-sm">
               <thead className="text-slate-400 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2">Name</th>
@@ -156,7 +156,9 @@ export default function Connections() {
               <tbody className="divide-y divide-white/5">
                 {thirdPartyConns.map((c) => (
                   <tr key={c.id} className={!c.setup_complete ? "bg-amber-950/30" : ""}>
-                    <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
+                    <td className="px-3 py-2 font-medium text-slate-100 whitespace-nowrap">
+        {c.name}
+      </td>
                     <td className="px-3 py-2">
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-900/60 text-sky-200">
                         {c.type}
@@ -345,7 +347,7 @@ function VerkadaRow({
   return (
     <tr className={!c.setup_complete ? "bg-amber-950/30" : ""}>
       <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-400">
+      <td className="px-3 py-2 font-mono text-xs text-slate-400 whitespace-nowrap">
         {c.external_id ?? "—"}
       </td>
       <td
