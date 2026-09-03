@@ -155,4 +155,21 @@ def _explain(stderr: str) -> str:
     last = lines[-1]
     if "File is larger than max-filesize" in stderr:
         return f"larger than the {MAX_BYTES // (1024 * 1024)} MB limit"
+    # These read like transient network trouble and are not. They mean the
+    # extractor is older than the site it is extracting from, which is a
+    # thing that happens to yt-dlp continuously and is fixed by installing
+    # a newer one -- not by retrying, which is what the wording invites.
+    stale = (
+        "needs to be reloaded",
+        "Sign in to confirm",
+        "Please report this issue",
+        "unable to extract",
+        "nsig extraction failed",
+    )
+    if any(marker.lower() in stderr.lower() for marker in stale):
+        return (
+            f"{last.removeprefix('ERROR: ').strip()} — this usually means the "
+            "downloader is out of date for that site. Rebuild the backend to "
+            "pick up a newer yt-dlp."
+        )
     return last.removeprefix("ERROR: ").strip() or "download failed"
