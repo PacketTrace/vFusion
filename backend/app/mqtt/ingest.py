@@ -266,8 +266,9 @@ def _explain(e: Exception, host: str) -> str:
     text = str(e)
     if "Name or service not known" in text or "Temporary failure in name resolution" in text:
         return (
-            f"Broker {host!r} does not resolve yet — the container is not running. "
-            "Start it with: docker compose --profile mqtt up -d"
+            f"Broker {host!r} does not resolve — the container is not running. "
+            "Either it was never started (docker compose --profile mqtt up -d) or "
+            "it started and exited; check with: docker compose logs mqtt-broker"
         )
     if "Connection refused" in text:
         return f"Broker {host!r} is resolving but refusing connections — is mosquitto healthy?"

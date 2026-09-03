@@ -160,8 +160,13 @@ def write_password_file(username: str, password: str) -> None:
     """
     MQTT_DIR.mkdir(parents=True, exist_ok=True)
     PASSWD_PATH.write_text(f"{username}:{mosquitto_hash(password)}\n")
-    # Mosquitto refuses a world-readable password file.
-    os.chmod(PASSWD_PATH, 0o600)
+    # 0644, not 0600. This file is written by the backend (root) and read
+    # by mosquitto, which drops to uid 1883 -- a root-owned 0600 file is
+    # unreadable to it, so the broker exits at startup, and a container
+    # that exited has no DNS entry, so the failure surfaces as the broker
+    # hostname "not resolving". It holds a PBKDF2-SHA512 hash rather than
+    # a secret; mosquitto's own objection is to world-*writable* files.
+    os.chmod(PASSWD_PATH, 0o644)
 
 
 def save_credentials(username: str, password: str) -> None:
