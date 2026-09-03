@@ -271,9 +271,10 @@ export default function Rtsp() {
               {rotate.isPending ? "Rotating…" : "Generate a new password"}
             </button>
             <p className="text-[11px] text-slate-500">
-              Rotating does not drop the session the Connector already has — it
-              breaks the next time it reconnects. Update the camera in Command
-              before that happens.
+              Rotating takes the camera offline immediately: the new password
+              reaches the RTSP server through its config, and it picks a config
+              up by restarting, which drops the Connector. It reconnects with
+              the old password and is refused until you update it in Command.
             </p>
           </div>
         )}

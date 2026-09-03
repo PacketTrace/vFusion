@@ -85,12 +85,19 @@ async def enable(body: EnableIn) -> dict:
 async def rotate() -> dict:
     result = await settings.rotate_read_password()
     mediamtx.write(settings.get())
-    # The Connector is holding a session opened with the old password.
-    # MediaMTX does not tear that down on reload, so the camera keeps
-    # working until it next reconnects — at which point it needs the new
-    # one. Saying so is the difference between a planned change and a
-    # camera that goes offline overnight for no visible reason.
-    return {**result, "note": "Update the camera in Command before it reconnects."}
+    # This is not a quiet change. The new password only reaches MediaMTX
+    # through its config, and MediaMTX picks a config up by restarting --
+    # which drops every session, including the Connector's. It comes back
+    # holding the old password and is refused until Command is updated.
+    # So: the camera goes offline the moment this is pressed, and stays
+    # offline until the new password is pasted in.
+    return {
+        **result,
+        "note": (
+            "The camera goes offline now and stays offline until this "
+            "password is updated in Command."
+        ),
+    }
 
 
 @router.get("/queue")
