@@ -24,6 +24,13 @@ function valueGroups(prof: FilterFieldProfile | undefined): ValueGroup[] {
       options: prof.values.map((v) => ({ value: String(v) })),
     },
     {
+      label: "Possible for this field",
+      options: (prof.known_values ?? []).map((v) => ({
+        value: String(v),
+        note: "not seen yet",
+      })),
+    },
+    {
       label: "From Command",
       options: (prof.synced_values ?? []).map((v) => ({
         value: String(v),

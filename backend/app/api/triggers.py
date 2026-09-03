@@ -165,6 +165,13 @@ _NOT_FILTERABLE = {
 # an id or a timestamp, not a category.
 _MAX_DISTINCT_FOR_PICKER = 25
 
+# Fields whose complete value set is fixed by the API contract. Observation
+# can only ever confirm a subset of these — a quiet camera makes "animal"
+# look like it does not exist — so they are offered unconditionally.
+_KNOWN_FIELD_VALUES: dict[str, list[str]] = {
+    "objects": ["person", "vehicle", "animal"],
+}
+
 
 class FilterFieldProfile(BaseModel):
     field: str
@@ -180,6 +187,11 @@ class FilterFieldProfile(BaseModel):
     # appeared in a webhook. Somebody added to Command this morning is
     # filterable before they have ever walked past a camera.
     synced_values: list[Any] = []
+    # Values that are part of the field's contract rather than something
+    # we happened to record. Verkada's classifier only ever emits three
+    # object classes, so "animal" should be pickable before an animal has
+    # walked past a camera.
+    known_values: list[Any] = []
 
 
 @router.get("/filter-fields", response_model=list[FilterFieldProfile])
@@ -265,9 +277,20 @@ async def filter_fields(
                 type=types.get(key, "str"),
             )
         )
+    _merge_known_values(out)
     _merge_synced_people(out)
     out.sort(key=lambda f: (-f.present_pct, f.field))
     return out
+
+
+def _merge_known_values(profiles: list[FilterFieldProfile]) -> None:
+    """Offer a field's documented values even when we have not seen them."""
+    for profile in profiles:
+        known = _KNOWN_FIELD_VALUES.get(profile.field)
+        if not known:
+            continue
+        seen = {str(v).lower() for v in profile.values}
+        profile.known_values = [v for v in known if v.lower() not in seen]
 
 
 def _merge_synced_people(profiles: list[FilterFieldProfile]) -> None:

@@ -411,6 +411,9 @@ export interface FilterFieldProfile {
   /** Person of Interest labels from the last Connections sync that have
    *  never appeared in a webhook — offered alongside observed values. */
   synced_values?: (string | number | boolean)[];
+  /** Values fixed by the API contract (e.g. the three object classes),
+   *  offered whether or not we have recorded one. */
+  known_values?: (string | number | boolean)[];
 }
 
 export interface NotificationTypeMeta {

@@ -286,6 +286,27 @@ Family = Literal[
 ]
 
 
+# Types we recognise on ingest but do not offer as triggers.
+#
+# Dropping one from CAMERA_EVENT_TYPES would be the obvious way to hide
+# it and the wrong one: that set is also what classify() matches on, so
+# removing an entry reclassifies live traffic as "unknown" and dumps it
+# in the unrecognized bucket. Recognising an event and offering it as a
+# trigger are separate decisions, so this is a separate set.
+#
+# contextual_trigger_people_motion overlaps alert_rule_motion filtered to
+# people, and unlike that path it carries no object class to filter on,
+# so having both in the menu is a choice without a difference.
+HIDDEN_TRIGGER_TYPES: frozenset[str] = frozenset(
+    {"contextual_trigger_people_motion"}
+)
+
+
+def offerable(types: frozenset[str]) -> list[str]:
+    """Sorted notification types the trigger picker should list."""
+    return sorted(types - HIDDEN_TRIGGER_TYPES)
+
+
 def classify(envelope: Envelope) -> Family:
     """Bucket an envelope into one of the seven known families (or ``unknown``)."""
     if envelope.webhook_type == "lpr":
@@ -320,12 +341,12 @@ def classify(envelope: Envelope) -> Family:
 NOTIFICATION_TYPE_META: dict[str, tuple[str, str, str]] = {
     # ---- camera ----
     "alert_rule_motion": ("Motion", "Something moved in a monitored area.", "Detections"),
-    "contextual_trigger_people_motion": ("Person motion", "Motion specifically attributed to a person.", "Detections"),
     "alert_rule_line_crossing": ("Line crossing", "Something crossed a line drawn on the camera view.", "Detections"),
     "alert_rule_dwell": ("Loitering", "Someone stayed in an area longer than the configured dwell time.", "Detections"),
     "alert_rule_crowd": ("Crowd forming", "More people in view than the configured crowd threshold.", "Detections"),
     "alert_rule_inactivity": ("Inactivity", "An area that normally sees activity has gone quiet.", "Detections"),
     "alert_rule_activity_recognition": ("Activity recognised", "A configured activity type was recognised in view.", "Detections"),
+    "contextual_trigger_people_motion": ("Person motion", "Motion specifically attributed to a person.", "Detections"),
     "natural_language_event": ("Natural-language match", "Footage matched a plain-language search you saved.", "Detections"),
     "person_of_interest": ("Person of Interest seen", "A face matched someone on a Person of Interest list.", "Watchlists"),
     "license_plate_of_interest": ("Plate of Interest seen", "A plate matched a License Plate of Interest list.", "Watchlists"),
@@ -395,9 +416,9 @@ TAXONOMY: dict[str, dict[str, Any]] = {
     "camera": {
         "label": "Camera event",
         "webhook_type": "notification",
-        "notification_types": sorted(CAMERA_EVENT_TYPES),
+        "notification_types": offerable(CAMERA_EVENT_TYPES),
         "notification_type_meta": {
-            nt: notification_type_meta(nt) for nt in sorted(CAMERA_EVENT_TYPES)
+            nt: notification_type_meta(nt) for nt in offerable(CAMERA_EVENT_TYPES)
         },
         # The picker is sample-driven, so each of these only surfaces when
         # an actual webhook of the selected notification_type carries the

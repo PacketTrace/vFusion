@@ -98,6 +98,10 @@ export default function Stats() {
     queryFn: () => apiGet<StatsOverview>("/api/stats/overview"),
     refetchInterval: 30000,
   });
+  const coverage = useQuery({
+    queryKey: ["taxonomy-coverage"],
+    queryFn: () => apiGet<Coverage>("/api/taxonomy/coverage"),
+  });
   const system = useQuery({
     queryKey: ["stats-system"],
     queryFn: () => apiGet<SystemLoad>("/api/stats/system"),
@@ -275,6 +279,8 @@ export default function Stats() {
               </table>
             )}
           </Card>
+
+          {coverage.data && <CoverageCard data={coverage.data} />}
 
           <Card title="Coming soon">
             <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
@@ -482,5 +488,77 @@ function BarList({
         );
       })}
     </ul>
+  );
+}
+
+
+interface CoverageType {
+  notification_type: string;
+  label: string;
+  count: number;
+  last_seen: string | null;
+}
+
+interface CoverageFamily {
+  family: string;
+  label: string;
+  types: CoverageType[];
+  seen: number;
+  total: number;
+}
+
+interface Coverage {
+  families: CoverageFamily[];
+  seen: number;
+  total: number;
+}
+
+/** Which event types we hold a real sample of.
+ *
+ *  Filters are derived from observed payloads, so a type nobody has sent
+ *  is a type the flow builder can only offer camera_id for. Listing the
+ *  gaps turns "the filters look wrong here" into a concrete errand:
+ *  trigger one of these in Command so we can read its fields.
+ */
+function CoverageCard({ data }: { data: Coverage }) {
+  const missing = data.families
+    .map((f) => ({ ...f, types: f.types.filter((t) => t.count === 0) }))
+    .filter((f) => f.types.length > 0);
+  return (
+    <Card title={`Event type coverage — ${data.seen} of ${data.total} seen`}>
+      {missing.length === 0 ? (
+        <div className="text-sm text-slate-300">
+          Every event type in the taxonomy has at least one stored sample.
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-slate-400 mb-3">
+            No sample of these yet, so the trigger filter picker has nothing
+            to offer for them beyond the camera or door. Triggering one in
+            Command is what teaches vFusion its fields.
+          </p>
+          <div className="space-y-3">
+            {missing.map((f) => (
+              <div key={f.family}>
+                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                  {f.label} — {f.seen}/{f.total} seen
+                </div>
+                <ul className="flex flex-wrap gap-1.5">
+                  {f.types.map((t) => (
+                    <li
+                      key={t.notification_type}
+                      className="text-xs px-2 py-1 rounded border border-white/10 bg-white/5 text-slate-300"
+                      title={t.notification_type}
+                    >
+                      {t.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
