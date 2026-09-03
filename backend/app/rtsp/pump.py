@@ -39,6 +39,7 @@ import contextlib
 import logging
 import os
 import time
+from collections import deque
 from typing import Any
 
 from app.rtsp import mediamtx, queue, settings
@@ -69,6 +70,12 @@ class Pump:
         self.now_playing: dict[str, Any] | None = None
         self.encoder_starts = 0
         self.last_error: str | None = None
+        # ffmpeg says exactly why it failed and it says it on stderr.
+        # This was going to DEVNULL, which turned every failure into a
+        # bare exit code and made the page useless at the one moment it
+        # most needed to be useful.
+        self.log: deque[str] = deque(maxlen=40)
+        self._log_task: asyncio.Task | None = None
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -105,6 +112,7 @@ class Pump:
             ),
             "encoder_starts": self.encoder_starts,
             "last_error": self.last_error,
+            "log": list(self.log),
         }
 
     # ---- the loop ------------------------------------------------------
@@ -142,13 +150,32 @@ class Pump:
             *_encoder_cmd(settings.publish_url(state)),
             stdin=self._read_fd,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
         self.encoder_starts += 1
+        # Drained, not just captured: an undrained stderr pipe fills at
+        # 64KB and blocks the process writing into it.
+        if self._log_task:
+            self._log_task.cancel()
+        self._log_task = asyncio.create_task(self._drain(self._encoder))
         # The child has its own copy now. Ours stays open only because
         # closing it would make a source's EOF reach the encoder.
         os.close(self._read_fd)
         self._read_fd = None
+
+    async def _drain(self, proc: asyncio.subprocess.Process) -> None:
+        """Keep the last few lines ffmpeg wrote, and keep the pipe empty."""
+        if proc.stderr is None:
+            return
+        with contextlib.suppress(Exception):
+            while True:
+                raw = await proc.stderr.readline()
+                if not raw:
+                    return
+                line = raw.decode("utf-8", "replace").strip()
+                if line:
+                    self.log.append(line)
+                    self.last_error = line
 
     async def _play_next(self) -> None:
         # Cleared before the check, not inside standby: an upload landing
@@ -215,12 +242,13 @@ class Pump:
                 *cmd,
                 stdout=self._write_fd,
                 stdin=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
             )
         except OSError as e:
             self.last_error = f"could not start source: {e}"
             return None
         self._source = proc
+        asyncio.create_task(self._drain(proc))
         return proc
 
     def _close_pipe(self) -> None:

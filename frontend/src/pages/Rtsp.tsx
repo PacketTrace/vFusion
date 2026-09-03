@@ -36,6 +36,7 @@ type Status = {
     uptime_sec: number | null;
     encoder_starts: number;
     last_error: string | null;
+    log: string[];
   };
 };
 
@@ -429,7 +430,20 @@ function StatusBar({ s }: { s?: Status }) {
           camera drop.
         </div>
       )}
-      {s.pump.last_error && (
+      {/* ffmpeg's own words. An exit code alone says a thing failed;
+          these say which thing, which is the difference between reading
+          this page and reading container logs. */}
+      {(s.pump.log ?? []).length > 0 && (
+        <details className="col-span-2 sm:col-span-4">
+          <summary className="text-[11px] text-amber-300/90 cursor-pointer">
+            {s.pump.last_error ?? "encoder output"}
+          </summary>
+          <pre className="mt-1.5 text-[10px] font-mono text-slate-400 bg-black/40 border border-white/10 rounded p-2 overflow-x-auto whitespace-pre-wrap">
+            {(s.pump.log ?? []).join("\n")}
+          </pre>
+        </details>
+      )}
+      {s.pump.last_error && (s.pump.log ?? []).length === 0 && (
         <div className="col-span-2 sm:col-span-4 text-[11px] text-amber-300/90">
           {s.pump.last_error}
         </div>
