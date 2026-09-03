@@ -178,7 +178,7 @@ export default function Flows() {
 
       <div className="flex items-center gap-1 border-b border-white/10">
         {[
-          { key: "flows", label: "Flows" },
+          { key: "flows", label: "Existing" },
           { key: "templates", label: "Templates" },
         ].map((t) => (
           <button
