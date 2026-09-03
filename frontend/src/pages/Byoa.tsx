@@ -1260,25 +1260,25 @@ export default function Byoa() {
             </button>
           )}
         </div>
+
+        {source === "camera" && (
+          <MakeItRun
+            analyticName={pickedTemplate?.name ?? "Analytic"}
+            prompt={prompt}
+            model={model}
+            mode={mode}
+            cameraId={cameraId}
+            verkadaConnId={verkadaConnId}
+            geminiConnId={geminiConnId}
+            helixEventTypeUid={postToHelix ? helixEventTypeUid : ""}
+            needsHelixType={postToHelix || !!pickedTemplate?.helix_event_type}
+            helixMapping={pickedTemplate?.helix_attribute_mapping ?? null}
+            durationSec={durationSec}
+          />
+        )}
       </Card>
 
 
-      {source === "camera" && (
-        <MakeItRun
-          ranOnce={run.isSuccess || dryRun.isSuccess}
-          analyticName={pickedTemplate?.name ?? "Analytic"}
-          prompt={prompt}
-          model={model}
-          mode={mode}
-          cameraId={cameraId}
-          verkadaConnId={verkadaConnId}
-          geminiConnId={geminiConnId}
-          helixEventTypeUid={postToHelix ? helixEventTypeUid : ""}
-          needsHelixType={postToHelix || !!pickedTemplate?.helix_event_type}
-          helixMapping={pickedTemplate?.helix_attribute_mapping ?? null}
-          durationSec={durationSec}
-        />
-      )}
 
       <p className="text-xs text-slate-500">
         Each run shows up under the Runs tab with the captured clip/image,
@@ -1834,7 +1834,6 @@ function AnalyticComposer({
  *  and assembles the rest.
  */
 function MakeItRun({
-  ranOnce,
   analyticName,
   prompt,
   model,
@@ -1847,7 +1846,6 @@ function MakeItRun({
   helixMapping,
   durationSec,
 }: {
-  ranOnce: boolean;
   analyticName: string;
   prompt: string;
   model: string;
@@ -1959,27 +1957,43 @@ function MakeItRun({
     onSuccess: (flow) => navigate(`/flows/${flow.id}/edit`),
   });
 
+  // A second full-size card under the run button read as a competing
+  // call to action — first time through, it is not obvious whether to
+  // press Brew it or Build the flow. Brewing comes first; this is what
+  // you do once it works, so it is a line until asked for.
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <div className="border-t border-white/10 mt-4 pt-3">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-[11px] text-slate-500 hover:text-slate-300"
+        >
+          Once it works, you can{" "}
+          <span className="underline underline-offset-2">
+            set it to run automatically
+          </span>{" "}
+          →
+        </button>
+      </div>
+    );
+  }
+
   return (
-    // Tied to the card above rather than floating under it: a short
-    // connector and an ordinal say this is the next step in the same
-    // task, which is what it is. Left on its own it read as a footnote
-    // that happened to land there.
-    <div className="relative pt-8">
-      <div
-        aria-hidden="true"
-        className="absolute left-1/2 top-0 h-8 w-px -translate-x-1/2 bg-gradient-to-b from-transparent to-white/15"
-      />
-      <div
-        className={`rounded-lg border p-4 transition-colors duration-300 ease-out-strong ${
-          ranOnce
-            ? "border-sky-500/30 bg-sky-500/[0.06]"
-            : "border-white/15 bg-white/5"
-        }`}
-      >
-        <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
-          {ranOnce ? "It works — now keep it running" : "Next"}
+    <div className="border-t border-white/10 mt-4 pt-4">
+      <div>
+        <div className="flex items-baseline justify-between gap-3 mb-1">
+          <div className="text-sm text-slate-100">Make this run on its own</div>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-[11px] text-slate-500 hover:text-slate-300"
+          >
+            Hide
+          </button>
         </div>
-        <div className="text-sm text-slate-100">Make this run on its own</div>
         <p className="text-[11px] text-slate-400 mt-0.5 mb-3">
           Everything above carries over — camera, prompt, model and the Helix
           mapping. The only open question is what starts it.
