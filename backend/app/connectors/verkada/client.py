@@ -275,6 +275,32 @@ class VerkadaClient:
             )
         return res.content
 
+    async def get_thumbnail_at(self, camera_id: str, timestamp: int) -> bytes:
+        """Still from a moment in the past, as JPEG bytes.
+
+        Endpoint: ``GET /cameras/v1/footage/thumbnails``. Note the
+        resolution enum here is hyphenated (``hi-res``) while the live
+        stream uses underscores (``high_res``) -- the same word, spelled
+        two ways in one API, and the wrong one is a 400.
+        """
+        token = await self._ensure_token()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            res = await client.get(
+                f"{self.base_url}/cameras/v1/footage/thumbnails",
+                headers={"x-verkada-auth": token},
+                params={
+                    "camera_id": camera_id,
+                    "timestamp": timestamp,
+                    "resolution": "hi-res",
+                },
+            )
+        if res.status_code != 200:
+            raise VerkadaApiError(
+                f"thumbnail fetch failed: HTTP {res.status_code}",
+                status_code=res.status_code,
+            )
+        return res.content
+
     async def list_occupancy_trend_cameras(self) -> list[dict[str, Any]]:
         """Cameras that support Occupancy Trends, with their line preset ids.
 

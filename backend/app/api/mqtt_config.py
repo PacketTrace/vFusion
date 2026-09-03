@@ -910,6 +910,7 @@ async def track_history(
 @router.get("/frame/{camera_id}")
 async def frame(
     camera_id: str,
+    epoch: int | None = Query(default=None, description="Still from this moment instead of now"),
     connection_id: UUID | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
@@ -922,6 +923,22 @@ async def frame(
 
     Proxied as bytes so the signed stream URL never reaches the browser.
     """
+    # A past moment comes from the thumbnail endpoint -- the live stream
+    # only serves now, and a replay wants the scene as it was.
+    if epoch is not None:
+        client = await _client_for(session, connection_id)
+        if client is None:
+            raise HTTPException(status_code=400, detail="no Verkada connection configured")
+        try:
+            image = await client.get_thumbnail_at(camera_id, epoch)
+        except VerkadaApiError as e:
+            raise HTTPException(status_code=502, detail=f"thumbnail failed: {e}") from e
+        return Response(
+            content=image,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
     base, org_id, jwt = await _stream_context(session, connection_id)
     conn = await _connection_for(session, connection_id)
     secret = decrypt_secret(conn.encrypted_secret)

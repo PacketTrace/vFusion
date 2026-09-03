@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -804,7 +804,10 @@ function TrackReplay({
   track: TrackRecord;
   onClose: () => void;
 }) {
+  const progressRef = useRef(0);
   const [progress, setProgress] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const startEpoch = Math.floor(new Date(track.started_at).getTime() / 1000);
 
   const clip = useMutation({
     mutationFn: () =>
@@ -816,19 +819,23 @@ function TrackReplay({
   });
 
   // Walk the path in the time the track actually took, so a slow amble
-  // and a sprint across the same ground do not look identical.
+  // and a sprint across the same ground do not look identical. Scrubbing
+  // rebases the clock to wherever the handle was dropped, so play
+  // continues from there rather than snapping back.
   useEffect(() => {
-    const startedAt = performance.now();
+    if (!playing) return;
     const durationMs = Math.max(1000, track.duration_sec * 1000);
+    const startedAt = performance.now() - progressRef.current * durationMs;
     let raf = 0;
     const tick = () => {
       const elapsed = (performance.now() - startedAt) % durationMs;
-      setProgress(elapsed / durationMs);
+      progressRef.current = elapsed / durationMs;
+      setProgress(progressRef.current);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [track]);
+  }, [track, playing]);
 
   const idx = Math.min(
     track.path.length - 1,
@@ -861,6 +868,11 @@ function TrackReplay({
             className="relative w-full rounded overflow-hidden bg-slate-950 border border-slate-800"
             style={{ aspectRatio: "16 / 9" }}
           >
+            <img
+              src={`${API_BASE}/api/mqtt/frame/${track.camera_id}?epoch=${startEpoch}`}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-60"
+            />
             <svg viewBox="0 0 160 90" className="absolute inset-0 w-full h-full">
               <polyline
                 points={track.path.map(([x, y]) => `${x * 160},${y * 90}`).join(" ")}
@@ -883,6 +895,33 @@ function TrackReplay({
             >
               <Figure type={track.type} color={color} />
             </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setPlaying((v) => !v)}
+              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-500 w-14"
+            >
+              {playing ? "Pause" : "Play"}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1000}
+              value={Math.round(progress * 1000)}
+              onChange={(e) => {
+                const v = Number(e.target.value) / 1000;
+                progressRef.current = v;
+                setProgress(v);
+              }}
+              onMouseDown={() => setPlaying(false)}
+              className="flex-1 accent-sky-500"
+              aria-label="Scrub the reported track"
+            />
+            <span className="text-[11px] font-mono text-slate-400 w-20 text-right">
+              {(progress * track.duration_sec).toFixed(1)}s /{" "}
+              {track.duration_sec.toFixed(1)}s
+            </span>
           </div>
         </div>
 
