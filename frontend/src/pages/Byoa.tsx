@@ -1261,6 +1261,7 @@ export default function Byoa() {
           verkadaConnId={verkadaConnId}
           geminiConnId={geminiConnId}
           helixEventTypeUid={postToHelix ? helixEventTypeUid : ""}
+          needsHelixType={postToHelix || !!pickedTemplate?.helix_event_type}
           helixMapping={pickedTemplate?.helix_attribute_mapping ?? null}
           durationSec={durationSec}
         />
@@ -1828,6 +1829,7 @@ function MakeItRun({
   verkadaConnId,
   geminiConnId,
   helixEventTypeUid,
+  needsHelixType,
   helixMapping,
   durationSec,
 }: {
@@ -1839,6 +1841,7 @@ function MakeItRun({
   verkadaConnId: string | null;
   geminiConnId: string | null;
   helixEventTypeUid: string;
+  needsHelixType: boolean;
   helixMapping: Record<string, string> | null;
   durationSec: number;
 }) {
@@ -1846,7 +1849,18 @@ function MakeItRun({
   const [when, setWhen] = useState<"camera" | "schedule">("camera");
   const [objects, setObjects] = useState("person");
   const [everyMinutes, setEveryMinutes] = useState(15);
-  const ready = !!cameraId && !!verkadaConnId && !!geminiConnId && !!prompt.trim();
+  // Naming what is missing beats a greyed button with no explanation.
+  // The Helix type matters most: a flow built before it exists writes to
+  // an event type that is not there, and the failure only shows up on
+  // the first real run.
+  const missing = [
+    !verkadaConnId && "a Verkada connection",
+    !geminiConnId && "a Gemini connection",
+    !cameraId && "a camera",
+    !prompt.trim() && "a prompt",
+    needsHelixType && !helixEventTypeUid && "the Helix event type — create it above",
+  ].filter(Boolean) as string[];
+  const ready = missing.length === 0;
 
   const create = useMutation({
     mutationFn: () => {
@@ -1992,7 +2006,7 @@ function MakeItRun({
       </div>
       {!ready && (
         <p className="text-[11px] text-amber-400/80 mt-2">
-          Pick a camera, both connections and a prompt first.
+          Still needs {missing.join(", ")}.
         </p>
       )}
       {create.isError && (
