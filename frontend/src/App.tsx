@@ -95,7 +95,7 @@ function AppShell() {
             ref={markRef}
             onMouseEnter={() => setOrbitRate(2.6)}
             onMouseLeave={() => setOrbitRate(1)}
-            className="brand-mark flex items-center gap-2 font-semibold text-white tracking-tight select-none"
+            className="brand-mark flex items-center gap-1 font-semibold text-white tracking-tight select-none"
           >
             <svg
               viewBox="0 0 40 40"
