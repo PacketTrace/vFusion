@@ -24,7 +24,7 @@ import logging
 import os
 import time
 
-from app.mqtt import history
+from app.mqtt import filters, history
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -63,6 +63,23 @@ class Track:
     # belongs to the frame actually on screen.
     ts_ms: float = 0.0
     path: list[tuple[float, float, float, float]] = field(default_factory=list)
+
+    def travelled(self) -> float:
+        """Furthest the box centre has been from where it started.
+
+        Start-to-furthest rather than total path length: a jittering box
+        accumulates length without going anywhere, which is exactly the
+        false positive this is meant to catch.
+        """
+        if len(self.path) < 2:
+            return 0.0
+        ox, oy = self.path[0][0], self.path[0][1]
+        return max(
+            ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 for x, y, _w, _h in self.path
+        )
+
+    def area(self) -> float:
+        return self.w * self.h
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -112,9 +129,11 @@ class Ingest:
         for cid, state in self.cameras.items():
             if camera_id and cid != camera_id:
                 continue
+            thresholds = filters.get()
             live = [
-                t for t in state.tracks.values()
-                if now - t.last_seen <= TRACK_TIMEOUT_SEC
+                t
+                for t in state.tracks.values()
+                if now - t.last_seen <= TRACK_TIMEOUT_SEC and _qualifies(t, thresholds)
             ]
             counts = {kind: sum(1 for t in live if t.type == kind) for kind in OBJECT_TYPES}
             lat = sorted(state.latencies_ms)
@@ -240,6 +259,8 @@ class Ingest:
         duration = track.last_seen - track.first_seen
         if duration < history.MIN_DURATION_SEC or not track.path:
             return
+        if not _qualifies(track, filters.get()):
+            return
         started = datetime.fromtimestamp(track.first_wall, tz=timezone.utc)
         history.record(
             {
@@ -315,6 +336,22 @@ class Ingest:
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None
+
+
+def _qualifies(track: Track, thresholds: dict[str, float]) -> bool:
+    """Whether a track is worth reporting at all.
+
+    Applied at the point of reporting rather than on ingest, so the
+    thresholds can be changed and take effect immediately — a track
+    already in flight is re-evaluated on the next frame rather than
+    being stuck with the verdict it got when it first appeared.
+    """
+    if track.area() < thresholds.get("min_area", 0.0):
+        return False
+    min_move = thresholds.get("min_movement", 0.0)
+    if min_move > 0 and track.travelled() < min_move:
+        return False
+    return True
 
 
 def _explain(e: Exception, host: str) -> str:

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { API_BASE, apiDelete, apiGet, apiPost } from "../lib/api";
+import { API_BASE, apiDelete, apiGet, apiPost, apiPut } from "../lib/api";
 import { useCameras } from "../lib/cameras";
 
 interface MqttStatus {
@@ -381,6 +381,10 @@ export default function Mqtt() {
 
       <Card title="3 · What the camera sees">
         <LiveView cameraId={cameraId} live={live} />
+      </Card>
+
+      <Card title="Noise filter">
+        <NoiseFilter cameraId={cameraId} />
       </Card>
 
       <Card title="4 · What it saw earlier">
@@ -1089,6 +1093,150 @@ function TrackReplay({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/** Thresholds a detection must clear before it is reported.
+ *
+ *  The camera reports fixed objects as people — on this org, 221 of 227
+ *  recorded tracks never moved and sat in three grid cells. Both knobs
+ *  are shown against the tracks already on record, because a threshold
+ *  is a guess until it is checked against real detections, and the
+ *  history holds hundreds of them.
+ */
+function NoiseFilter({ cameraId }: { cameraId: string }) {
+  const qc = useQueryClient();
+  const current = useQuery({
+    queryKey: ["mqtt-filters"],
+    queryFn: () =>
+      apiGet<{ min_area: number; min_movement: number; note: string }>(
+        "/api/mqtt/filters",
+      ),
+  });
+
+  const [area, setArea] = useState<number | null>(null);
+  const [move, setMove] = useState<number | null>(null);
+  const minArea = area ?? current.data?.min_area ?? 0.01;
+  const minMove = move ?? current.data?.min_movement ?? 0;
+
+  const preview = useQuery({
+    queryKey: ["mqtt-filter-preview", minArea, minMove, cameraId],
+    queryFn: () =>
+      apiGet<{
+        considered: number;
+        kept: number;
+        dropped: number;
+        kept_by_type: Record<string, number>;
+      }>(
+        `/api/mqtt/filters/preview?min_area=${minArea}&min_movement=${minMove}${
+          cameraId ? `&camera_id=${cameraId}` : ""
+        }`,
+      ),
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiPut("/api/mqtt/filters", {
+        min_area: minArea,
+        min_movement: minMove,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mqtt-filters"] });
+      qc.invalidateQueries({ queryKey: ["mqtt-history"] });
+    },
+  });
+
+  const dirty =
+    current.data != null &&
+    (minArea !== current.data.min_area || minMove !== current.data.min_movement);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] uppercase tracking-wider text-slate-400">
+              Minimum size
+            </span>
+            <span className="font-mono text-sm text-slate-200">
+              {(minArea * 100).toFixed(1)}% of frame
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={0.05}
+            step={0.001}
+            value={minArea}
+            onChange={(e) => setArea(Number(e.target.value))}
+            className="w-full accent-sky-500 mt-1"
+          />
+          <p className="text-[11px] text-slate-500">
+            The reliable one. Every false positive measured here sat under
+            0.6% of frame; every real detection was above 2.6%.
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] uppercase tracking-wider text-slate-400">
+              Minimum movement
+            </span>
+            <span className="font-mono text-sm text-slate-200">
+              {minMove === 0 ? "off" : `${(minMove * 100).toFixed(1)}% of frame`}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={0.2}
+            step={0.005}
+            value={minMove}
+            onChange={(e) => setMove(Number(e.target.value))}
+            className="w-full accent-sky-500 mt-1"
+          />
+          <p className="text-[11px] text-slate-500">
+            Off by default — a subject standing still is still a subject. Turn
+            it up only if size alone is not enough.
+          </p>
+        </div>
+      </div>
+
+      {preview.data && (
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <span className="text-slate-400">
+            Against {preview.data.considered.toLocaleString()} recorded tracks:
+          </span>
+          <span className="text-emerald-300">
+            keeps <span className="font-mono">{preview.data.kept}</span>
+          </span>
+          <span className="text-rose-300">
+            drops <span className="font-mono">{preview.data.dropped}</span>
+          </span>
+          {Object.entries(preview.data.kept_by_type).map(([t, n]) => (
+            <span key={t} className="text-slate-500">
+              {t} <span className="font-mono text-slate-300">{n}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => save.mutate()}
+          disabled={!dirty || save.isPending}
+          className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+        >
+          {save.isPending ? "Saving…" : dirty ? "Apply" : "Applied"}
+        </button>
+        <span className="text-[11px] text-slate-500">
+          Applies to the live view and to what gets recorded from now on.
+          Existing rows stay.
+        </span>
       </div>
     </div>
   );

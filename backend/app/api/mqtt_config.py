@@ -37,7 +37,7 @@ from app.connectors.verkada.footage import (
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
-from app.mqtt import history, provision
+from app.mqtt import filters, history, provision
 from app.mqtt.ingest import ingest
 
 
@@ -890,6 +890,64 @@ async def get_clip(clip_name: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="clip not found")
     return FileResponse(path, media_type="video/mp4")
+
+
+class FiltersRequest(BaseModel):
+    # Fraction of the frame, both of them.
+    min_area: float
+    min_movement: float
+
+
+@router.get("/filters")
+async def get_filters() -> dict[str, Any]:
+    """Thresholds a detection must clear before it is reported."""
+    return filters.describe()
+
+
+@router.put("/filters")
+async def set_filters(body: FiltersRequest) -> dict[str, Any]:
+    await filters.put(body.min_area, body.min_movement)
+    return filters.describe()
+
+
+@router.get("/filters/preview")
+async def preview_filters(
+    min_area: float = Query(default=0.01),
+    min_movement: float = Query(default=0.0),
+    camera_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """What these thresholds would have done to the tracks on record.
+
+    Chosen thresholds are guesses until they are checked against real
+    detections, and the history already holds several hundred of them —
+    so the slider can say "keeps 6, drops 221" instead of leaving
+    someone to find out over the following week.
+    """
+    tracks = history.read(camera_id=camera_id, limit=2000)
+    kept: list[dict[str, Any]] = []
+    dropped = 0
+    for t in tracks:
+        path = t.get("path") or []
+        area = float(t.get("max_size") or 0.0)
+        travelled = 0.0
+        if len(path) >= 2:
+            ox, oy = path[0][0], path[0][1]
+            travelled = max(
+                ((p[0] - ox) ** 2 + (p[1] - oy) ** 2) ** 0.5 for p in path
+            )
+        if area >= min_area and (min_movement <= 0 or travelled >= min_movement):
+            kept.append(t)
+        else:
+            dropped += 1
+    by_type: dict[str, int] = {}
+    for t in kept:
+        by_type[t.get("type", "unknown")] = by_type.get(t.get("type", "unknown"), 0) + 1
+    return {
+        "considered": len(tracks),
+        "kept": len(kept),
+        "dropped": dropped,
+        "kept_by_type": by_type,
+    }
 
 
 @router.get("/history")
