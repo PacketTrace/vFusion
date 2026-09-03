@@ -553,6 +553,163 @@ export default function Byoa() {
       )}
 
       <Card>
+        {/* Intent first. Everything below this — connections, camera,
+            footage, model — exists to serve the analytic, so asking
+            for them before asking what the analytic is put the
+            plumbing ahead of the subject. */}
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
+          What should it look for
+        </div>
+        <AnalyticComposer
+          defaultOpen={!prompt.trim()}
+          geminiConnectionId={geminiConnId}
+          onUse={(a) => {
+            setPrompt(a.prompt);
+            setPickedTemplate({
+              name: a.name,
+              value: a.prompt,
+              helix_event_type: a.helix_event_type,
+              helix_attribute_mapping: a.helix_attribute_mapping,
+            });
+            setPostToHelix(true);
+            revealPrompt();
+          }}
+          onSaved={() => savedAnalytics.refetch()}
+        />
+
+        <Field label="Prompt" required>
+          {allTemplates.length > 0 && (
+            <>
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
+                Pick a template
+              </div>
+              {/* Picker grid — replaces the old <select> so the demo /
+                  video story reads as "pick the analytic" instead of
+                  "scroll a tiny dropdown." Each card shows the
+                  template name + paired Helix type emoji (when the
+                  template ships one) + a Helix-paired chip so
+                  operators can see the pairing at a glance. The
+                  active card gets a sky border + scale-up so the
+                  current pick is unmistakable. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 mb-3">
+                {allTemplates.map((t) => {
+                  const active = pickedTemplate?.name === t.name;
+                  // Paired templates carry an emoji in their helix
+                  // event type name (e.g. "🦌 Animal Watch"). Pull
+                  // the first non-space cluster off the front and
+                  // use it as the card icon; falls back to ✨ when
+                  // the template has no pairing.
+                  const helixName = t.helix_event_type?.name ?? "";
+                  const iconMatch = helixName.match(/^\s*(\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|‍\p{Extended_Pictographic})*)/u);
+                  const icon = iconMatch?.[1] ?? "✨";
+                  return (
+                    <button
+                      key={t.name}
+                      type="button"
+                      onClick={() => {
+                        setPrompt(t.value);
+                        setPickedTemplate(t);
+                        // A fresh template selection invalidates
+                        // whatever replay state we restored — its
+                        // mapping is the new source of truth.
+                        setRestoredMapping(null);
+                      }}
+                      className={`text-left p-3 rounded-md border transition duration-200 ease-out-strong ${
+                        active
+                          ? "border-sky-400/80 bg-sky-950/40 scale-[1.02] shadow-[0_0_14px_rgba(56,189,248,0.35)]"
+                          : "border-white/15 bg-white/5 hover:border-sky-700/60 hover:bg-sky-950/20"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-2xl leading-none mt-0.5" aria-hidden>
+                          {icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-slate-100 leading-tight">
+                            {t.name}
+                          </div>
+                          {t.helix_event_type && (
+                            <div className="mt-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60">
+                              🧬 Helix-paired
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {pickedTemplate?.helix_event_type && (
+                <div className="text-[11px] bg-emerald-950/30 border border-emerald-900/60 rounded px-2 py-1.5 mb-2">
+                  <div className="text-slate-300">
+                    <span className="text-emerald-300">Pairs with Helix:</span>{" "}
+                    <span className="text-slate-100 font-medium">
+                      {pickedTemplate.helix_event_type.name}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    {Object.entries(pickedTemplate.helix_event_type.event_schema)
+                      .map(([k, v]) => `${k}: ${v}`)
+                      .join(" · ")}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Post to Helix has been toggled on with this event type pre-selected. If it's not yet on your Verkada org, create it on the Helixr tab.
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* "Custom prompt" header tells operators this is the
+              free-form path — write your own analytic instead of
+              picking a card. Sits with a hairline divider above so
+              the visual break between "templates" and "custom" is
+              obvious without taking much vertical space. */}
+          {allTemplates.length > 0 && (promptOpen || prompt.trim()) && (
+            <div className="border-t border-white/10 mt-3 pt-3">
+              <div className="flex items-baseline gap-2 mb-1.5">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">
+                  Prompt
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  {prompt.trim()
+                    ? "edit it before running, if you like"
+                    : "write your own analytic"}
+                </div>
+              </div>
+            </div>
+          )}
+          {allTemplates.length > 0 && !promptOpen && !prompt.trim() && (
+            <div className="border-t border-white/10 mt-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setPromptOpen(true)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+              >
+                or write a prompt yourself
+              </button>
+            </div>
+          )}
+          {(promptOpen || prompt.trim()) && (
+          <textarea
+            ref={promptRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={PROMPT_PLACEHOLDER}
+            rows={6}
+            spellCheck={false}
+            className={`w-full px-2 py-1.5 rounded bg-white/5 border text-sm placeholder:text-slate-500 placeholder:italic transition-[border-color,box-shadow] duration-300 ease-out-strong ${
+              promptFlash
+                ? "border-sky-500/80 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]"
+                : "border-white/15"
+            }`}
+          />
+          )}
+        </Field>
+        <div className="border-t border-white/10 my-5" />
+
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
+          Where it runs
+        </div>
         <Row>
           <Field label="Verkada connection" required>
             <select
@@ -889,151 +1046,6 @@ export default function Byoa() {
           </>
         )}
 
-        <AnalyticComposer
-          defaultOpen={!prompt.trim()}
-          geminiConnectionId={geminiConnId}
-          onUse={(a) => {
-            setPrompt(a.prompt);
-            setPickedTemplate({
-              name: a.name,
-              value: a.prompt,
-              helix_event_type: a.helix_event_type,
-              helix_attribute_mapping: a.helix_attribute_mapping,
-            });
-            setPostToHelix(true);
-            revealPrompt();
-          }}
-          onSaved={() => savedAnalytics.refetch()}
-        />
-
-        <Field label="Prompt" required>
-          {allTemplates.length > 0 && (
-            <>
-              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
-                Pick a template
-              </div>
-              {/* Picker grid — replaces the old <select> so the demo /
-                  video story reads as "pick the analytic" instead of
-                  "scroll a tiny dropdown." Each card shows the
-                  template name + paired Helix type emoji (when the
-                  template ships one) + a Helix-paired chip so
-                  operators can see the pairing at a glance. The
-                  active card gets a sky border + scale-up so the
-                  current pick is unmistakable. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 mb-3">
-                {allTemplates.map((t) => {
-                  const active = pickedTemplate?.name === t.name;
-                  // Paired templates carry an emoji in their helix
-                  // event type name (e.g. "🦌 Animal Watch"). Pull
-                  // the first non-space cluster off the front and
-                  // use it as the card icon; falls back to ✨ when
-                  // the template has no pairing.
-                  const helixName = t.helix_event_type?.name ?? "";
-                  const iconMatch = helixName.match(/^\s*(\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|‍\p{Extended_Pictographic})*)/u);
-                  const icon = iconMatch?.[1] ?? "✨";
-                  return (
-                    <button
-                      key={t.name}
-                      type="button"
-                      onClick={() => {
-                        setPrompt(t.value);
-                        setPickedTemplate(t);
-                        // A fresh template selection invalidates
-                        // whatever replay state we restored — its
-                        // mapping is the new source of truth.
-                        setRestoredMapping(null);
-                      }}
-                      className={`text-left p-3 rounded-md border transition duration-200 ease-out-strong ${
-                        active
-                          ? "border-sky-400/80 bg-sky-950/40 scale-[1.02] shadow-[0_0_14px_rgba(56,189,248,0.35)]"
-                          : "border-white/15 bg-white/5 hover:border-sky-700/60 hover:bg-sky-950/20"
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-2xl leading-none mt-0.5" aria-hidden>
-                          {icon}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-slate-100 leading-tight">
-                            {t.name}
-                          </div>
-                          {t.helix_event_type && (
-                            <div className="mt-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60">
-                              🧬 Helix-paired
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {pickedTemplate?.helix_event_type && (
-                <div className="text-[11px] bg-emerald-950/30 border border-emerald-900/60 rounded px-2 py-1.5 mb-2">
-                  <div className="text-slate-300">
-                    <span className="text-emerald-300">Pairs with Helix:</span>{" "}
-                    <span className="text-slate-100 font-medium">
-                      {pickedTemplate.helix_event_type.name}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                    {Object.entries(pickedTemplate.helix_event_type.event_schema)
-                      .map(([k, v]) => `${k}: ${v}`)
-                      .join(" · ")}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">
-                    Post to Helix has been toggled on with this event type pre-selected. If it's not yet on your Verkada org, create it on the Helixr tab.
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          {/* "Custom prompt" header tells operators this is the
-              free-form path — write your own analytic instead of
-              picking a card. Sits with a hairline divider above so
-              the visual break between "templates" and "custom" is
-              obvious without taking much vertical space. */}
-          {allTemplates.length > 0 && (promptOpen || prompt.trim()) && (
-            <div className="border-t border-white/10 mt-3 pt-3">
-              <div className="flex items-baseline gap-2 mb-1.5">
-                <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                  Prompt
-                </div>
-                <div className="text-[10px] text-slate-500">
-                  {prompt.trim()
-                    ? "edit it before running, if you like"
-                    : "write your own analytic"}
-                </div>
-              </div>
-            </div>
-          )}
-          {allTemplates.length > 0 && !promptOpen && !prompt.trim() && (
-            <div className="border-t border-white/10 mt-3 pt-3">
-              <button
-                type="button"
-                onClick={() => setPromptOpen(true)}
-                className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
-              >
-                or write a prompt yourself
-              </button>
-            </div>
-          )}
-          {(promptOpen || prompt.trim()) && (
-          <textarea
-            ref={promptRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={PROMPT_PLACEHOLDER}
-            rows={6}
-            spellCheck={false}
-            className={`w-full px-2 py-1.5 rounded bg-white/5 border text-sm placeholder:text-slate-500 placeholder:italic transition-[border-color,box-shadow] duration-300 ease-out-strong ${
-              promptFlash
-                ? "border-sky-500/80 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]"
-                : "border-white/15"
-            }`}
-          />
-          )}
-        </Field>
 
         {/* Optional Helix post-step. Same machinery the verkada_helix_event
             flow action uses — Workbench just chains it after the analyze.
