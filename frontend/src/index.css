@@ -213,3 +213,24 @@ button:not(:disabled):active {
   animation-direction: reverse;
   animation-duration: 900ms;
 }
+
+/* Confirmation dialogs. The panel grows a touch rather than sliding, so
+   it reads as appearing over the page rather than arriving from a
+   direction that means nothing here. */
+@keyframes confirm-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confirm-panel-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.animate-confirm-backdrop {
+  animation: confirm-backdrop-in 150ms var(--ease-out);
+}
+
+.animate-confirm-panel {
+  animation: confirm-panel-in 200ms var(--ease-out);
+}

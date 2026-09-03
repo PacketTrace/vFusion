@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
+
+import Connections from "./Connections";
 
 import { ONBOARDING_QUERY_KEY } from "../components/OnboardingGate";
 import {
@@ -22,15 +25,50 @@ export default function Settings() {
     refetchInterval: 10_000,
   });
 
+  // Connections is configuration, so it belongs here rather than as its
+  // own top-level destination — it is set up once and then rarely
+  // touched, unlike the pages people work in daily.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "connections" ? "connections" : "retention";
+  const setTab = (next: string) => {
+    const p = new URLSearchParams(searchParams);
+    p.set("tab", next);
+    setSearchParams(p, { replace: true });
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Settings</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Tunable knobs for how long captured data sticks around. Changes apply
-          on the next cleanup cron tick (within ~30 seconds).
+          {tab === "connections"
+            ? "Verkada orgs and Gemini keys this instance can use."
+            : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
         </p>
+        <div className="mt-4 flex items-center gap-1 border-b border-white/10">
+          {[
+            { key: "retention", label: "Retention" },
+            { key: "connections", label: "Connections" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                tab === t.key
+                  ? "border-sky-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {tab === "connections" && <Connections />}
+      {tab === "retention" && (
+      <>
 
       <Card title="Retention">
         <p className="text-xs text-slate-400 mb-4">
@@ -53,6 +91,8 @@ export default function Settings() {
       <OnboardingCard />
 
       <DangerZoneCard />
+      </>
+      )}
     </div>
   );
 }

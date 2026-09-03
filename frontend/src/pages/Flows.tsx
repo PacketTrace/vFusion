@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiDelete, apiGet, apiPost, apiPut, Flow, FlowExportFormat } from "../lib/api";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 
 export default function Flows() {
@@ -88,6 +89,7 @@ export default function Flows() {
     mutationFn: (f: Flow) => apiPut(`/api/flows/${f.id}`, { enabled: !f.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["flows"] }),
   });
+  const [pendingDelete, setPendingDelete] = useState<Flow | null>(null);
   const del = useMutation({
     mutationFn: (id: string) => apiDelete(`/api/flows/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["flows"] }),
@@ -95,6 +97,17 @@ export default function Flows() {
 
   return (
     <div className="flex flex-col gap-4">
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete "${pendingDelete?.name ?? ""}"?`}
+        body="The flow and its wiring go. Runs it already produced stay on the Runs page."
+        busy={del.isPending}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) del.mutate(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-white">Flows</h1>
@@ -227,9 +240,7 @@ export default function Flows() {
                       Edit
                     </Link>
                     <button
-                      onClick={() => {
-                        if (confirm(`Delete "${f.name}"?`)) del.mutate(f.id);
-                      }}
+                      onClick={() => setPendingDelete(f)}
                       className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-rose-300 hover:border-rose-800"
                     >
                       Delete
