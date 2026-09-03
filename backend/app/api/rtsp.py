@@ -7,9 +7,12 @@ change what the pump is told and report back what it is doing.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from app.api import onvif as onvif_api
 from app.rtsp import mediamtx, pump as pump_mod, queue, settings
 
 
@@ -27,6 +30,7 @@ class SettingsIn(BaseModel):
     # compose-network name.
     advertise_host: str | None = None
     loop: bool | None = None
+    mode: Literal["onvif", "rtsp"] | None = None
 
 
 class EnableIn(BaseModel):
@@ -46,18 +50,29 @@ async def status() -> dict:
         "readers": await pump_mod.readers(),
         "queued": sum(1 for i in items if not i.get("played_at")),
         "played": sum(1 for i in items if i.get("played_at")),
+        # What ONVIF clients have tried lately. "Invalid credentials"
+        # from a client is a claim about a scheme mismatch as often as
+        # about a password, and this is how you tell which.
+        "onvif_requests": list(reversed(onvif_api.recent)),
     }
 
 
 @router.put("/settings")
 async def update_settings(body: SettingsIn) -> dict:
     entry = {k: v for k, v in body.model_dump().items() if v is not None}
+    was = settings.get().get("mode")
     state = await settings.put(entry)
     # The config carries the credentials, so it is rewritten whenever they
     # or the stream name change. Writing is a no-op when the contents
     # match, which matters: MediaMTX restarts itself to pick a config up,
     # and that drops whoever is watching.
     mediamtx.write(settings.get())
+    # Switching mode changes what the encoder produces — one output or
+    # three — so the encoder has to be rebuilt. This is the one settings
+    # change that interrupts the stream, which is why the UI says so.
+    if entry.get("mode") and entry["mode"] != was and settings.get().get("enabled"):
+        await pump_mod.pump.stop()
+        pump_mod.pump.start()
     return state
 
 

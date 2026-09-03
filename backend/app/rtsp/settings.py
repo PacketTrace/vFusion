@@ -102,6 +102,11 @@ def _blank() -> dict[str, Any]:
         "publish_username": "vfusion",
         "publish_password": "",
         "loop": False,
+        # "onvif" or "rtsp". Not a presentation choice: ONVIF needs a
+        # sub-stream and a snapshot to be worth choosing, and plain RTSP
+        # needs neither, so the mode decides what the encoder produces
+        # and whether the ONVIF services answer at all.
+        "mode": "onvif",
         # Stable for the life of the install. ONVIF clients key a device
         # on its EndpointReference, and a value that changed on restart
         # would look like a different camera every time.
@@ -121,7 +126,13 @@ def get() -> dict[str, Any]:
         return _blank()
     merged = _blank()
     merged.update({k: data[k] for k in merged if k in data})
+    if merged["mode"] not in ("onvif", "rtsp"):
+        merged["mode"] = "onvif"
     return merged
+
+
+def is_onvif(state: dict[str, Any] | None = None) -> bool:
+    return (state or get()).get("mode", "onvif") == "onvif"
 
 
 def public() -> dict[str, Any]:

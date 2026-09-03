@@ -57,6 +57,13 @@ paths: {}
 def render(state: dict[str, Any]) -> str:
     stream = state.get("stream") or settings.DEFAULT_STREAM
     sub = settings.sub_stream(state)
+    # Only ONVIF can describe a second profile, so in RTSP mode the path
+    # would sit there permanently unpublished — which MediaMTX reports as
+    # a path with no source, and which reads like something broken.
+    onvif = settings.is_onvif(state)
+    sub_publish = f"\n      - action: publish\n        path: {sub}" if onvif else ""
+    sub_read = f"\n      - action: read\n        path: {sub}" if onvif else ""
+    sub_path = f"\n  {sub}:\n    source: publisher" if onvif else ""
     read_user = state.get("read_username") or "verkada"
     read_pass = state.get("read_password") or ""
     pub_user = state.get("publish_username") or "vfusion"
@@ -97,17 +104,13 @@ authInternalUsers:
     ips: []
     permissions:
       - action: publish
-        path: {stream}
-      - action: publish
-        path: {sub}
+        path: {stream}{sub_publish}
   - user: {read_user}
     pass: {read_pass}
     ips: []
     permissions:
       - action: read
-        path: {stream}
-      - action: read
-        path: {sub}
+        path: {stream}{sub_read}
   # No anonymous entry. MediaMTX ships one by default that grants
   # everything to everyone; leaving it out is the point of this file.
 
@@ -115,9 +118,7 @@ paths:
   # Main and sub are published by the same encoder process, so they are
   # always both present or both absent.
   {stream}:
-    source: publisher
-  {sub}:
-    source: publisher
+    source: publisher{sub_path}
 """
 
 

@@ -30,6 +30,17 @@ type Status = {
   sub_height: number;
   onvif_port: number;
   onvif_url: string;
+  mode: "onvif" | "rtsp";
+  onvif_requests: {
+    at: string;
+    op: string;
+    from: string;
+    wsse: boolean;
+    wsse_user: string;
+    wsse_type: string;
+    http_auth: string;
+    result: string;
+  }[];
   readers: number | null;
   queued: number;
   played: number;
@@ -107,6 +118,12 @@ export default function Rtsp() {
       setToggleError(null);
       invalidate();
     },
+    onError: (e: Error) => setToggleError(e.message),
+  });
+  const setMode = useMutation({
+    mutationFn: (mode: "onvif" | "rtsp") =>
+      apiPut<Status>("/api/rtsp/settings", { mode }),
+    onSuccess: () => invalidate(),
     onError: (e: Error) => setToggleError(e.message),
   });
   const rotate = useMutation({
@@ -248,51 +265,112 @@ export default function Rtsp() {
         )}
 
         {s?.url && s.read_password && (
-          <div className="mt-4 space-y-2">
-            {/* ONVIF first. It is the same device either way, but the
-                Connector gets more from it — two profiles, a snapshot
-                and the encoder settings — where RTSP hands over a URL
-                and nothing else. */}
-            <p className="text-[11px] text-slate-400">
-              In Command: <strong className="text-slate-200">Add Cameras</strong> →{" "}
-              <strong className="text-slate-200">IP</strong>. Put the same address
-              in both range boxes.
-              {!s.enabled && (
-                <span className="text-slate-500">
-                  {" "}
-                  These exist as soon as an address is saved, so you can test
-                  before pointing Verkada at it — but nothing answers until the
-                  stream is on.
-                </span>
-              )}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <CopyRow label="IP address from / to" value={s.advertise_host} />
-              <CopyRow label="Port number" value={String(s.onvif_port)} />
-              <div className="text-[10px] text-slate-500 self-end pb-1.5">
-                Two profiles: {s.width}×{s.height} main, {s.sub_width}×
-                {s.sub_height} sub, plus a JPEG snapshot.
-              </div>
+          <div className="mt-4 space-y-3">
+            {/* One or the other, not both. The modes are not two views of
+                the same thing: ONVIF produces a sub-stream and a snapshot
+                and answers on its own port, RTSP produces neither and
+                does not. Offering both at once would mean paying for
+                outputs that nothing is going to ask for. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <ModeCard
+                active={s.mode === "onvif"}
+                title="ONVIF"
+                blurb="Two profiles, a snapshot, and the encoder settings. Added under the IP tab."
+                onClick={() => setMode.mutate("onvif")}
+                busy={setMode.isPending}
+              />
+              <ModeCard
+                active={s.mode === "rtsp"}
+                title="Plain RTSP"
+                blurb="One stream and a URL. Half the encoding, for anything that cannot speak ONVIF."
+                onClick={() => setMode.mutate("rtsp")}
+                busy={setMode.isPending}
+              />
             </div>
+
+            {s.mode === "onvif" ? (
+              <div className="space-y-2">
+                <p className="text-[11px] text-slate-400">
+                  In Command: <strong className="text-slate-200">Add Cameras</strong>{" "}
+                  → <strong className="text-slate-200">IP</strong>. Put the same
+                  address in both range boxes.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <CopyRow label="IP address from / to" value={s.advertise_host} />
+                  <CopyRow label="Port number" value={String(s.onvif_port)} />
+                  <div className="text-[10px] text-slate-500 self-end pb-1.5">
+                    {s.width}×{s.height} main · {s.sub_width}×{s.sub_height} sub ·
+                    JPEG snapshot
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[11px] text-slate-400">
+                  In Command: <strong className="text-slate-200">Add Cameras</strong>{" "}
+                  → <strong className="text-slate-200">RTSP</strong>.
+                </p>
+                <CopyRow label="RTSP URL (HQ)" value={s.url} />
+                <p className="text-[10px] text-slate-500">
+                  The ONVIF services return 404 in this mode — not hidden,
+                  actually not there.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <CopyRow label="Username" value={s.read_username} />
               <CopyRow label="Password" value={s.read_password} secret />
             </div>
+            {!s.enabled && (
+              <p className="text-[11px] text-slate-500">
+                These exist as soon as an address is saved, so you can test
+                before pointing Verkada at it — but nothing answers until the
+                stream is on.
+              </p>
+            )}
 
-            <details className="pt-1">
-              <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">
-                Or add it as a plain RTSP URL
-              </summary>
-              <div className="mt-2 space-y-2">
-                <p className="text-[11px] text-slate-500">
-                  The <strong className="text-slate-400">RTSP</strong> tab, same
-                  credentials. One stream, no snapshot, and the Connector learns
-                  nothing about the encoder — worth using only for something that
-                  cannot speak ONVIF.
-                </p>
-                <CopyRow label="RTSP URL (HQ)" value={s.url} />
-              </div>
-            </details>
+            {/* What clients have actually tried. "Invalid credentials"
+                from a Connector is as often a scheme mismatch as a wrong
+                password, and the difference is visible here rather than
+                after a deploy spent guessing. */}
+            {s.mode === "onvif" && (s.onvif_requests ?? []).length > 0 && (
+              <details>
+                <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">
+                  Last {(s.onvif_requests ?? []).length} ONVIF requests
+                </summary>
+                <div className="mt-1.5 border border-white/10 rounded overflow-hidden">
+                  <table className="w-full text-[10px] font-mono">
+                    <tbody className="divide-y divide-white/10">
+                      {(s.onvif_requests ?? []).map((r, i) => (
+                        <tr key={`${r.at}-${i}`}>
+                          <td className="px-2 py-1 text-slate-500">
+                            {r.at.slice(11)}
+                          </td>
+                          <td className="px-2 py-1 text-slate-300">{r.op}</td>
+                          <td className="px-2 py-1 text-slate-500">
+                            {r.wsse
+                              ? `wsse ${r.wsse_type || "?"} as ${r.wsse_user || "?"}`
+                              : r.http_auth
+                                ? `http ${r.http_auth}`
+                                : "no auth sent"}
+                          </td>
+                          <td
+                            className={`px-2 py-1 text-right ${
+                              r.result === "ok"
+                                ? "text-emerald-400"
+                                : "text-rose-300"
+                            }`}
+                          >
+                            {r.result}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
             <button
               type="button"
               onClick={() => rotate.mutate()}
@@ -549,6 +627,40 @@ function QueueTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function ModeCard({
+  active,
+  title,
+  blurb,
+  onClick,
+  busy,
+}: {
+  active: boolean;
+  title: string;
+  blurb: string;
+  onClick: () => void;
+  busy: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || active}
+      aria-pressed={active}
+      className={`text-left p-3 rounded-md border transition duration-200 ease-out-strong disabled:cursor-default ${
+        active
+          ? "border-sky-400/80 bg-sky-950/40"
+          : "border-white/15 bg-white/5 hover:border-white/35 hover:bg-white/[0.08]"
+      }`}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-medium text-slate-100">{title}</span>
+        {active && <span className="text-sky-300 text-xs">✓</span>}
+      </div>
+      <div className="text-[11px] text-slate-400 mt-0.5">{blurb}</div>
+    </button>
   );
 }
 

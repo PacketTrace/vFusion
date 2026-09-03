@@ -150,6 +150,7 @@ class Pump:
             *_encoder_cmd(
                 settings.publish_url(state),
                 settings.publish_url(state, settings.sub_stream(state)),
+                settings.is_onvif(state),
             ),
             stdin=self._read_fd,
             stdout=asyncio.subprocess.DEVNULL,
@@ -336,19 +337,29 @@ def _h264(bitrate: str) -> list[str]:
     ]
 
 
-def _encoder_cmd(main: str, sub: str) -> list[str]:
-    """One process, three outputs: main stream, sub-stream, snapshot.
+def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
+    """One process. Three outputs for ONVIF, one for plain RTSP.
 
-    Three ffmpeg processes reading the same source would need the frames
-    fanned out to each, and a pipe has one reader. Splitting inside a
-    single filter graph decodes once and keeps all three outputs on one
-    process — so they share a lifetime, and the sub-stream cannot drop
-    while the main one stays up.
+    ONVIF advertises a sub-stream and a snapshot, so in that mode the
+    encoder produces both. Plain RTSP hands over a single URL and has no
+    way to mention either, so producing them would be spending a second
+    encode and a JPEG a second on things nothing can ask for.
 
-    It also means any output failing takes the whole encoder down, which
-    is the right trade: a client watching a sub-stream that silently died
-    while the device still claims to offer it is worse than a restart.
+    Three processes reading one source would need the frames fanned out
+    to each, and a pipe has one reader. Splitting inside a single filter
+    graph decodes once and keeps the outputs on one process, so they
+    share a lifetime and the sub-stream cannot quietly die while the
+    device still claims to offer it.
     """
+    if not onvif:
+        return [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "rawvideo", "-pix_fmt", "yuv420p",
+            "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
+            "-i", "pipe:0",
+            *_h264(settings.BITRATE),
+            "-f", "rtsp", "-rtsp_transport", "tcp", main,
+        ]
     return [
         # -y is load-bearing, not boilerplate. The snapshot output writes
         # to a fixed path, and without it ffmpeg refuses the second run

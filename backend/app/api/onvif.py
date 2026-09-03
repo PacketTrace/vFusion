@@ -16,7 +16,9 @@ is debugging it after the password rather than the clock.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from datetime import datetime, timezone
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Request, Response
@@ -29,6 +31,19 @@ from app.rtsp import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/onvif", tags=["onvif"])
+
+# What the client actually sent, for the last few requests.
+#
+# ONVIF permits more than one way to authenticate and clients disagree
+# about which to use, so "invalid credentials" is not a fact about the
+# password -- it is a fact about a scheme not matching. Guessing which
+# costs a deploy per guess. This costs one, and then there is no guessing:
+# whether a UsernameToken was present, whether an HTTP Authorization
+# header was, and which operation was being attempted.
+#
+# No secrets are kept. A digest is not the password, and the password
+# itself never appears in a well-formed request.
+recent: deque[dict[str, Any]] = deque(maxlen=25)
 
 XML = "application/soap+xml; charset=utf-8"
 
@@ -51,6 +66,12 @@ def _base(request: Request, state: dict) -> str:
 
 
 async def _dispatch(request: Request) -> Response:
+    # RTSP mode means these services are not offered, and "not offered"
+    # should look like nothing is here. A SOAP fault would tell a scanner
+    # it had found an ONVIF device that was merely unwilling.
+    if not settings.is_onvif():
+        return Response("not found", media_type="text/plain", status_code=404)
+
     raw = await request.body()
     try:
         root = ET.fromstring(raw)
@@ -59,14 +80,27 @@ async def _dispatch(request: Request) -> Response:
 
     op = service.operation(root)
     state = settings.get()
+    token = auth.extract(root)
+    note = {
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "op": op or "(none)",
+        "from": request.client.host if request.client else "",
+        # Which scheme the client reached for, not what it proved.
+        "wsse": bool(token),
+        "wsse_user": (token or {}).get("username", ""),
+        "wsse_type": ((token or {}).get("type", "") or "").rsplit("#", 1)[-1],
+        "http_auth": (request.headers.get("authorization", "").split(" ", 1) or [""])[0],
+        "result": "ok",
+    }
+    recent.append(note)
 
     if op not in OPEN:
-        token = auth.extract(root)
         if not auth.verify(
             token,
             state.get("read_username", ""),
             state.get("read_password", ""),
         ):
+            note["result"] = "rejected"
             # 400 rather than 401: ONVIF carries the failure in a SOAP
             # fault, and a client reading the body expects a 4xx it can
             # still parse rather than a WWW-Authenticate challenge for a
@@ -77,6 +111,7 @@ async def _dispatch(request: Request) -> Response:
 
     body = _respond(op, root, state, _base(request, state))
     if body is None:
+        note["result"] = "unsupported"
         logger.info("onvif: unhandled operation %s", op or "(none)")
         return Response(
             service.fault(f"{op or 'operation'} is not supported"),
@@ -134,6 +169,8 @@ async def snapshot() -> Response:
     something that already authenticated to be told about it, and clients
     fetch this from image widgets that cannot carry a SOAP header.
     """
+    if not settings.is_onvif():
+        return Response("not found", media_type="text/plain", status_code=404)
     path = settings.SNAPSHOT_PATH
     if not path.is_file():
         # 503 rather than 404: the resource exists as a concept and will
