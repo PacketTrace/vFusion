@@ -440,7 +440,15 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
       // Safari plays HLS natively. The playlist is on the API origin, so
       // it needs credentials — without this the request goes out without
       // the session cookie and 401s invisibly.
-      video.crossOrigin = "use-credentials";
+      // Only ask for credentialed CORS when the stream really is on
+      // another origin. Setting it same-origin makes Safari apply CORS
+      // rules to its own media requests for no benefit, and a failure
+      // there is silent — no frames, no error.
+      if (new URL(src, window.location.href).origin !== window.location.origin) {
+        video.crossOrigin = "use-credentials";
+      } else {
+        video.removeAttribute("crossorigin");
+      }
       video.src = src;
       video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
       return () => {
@@ -507,13 +515,21 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
       let playingDate: Date | null = hls?.playingDate ?? null;
       if (!playingDate && typeof native.getStartDate === "function") {
         const start = native.getStartDate();
-        if (start && !Number.isNaN(start.getTime())) {
-          playingDate = new Date(start.getTime() + video.currentTime * 1000);
+        // Safari returns an epoch-0 date when the stream carries no
+        // usable program date, and NaN is not the only bad value: a
+        // 1970 start makes the "behind by" figure the entire Unix epoch.
+        const ms = start ? start.getTime() : NaN;
+        if (Number.isFinite(ms) && ms > 946_684_800_000) {
+          playingDate = new Date(ms + video.currentTime * 1000);
         }
       }
       if (!playingDate) return;
       const target = playingDate.getTime();
-      setOffset(Math.round((Date.now() - target) / 100) / 10);
+      const behind = (Date.now() - target) / 1000;
+      // A plausible HLS delay is seconds, not decades. Anything wilder
+      // means the timeline is not telling us the truth, and showing it
+      // is worse than showing nothing.
+      setOffset(behind >= 0 && behind < 300 ? Math.round(behind * 10) / 10 : null);
       const buf = buffer.current;
       if (!buf.length) return;
       // Nearest frame within half a second; otherwise nothing was moving.
