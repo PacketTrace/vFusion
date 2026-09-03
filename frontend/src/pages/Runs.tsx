@@ -32,7 +32,13 @@ export default function Runs({ embedded = false }: { embedded?: boolean }) {
   }, [searchParams, selected]);
   const pick = (id: string) => {
     setSelected(id);
-    setSearchParams({ selected: id }, { replace: true });
+    // Merge, don't replace. Embedded under Automate this component
+    // shares a query string with the page's own ?tab=runs, and handing
+    // setSearchParams a bare object dropped it — so opening a run threw
+    // you back to the Existing tab.
+    const next = new URLSearchParams(searchParams);
+    next.set("selected", id);
+    setSearchParams(next, { replace: true });
   };
 
   const list = useQuery({
@@ -126,6 +132,7 @@ export default function Runs({ embedded = false }: { embedded?: boolean }) {
 
 function RunDetailView({ run }: { run: RunDetail }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const isByoa =
     run.input &&
@@ -149,7 +156,11 @@ function RunDetailView({ run }: { run: RunDetail }) {
       ),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["runs"] });
-      navigate(`/runs?selected=${res.run_id}`);
+      // Select the replay in place. A hard /runs navigation would leave
+      // the Automate page entirely when this list is embedded in it.
+      const next = new URLSearchParams(searchParams);
+      next.set("selected", res.run_id);
+      setSearchParams(next);
     },
   });
   // Live progress: poll events while running, then stop. Polling stops

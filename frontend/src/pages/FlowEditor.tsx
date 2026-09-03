@@ -267,7 +267,7 @@ function FlowEditorInner() {
           },
         },
       ),
-    onSuccess: (res) => navigate(`/runs?selected=${res.run_id}`),
+    onSuccess: (res) => navigate(`/flows?tab=runs&selected=${res.run_id}`),
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -913,7 +913,7 @@ function FlowEditorInner() {
                 {runOverallStatus ?? "starting"}
               </span>
               <Link
-                to={`/runs?selected=${activeRunId}`}
+                to={`/flows?tab=runs&selected=${activeRunId}`}
                 className="text-sky-300 hover:underline"
               >
                 view full

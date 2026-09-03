@@ -481,7 +481,7 @@ export default function Byoa() {
       }
       return apiPost<{ run_id: string }>("/api/byoa/run-once", body);
     },
-    onSuccess: (res) => navigate(`/runs?selected=${res.run_id}`),
+    onSuccess: (res) => navigate(`/flows?tab=runs&selected=${res.run_id}`),
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -568,7 +568,7 @@ export default function Byoa() {
     },
     onSuccess: (res) => {
       setErr(null);
-      navigate(`/runs?selected=${res.run_id}`);
+      navigate(`/flows?tab=runs&selected=${res.run_id}`);
     },
     onError: (e: Error) => setErr(e.message),
   });

@@ -141,10 +141,14 @@ export default function Flows() {
               <>
             Visual editor — wire a Verkada webhook trigger to one or more action
             steps. Watch executions on the{" "}
-            <Link to="/runs" className="text-sky-400 hover:underline">
+            <button
+              type="button"
+              onClick={() => setTab("runs")}
+              className="text-sky-400 hover:underline"
+            >
               Runs
-            </Link>{" "}
-            page.
+            </button>{" "}
+            tab.
               </>
             )}
           </p>
