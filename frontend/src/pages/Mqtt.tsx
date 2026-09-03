@@ -25,7 +25,7 @@ interface MqttStatus {
 interface PreflightCheck {
   id: string;
   label: string;
-  state: "ok" | "fail" | "unknown";
+  state: "ok" | "fail" | "unknown" | "pending";
   detail: string;
   fix: string | null;
 }
@@ -62,6 +62,18 @@ interface TrackRecord {
   max_size: number;
   path: [number, number, number, number][];
 }
+
+/** The preflight checks, in the order the backend returns them. Knowing
+ *  them up front lets the list render immediately with each row pending,
+ *  instead of the panel sitting empty and then filling in at once. */
+const PREFLIGHT_STEPS: { id: string; label: string }[] = [
+  { id: "ca", label: "Broker certificate generated" },
+  { id: "ingest", label: "Broker reachable from vFusion" },
+  { id: "online", label: "Camera online" },
+  { id: "analytics", label: "People analytics enabled" },
+  { id: "line", label: "Occupancy Trends line drawn" },
+  { id: "pushed", label: "Already pointed at this broker" },
+];
 
 const TYPE_COLOR: Record<string, string> = {
   person: "#38bdf8",
@@ -261,15 +273,28 @@ export default function Mqtt() {
             ))}
           </select>
 
-          {preflight.data && (
+          {cameraId && (
             <ul className="mt-3 space-y-2">
-              {preflight.data.map((c) => (
+              {(preflight.data ?? PREFLIGHT_STEPS.map((s) => ({
+                ...s,
+                state: "pending" as const,
+                detail: "",
+                fix: null,
+              }))).map((c) => (
                 <li key={c.id} className="text-sm flex gap-2">
                   <StateDot state={c.state} />
                   <div className="min-w-0">
-                    <div className="text-slate-200">{c.label}</div>
-                    <div className="text-[11px] text-slate-500">{c.detail}</div>
-                    {c.fix && c.state !== "ok" && (
+                    <div
+                      className={
+                        c.state === "pending" ? "text-slate-400" : "text-slate-200"
+                      }
+                    >
+                      {c.label}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      {c.state === "pending" ? "checking…" : c.detail}
+                    </div>
+                    {c.fix && c.state !== "ok" && c.state !== "pending" && (
                       <div className="text-[11px] text-amber-400/80 mt-0.5">{c.fix}</div>
                     )}
                   </div>
@@ -632,6 +657,13 @@ function StatusBar({ status }: { status?: MqttStatus }) {
 }
 
 function StateDot({ state }: { state: string }) {
+  if (state === "pending") {
+    // Pulsing rather than coloured: an unanswered check should not look
+    // like it has been answered.
+    return (
+      <span className="mt-1.5 w-2 h-2 rounded-full shrink-0 bg-slate-600 animate-pulse" />
+    );
+  }
   const color =
     state === "ok" ? "bg-emerald-400" : state === "fail" ? "bg-rose-400" : "bg-slate-500";
   return <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${color}`} />;
