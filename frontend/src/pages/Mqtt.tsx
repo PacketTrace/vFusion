@@ -1128,6 +1128,7 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
     current.data != null &&
     (minArea !== current.data.min_area || minMove !== current.data.min_movement);
 
+  const [inspect, setInspect] = useState<TrackRecord | null>(null);
   const [showDropped, setShowDropped] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const purge = useMutation({
@@ -1214,6 +1215,14 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         </div>
       )}
 
+      {inspect && (
+        <TrackReplay
+          key={`${inspect.obj_id}-${inspect.started_at}`}
+          track={inspect}
+          onClose={() => setInspect(null)}
+        />
+      )}
+
       {preview.data && preview.data.closest_kept.length > 0 && (
         <div>
           <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
@@ -1224,7 +1233,7 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
             says nothing about whether the setting is about to remove something
             real; these are the rows that would go next.
           </p>
-          <TrackRows rows={preview.data.closest_kept} />
+          <TrackRows rows={preview.data.closest_kept} onSelect={setInspect} />
         </div>
       )}
 
@@ -1240,7 +1249,7 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
           </button>
           {showDropped && (
             <div className="mt-2">
-              <TrackRows rows={preview.data.would_drop} />
+              <TrackRows rows={preview.data.would_drop} onSelect={setInspect} />
               {preview.data.would_drop.length < preview.data.dropped && (
                 <p className="text-[11px] text-slate-600 mt-1">
                   Showing the first {preview.data.would_drop.length} of{" "}
@@ -1305,8 +1314,10 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
  *  threshold by eye rather than by count. */
 function TrackRows({
   rows,
+  onSelect,
 }: {
   rows: (TrackRecord & { area: number; travelled: number })[];
+  onSelect?: (t: TrackRecord) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -1325,7 +1336,11 @@ function TrackRows({
           {rows.map((t) => (
             <tr
               key={`${t.obj_id}-${t.started_at}`}
-              className="border-t border-white/10"
+              onClick={() => onSelect?.(t)}
+              title={onSelect ? "Replay this track and pull the footage" : undefined}
+              className={`border-t border-white/10 ${
+                onSelect ? "cursor-pointer hover:bg-white/5" : ""
+              }`}
             >
               <td className="px-2 py-1 font-mono text-slate-300 whitespace-nowrap">
                 {new Date(t.started_at).toLocaleTimeString()}
