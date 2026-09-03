@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
 
 import re
+from collections import OrderedDict
 
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
 from app.connectors.verkada.footage import FootageError, get_stream_key
@@ -627,6 +628,35 @@ async def stream_playlist(
     )
 
 
+# Recently fetched segments, so a range probe followed by the real read
+# does not pull the same ~700 KB twice. Small on purpose: this is a live
+# stream, and anything more than a few seconds back is never asked for.
+_SEG_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
+_SEG_CACHE_MAX = 8
+
+
+def _parse_range(header: str, size: int) -> tuple[int, int] | None:
+    """Resolve a single-range header to inclusive (start, end) offsets."""
+    if not header.startswith("bytes="):
+        return None
+    spec = header[6:].split(",", 1)[0].strip()
+    try:
+        if spec.startswith("-"):
+            length = int(spec[1:])
+            if length <= 0:
+                return None
+            return max(0, size - length), size - 1
+        first, _, last = spec.partition("-")
+        begin = int(first)
+        finish = int(last) if last else size - 1
+    except ValueError:
+        return None
+    finish = min(finish, size - 1)
+    if begin > finish or begin >= size:
+        return None
+    return begin, finish
+
+
 @router.get("/stream/{camera_id}/seg/{name}")
 async def stream_segment(
     camera_id: str,
@@ -637,40 +667,62 @@ async def stream_segment(
 ) -> Response:
     """Proxy one media segment, re-attaching the credentials server-side.
 
-    Range requests are forwarded rather than ignored. hls.js fetches
-    segments with XHR and takes whatever comes back, but Safari's native
-    player probes media with a Range header and expects a 206 -- answer
-    every probe with a 200 and it fetches the init segment, concludes the
-    server cannot serve media properly, and stops without an error.
+    Ranges are satisfied here rather than upstream, because Verkada
+    ignores the header and answers every request with the whole object.
+    Forwarding it and passing the 200 back meant advertising range
+    support we did not provide -- which is worse than not advertising it:
+    hls.js does not care, but Safari's native player probes with a Range,
+    expects a 206, and on getting a 200 fetches the init segment and then
+    silently stops asking for media.
     """
     if not _SEGMENT_RE.match(name):
         raise HTTPException(status_code=400, detail="bad segment name")
-    base, org_id, jwt = await _stream_context(session, connection_id)
 
-    forwarded: dict[str, str] = {}
+    cached = _SEG_CACHE.get(name)
+    if cached is None:
+        base, org_id, jwt = await _stream_context(session, connection_id)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.get(
+                f"{base}{STREAM_BASE}/{name}",
+                params=_stream_query(org_id, camera_id, jwt),
+            )
+        if res.status_code != 200:
+            raise HTTPException(
+                status_code=502, detail=f"segment failed: HTTP {res.status_code}"
+            )
+        cached = res.content
+        _SEG_CACHE[name] = cached
+        while len(_SEG_CACHE) > _SEG_CACHE_MAX:
+            _SEG_CACHE.popitem(last=False)
+    else:
+        _SEG_CACHE.move_to_end(name)
+
+    size = len(cached)
+    headers = {
+        "Cache-Control": "no-store",
+        "Accept-Ranges": "bytes",
+    }
     rng = request.headers.get("range")
     if rng:
-        forwarded["Range"] = rng
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.get(
-            f"{base}{STREAM_BASE}/{name}",
-            params=_stream_query(org_id, camera_id, jwt),
-            headers=forwarded,
+        span = _parse_range(rng, size)
+        if span is None:
+            return Response(
+                status_code=416,
+                headers={**headers, "Content-Range": f"bytes */{size}"},
+            )
+        begin, finish = span
+        body = cached[begin : finish + 1]
+        headers["Content-Range"] = f"bytes {begin}-{finish}/{size}"
+        return Response(
+            content=body,
+            status_code=206,
+            media_type="video/mp4",
+            headers=headers,
         )
-    if res.status_code not in (200, 206):
-        raise HTTPException(
-            status_code=502, detail=f"segment failed: HTTP {res.status_code}"
-        )
 
-    headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
-    for header in ("content-range", "content-length"):
-        if header in res.headers:
-            headers[header.title()] = res.headers[header]
     return Response(
-        content=res.content,
-        status_code=res.status_code,
-        media_type=res.headers.get("content-type", "video/mp4"),
+        content=cached,
+        media_type="video/mp4",
         headers=headers,
     )
 
