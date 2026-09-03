@@ -13,7 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.api import onvif as onvif_api
-from app.rtsp import mediamtx, pump as pump_mod, queue, settings
+from app.rtsp import fetch, mediamtx, pump as pump_mod, queue, settings
 
 
 router = APIRouter(prefix="/api/rtsp", tags=["rtsp"])
@@ -54,6 +54,7 @@ async def status() -> dict:
         # from a client is a claim about a scheme mismatch as often as
         # about a password, and this is how you tell which.
         "onvif_requests": list(reversed(onvif_api.recent)),
+        "fetches": fetch.recent(),
     }
 
 
@@ -146,6 +147,22 @@ async def upload(
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {k: v for k, v in entry.items() if k != "path"}
+
+
+class FetchIn(BaseModel):
+    url: str
+
+
+@router.post("/queue/url")
+async def fetch_url(body: FetchIn) -> dict:
+    url = body.url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Needs an http or https URL.")
+    # Returns as soon as the download starts, not when it finishes. A
+    # video takes minutes to fetch and a request held open that long is
+    # indistinguishable from one that has hung; progress comes back
+    # through /status instead.
+    return await fetch.start(url)
 
 
 @router.post("/queue/{item_id}/requeue")

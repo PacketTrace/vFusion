@@ -115,6 +115,32 @@ async def add(filename: str, data: bytes, seconds: int | None = None) -> dict[st
     return entry
 
 
+async def adopt(path: Path, display_name: str) -> dict[str, Any]:
+    """Queue a file that is already on disk, without copying it.
+
+    ``add`` takes bytes because an upload arrives as bytes. A fetched
+    video is already a file, and reading half a gigabyte into memory to
+    write it back out next to itself would be work done for the shape of
+    an interface rather than for any result.
+    """
+    entry = {
+        "id": path.stem,
+        "name": Path(display_name).name,
+        "path": str(path),
+        "kind": "video",
+        "seconds": None,
+        "bytes": path.stat().st_size if path.is_file() else 0,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+        "played_at": None,
+    }
+    async with _lock:
+        items = _load()
+        items.append(entry)
+        _save(items)
+    arrived.set()
+    return entry
+
+
 async def mark_played(item_id: str) -> None:
     async with _lock:
         items = _load()

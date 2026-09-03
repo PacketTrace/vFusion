@@ -31,6 +31,14 @@ type Status = {
   onvif_port: number;
   onvif_url: string;
   mode: "onvif" | "rtsp";
+  fetches: {
+    id: string;
+    url: string;
+    title: string;
+    state: "fetching" | "done" | "failed";
+    error: string;
+    at: string;
+  }[];
   onvif_requests: {
     at: string;
     op: string;
@@ -75,6 +83,7 @@ export default function Rtsp() {
   const qc = useQueryClient();
   const [host, setHost] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [url, setUrl] = useState("");
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<QueueItem | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -125,6 +134,15 @@ export default function Rtsp() {
       apiPut<Status>("/api/rtsp/settings", { mode }),
     onSuccess: () => invalidate(),
     onError: (e: Error) => setToggleError(e.message),
+  });
+  const fetchUrl = useMutation({
+    mutationFn: (url: string) => apiPost("/api/rtsp/queue/url", { url }),
+    onSuccess: () => {
+      setUrl("");
+      setUploadError(null);
+      invalidate();
+    },
+    onError: (e: Error) => setUploadError(e.message),
   });
   const setLoop = useMutation({
     mutationFn: (loop: boolean) => apiPut<Status>("/api/rtsp/settings", { loop }),
@@ -442,6 +460,63 @@ export default function Rtsp() {
             stretched.
           </span>
         </div>
+
+        {/* Fetching by URL rather than downloading elsewhere and
+            uploading. Same destination, one step instead of three, and
+            it works for a direct .mp4 or an .m3u8 as readily as for a
+            hosted video page. */}
+        <form
+          className="flex flex-wrap gap-2 mt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (url.trim()) fetchUrl.mutate(url.trim());
+          }}
+        >
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="…or paste a video URL"
+            className="flex-1 min-w-[18rem] px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={fetchUrl.isPending || !url.trim()}
+            className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-50"
+          >
+            {fetchUrl.isPending ? "Starting…" : "Fetch"}
+          </button>
+        </form>
+
+        {(s?.fetches ?? []).filter((f) => f.state !== "done").length > 0 && (
+          <div className="mt-2 space-y-1">
+            {(s?.fetches ?? [])
+              .filter((f) => f.state !== "done")
+              .map((f) => (
+                <div
+                  key={f.id}
+                  className={`text-[11px] px-2 py-1.5 rounded border ${
+                    f.state === "failed"
+                      ? "text-rose-300 bg-rose-950/30 border-rose-900/50"
+                      : "text-slate-400 bg-white/5 border-white/10"
+                  }`}
+                >
+                  {f.state === "fetching" ? (
+                    <>
+                      <span className="animate-pulse">Downloading</span>{" "}
+                      <span className="font-mono text-slate-500">{f.url}</span> — it
+                      lands in the queue when it finishes.
+                    </>
+                  ) : (
+                    <>
+                      Could not fetch{" "}
+                      <span className="font-mono text-slate-500">{f.url}</span>:{" "}
+                      {f.error}
+                    </>
+                  )}
+                </div>
+              ))}
+          </div>
+        )}
 
         {/* Looping is a property of the queue, not of one item: a
             finished clip goes back to the end rather than being marked
