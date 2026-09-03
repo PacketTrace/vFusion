@@ -277,6 +277,19 @@ function VerkadaRow({
         msg: `${errMsg("Doors", e)}${DOOR_API_REMINDER}`,
       }),
   });
+  // People of Interest live in a JSON cache rather than a table, so the
+  // count comes back from the sync itself instead of a connection column.
+  const syncPoi = useMutation({
+    mutationFn: () =>
+      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-poi`, {}),
+    onMutate: startSync,
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["filter-fields"] });
+      setSyncStatus({ kind: "ok", msg: okMsg("People of interest", d.count) });
+    },
+    onError: (e: Error) =>
+      setSyncStatus({ kind: "err", msg: errMsg("People of interest", e) }),
+  });
   const syncHelix = useMutation({
     mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-helix`, {}),
     onMutate: startSync,
@@ -368,6 +381,12 @@ function VerkadaRow({
                 pending={syncScenarios.isPending}
                 onClick={() => syncScenarios.mutate()}
                 title="Pull Access scenarios from /access/v1/scenarios"
+              />
+              <SyncBtn
+                label="Sync people"
+                pending={syncPoi.isPending}
+                onClick={() => syncPoi.mutate()}
+                title="Pull Persons of Interest so they can be picked as trigger filters before they are ever seen on camera"
               />
               <SyncBtn
                 label="Test streaming"

@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
+from app.connectors.verkada import poi_store
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
 from app.crypto import decrypt_secret
 from app.db import SessionLocal
@@ -320,6 +321,42 @@ async def sync_scenarios_for_connection(connection_id) -> dict[str, Any]:
             "synced %d scenarios for connection %s", len(scenarios), conn.id
         )
         return {"count": len(scenarios)}
+
+
+async def sync_people_of_interest_for_connection(connection_id) -> dict[str, Any]:
+    """Pull the Person of Interest list for one connection into the file store.
+
+    Unlike the other syncs this writes to a JSON file rather than a table
+    (see ``poi_store``): the labels only feed the trigger filter picker,
+    and a cache of Verkada's data isn't worth a schema migration.
+    """
+    async with SessionLocal() as session:
+        conn = await session.get(Connection, connection_id)
+        if conn is None:
+            return {"error": "connection not found"}
+        if conn.type != "verkada":
+            return {"error": f"connection type {conn.type!r} can't sync people of interest"}
+        try:
+            secret = decrypt_secret(conn.encrypted_secret)
+        except Exception as e:
+            return {"error": f"could not decrypt secret: {e}"}
+        api_key = secret.get("api_key")
+        if not api_key:
+            return {"error": "connection has no api_key — finish setup first"}
+        region = secret.get("region") or None
+
+    client = VerkadaClient(api_key=api_key, base_url=region)
+    try:
+        people = await client.list_people_of_interest()
+    except VerkadaApiError as e:
+        logger.warning("person of interest sync failed for %s: %s", connection_id, e)
+        if e.status_code == 401:
+            return {"error": _auth_hint("list people of interest", "Cameras")}
+        return {"error": str(e)}
+
+    count = await poi_store.put(str(connection_id), people)
+    logger.info("synced %d people of interest for connection %s", count, connection_id)
+    return {"count": count, "synced_at": poi_store.synced_at(str(connection_id))}
 
 
 async def sync_all_connections() -> dict[str, Any]:

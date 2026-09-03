@@ -276,9 +276,12 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                       spellCheck={false}
                     />
                     <datalist id={`vals-${i}`}>
-                      {(
-                        profiled.find((o) => o.field === f.field)?.values ?? []
-                      ).map((v) => (
+                      {[
+                        ...(profiled.find((o) => o.field === f.field)?.values ??
+                          []),
+                        ...(profiled.find((o) => o.field === f.field)
+                          ?.synced_values ?? []),
+                      ].map((v) => (
                         <option key={String(v)} value={String(v)} />
                       ))}
                     </datalist>
@@ -305,6 +308,18 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                       </>
                     ) : prof.distinct_count > 0 ? (
                       ` · ${prof.distinct_count} distinct values (too many to list)`
+                    ) : null}
+                    {prof.synced_values && prof.synced_values.length > 0 ? (
+                      <div className="text-slate-500">
+                        Also selectable from Command:{" "}
+                        <span className="font-mono text-slate-400">
+                          {prof.synced_values.slice(0, 6).join(", ")}
+                        </span>
+                        {prof.synced_values.length > 6
+                          ? ` +${prof.synced_values.length - 6} more`
+                          : ""}{" "}
+                        — synced, not yet seen on camera
+                      </div>
                     ) : null}
                   </div>
                 );

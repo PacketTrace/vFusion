@@ -408,6 +408,9 @@ export interface FilterFieldProfile {
   values: (string | number | boolean)[];
   distinct_count: number;
   type: string;
+  /** Person of Interest labels from the last Connections sync that have
+   *  never appeared in a webhook — offered alongside observed values. */
+  synced_values?: (string | number | boolean)[];
 }
 
 export interface NotificationTypeMeta {

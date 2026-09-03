@@ -219,6 +219,40 @@ class VerkadaClient:
             f"unexpected list_scenarios response shape: {type(data).__name__}"
         )
 
+    async def list_people_of_interest(self) -> list[dict[str, Any]]:
+        """Return every Person of Interest configured in this org.
+
+        Endpoint: ``GET /cameras/v1/people/person_of_interest``. Response
+        shape: ``{"persons_of_interest": [{person_id, label, created,
+        last_seen}, ...], "next_token": ...}``.
+
+        Unlike cameras or doors this one paginates, so we follow
+        ``next_token`` until it comes back empty. The page cap is a
+        guard against a cursor that never terminates — 100 pages of 200
+        is far past any real Person of Interest list.
+        """
+        people: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"page_size": 200}
+        for _ in range(100):
+            data = await self._get(
+                "/cameras/v1/people/person_of_interest", params=params
+            )
+            if isinstance(data, list):
+                return data
+            if not isinstance(data, dict) or not isinstance(
+                data.get("persons_of_interest"), list
+            ):
+                raise VerkadaApiError(
+                    "unexpected list_people_of_interest response shape: "
+                    f"{type(data).__name__}"
+                )
+            people.extend(data["persons_of_interest"])
+            token = data.get("next_token")
+            if not token:
+                break
+            params = {"page_size": 200, "page_token": token}
+        return people
+
     async def list_helix_event_types(self) -> list[dict[str, Any]]:
         """Return all Helix video-tagging event types defined in this org.
 

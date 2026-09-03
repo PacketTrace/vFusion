@@ -15,6 +15,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.connectors.verkada import poi_store
 from app.models import WebhookEvent
 
 
@@ -175,6 +176,10 @@ class FilterFieldProfile(BaseModel):
     values: list[Any]
     distinct_count: int
     type: str
+    # Values we know about from a Person of Interest sync that have never
+    # appeared in a webhook. Somebody added to Command this morning is
+    # filterable before they have ever walked past a camera.
+    synced_values: list[Any] = []
 
 
 @router.get("/filter-fields", response_model=list[FilterFieldProfile])
@@ -260,5 +265,24 @@ async def filter_fields(
                 type=types.get(key, "str"),
             )
         )
+    _merge_synced_people(out)
     out.sort(key=lambda f: (-f.present_pct, f.field))
     return out
+
+
+def _merge_synced_people(profiles: list[FilterFieldProfile]) -> None:
+    """Add Person of Interest labels the webhook history has never shown.
+
+    Observed values alone under-report badly: an org can have nine people
+    enrolled and only two who have triggered an alert, and the seven
+    others are exactly the ones somebody is likely to want a filter for.
+    Kept separate from ``values`` so the UI can say where each came from.
+    """
+    known = poi_store.labels()
+    if not known:
+        return
+    for profile in profiles:
+        if profile.field != "person_label":
+            continue
+        seen = {str(v) for v in profile.values}
+        profile.synced_values = [label for label in known if label not in seen]

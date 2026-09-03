@@ -8,10 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brand import BRAND_NAME
+from app.connectors.verkada import poi_store
 from app.connectors.verkada.sync import (
     sync_cameras_for_connection,
     sync_doors_for_connection,
     sync_helix_event_types_for_connection,
+    sync_people_of_interest_for_connection,
     sync_scenarios_for_connection,
 )
 from app.crypto import encrypt_secret, decrypt_secret
@@ -206,6 +208,41 @@ async def trigger_door_sync(
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@router.post("/{conn_id}/sync-poi")
+async def trigger_poi_sync(
+    conn_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Pull this org's Person of Interest list into the local cache.
+
+    Not on the daily cron: the labels are only consulted when somebody is
+    building a trigger filter, and the list changes when a human adds a
+    face in Command — pressing the button is the natural trigger.
+    """
+    conn = await session.get(Connection, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="not found")
+    result = await sync_people_of_interest_for_connection(conn.id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/{conn_id}/people-of-interest")
+async def list_synced_poi(
+    conn_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Labels from the last Person of Interest sync, for the UI."""
+    conn = await session.get(Connection, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {
+        "labels": poi_store.labels(str(conn_id)),
+        "synced_at": poi_store.synced_at(str(conn_id)),
+    }
 
 
 class TestStreamingRequest(BaseModel):
