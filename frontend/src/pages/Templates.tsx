@@ -38,7 +38,7 @@ const TAG_STYLE: Record<string, string> = {
 };
 
 const DEFAULT_TAG_STYLE =
-  "bg-slate-800 text-slate-300 border-slate-700";
+  "bg-white/10 text-slate-300 border-white/15";
 
 
 export default function Templates() {
@@ -330,7 +330,7 @@ function FlowTemplatesPanel() {
                   </div>
                 ) : (
                   tpl.summary && (
-                    <div className="mt-1.5 text-[11px] font-mono text-slate-500 bg-slate-950/60 rounded px-2 py-1 border border-white/5">
+                    <div className="mt-1.5 text-[11px] font-mono text-slate-500 bg-black/30/60 rounded px-2 py-1 border border-white/5">
                       {tpl.summary}
                     </div>
                   )

@@ -158,7 +158,7 @@ function DangerZoneCard() {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="Type RESET to confirm"
-              className="w-52 px-2 py-1.5 rounded bg-slate-950 border border-white/15 text-sm"
+              className="w-52 px-2 py-1.5 rounded bg-black/30 border border-white/15 text-sm"
             />
             <button
               onClick={() => reset.mutate()}
@@ -337,7 +337,7 @@ function SettingEditor({ row }: { row: SettingRow }) {
           step={1}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-20 px-2 py-1.5 rounded bg-slate-950 border border-white/15 text-sm font-mono"
+          className="w-20 px-2 py-1.5 rounded bg-black/30 border border-white/15 text-sm font-mono"
         />
         <span className="text-xs text-slate-400">{row.unit}</span>
         {isUnlimited && row.allow_zero && (

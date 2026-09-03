@@ -1629,7 +1629,7 @@ function NodeEditor({
             <summary className="cursor-pointer text-[11px] uppercase tracking-wider text-slate-400 hover:text-slate-200">
               Captured output
             </summary>
-            <pre className="mt-1 bg-slate-950 rounded p-2 text-[11px] font-mono whitespace-pre-wrap break-words text-slate-300 max-h-64 overflow-y-auto">
+            <pre className="mt-1 bg-black/30 rounded p-2 text-[11px] font-mono whitespace-pre-wrap break-words text-slate-300 max-h-64 overflow-y-auto">
               {typeof runOutput === "string"
                 ? runOutput
                 : JSON.stringify(runOutput, null, 2)}
@@ -1689,7 +1689,7 @@ function EdgeEditor({
       )}
       <button
         onClick={onRemove}
-        className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-rose-300 hover:border-rose-800"
+        className="text-xs px-2 py-1 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800"
       >
         Remove this edge
       </button>

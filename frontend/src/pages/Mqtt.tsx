@@ -190,7 +190,7 @@ export default function Mqtt() {
                 value={setupHost}
                 onChange={(e) => setSetupHost(e.target.value)}
                 placeholder="192.168.1.10"
-                className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
+                className="w-full px-2 py-1 rounded bg-black/30 border border-white/15 text-sm font-mono"
                 spellCheck={false}
               />
             </Labeled>
@@ -205,7 +205,7 @@ export default function Mqtt() {
           <button
             onClick={() => reset.mutate()}
             disabled={reset.isPending}
-            className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+            className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
             title="Delete the generated certificate, password file and credentials"
           >
             {reset.isPending ? "Clearing…" : "Clear broker setup"}
@@ -252,7 +252,7 @@ export default function Mqtt() {
           <select
             value={cameraId}
             onChange={(e) => setCameraId(e.target.value)}
-            className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
+            className="w-full px-2 py-1.5 rounded bg-black/30 border border-white/15 text-sm"
           >
             <option value="">— choose a camera —</option>
             {online.map((c) => (
@@ -302,7 +302,7 @@ export default function Mqtt() {
                   setBrokerHostPort(e.target.value);
                 }}
                 placeholder="192.168.1.10:443"
-                className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
+                className="w-full px-2 py-1 rounded bg-black/30 border border-white/15 text-sm font-mono"
                 spellCheck={false}
               />
             </Labeled>
@@ -339,7 +339,7 @@ export default function Mqtt() {
               <button
                 onClick={() => preview.mutate()}
                 disabled={!cameraId || !brokerHostPort || preview.isPending}
-                className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
+                className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
                 title="Build the request and show it without sending"
               >
                 Show request
@@ -347,7 +347,7 @@ export default function Mqtt() {
               <button
                 onClick={() => clearCamera.mutate()}
                 disabled={!cameraId || clearCamera.isPending}
-                className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+                className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
                 title="Unpoint this camera. Also the documented way to force a reconnect."
               >
                 {clearCamera.isPending ? "Clearing…" : "Clear"}
@@ -357,7 +357,7 @@ export default function Mqtt() {
               <p className="text-xs text-rose-300">{(clearCamera.error as Error).message}</p>
             )}
             {preview.data && (
-              <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 border border-slate-800 rounded p-2 overflow-x-auto max-h-72">
+              <pre className="text-[11px] font-mono text-slate-300 bg-black/30 border border-white/15 rounded p-2 overflow-x-auto max-h-72">
                 {JSON.stringify(preview.data.request, null, 2)}
               </pre>
             )}
@@ -446,7 +446,7 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
   return (
     <div className="space-y-2">
       <div
-        className="relative w-full max-w-2xl rounded-md overflow-hidden bg-slate-950 border border-slate-800"
+        className="relative w-full max-w-2xl rounded-md overflow-hidden bg-black/30 border border-white/15"
         style={{ aspectRatio: "16 / 9" }}
       >
         <img
@@ -738,7 +738,7 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
               <tr
                 key={`${t.obj_id}-${t.started_at}`}
                 onClick={() => setSelected(t)}
-                className={`border-t border-slate-800/60 cursor-pointer hover:bg-white/5 ${
+                className={`border-t border-white/15/60 cursor-pointer hover:bg-white/5 ${
                   selected?.obj_id === t.obj_id && selected?.started_at === t.started_at
                     ? "bg-white/5"
                     : ""
@@ -788,7 +788,7 @@ function PathSpark({
   const [sx, sy] = path[0];
   const [ex, ey] = path[path.length - 1];
   return (
-    <svg viewBox="0 0 96 54" className="w-24 h-[54px] rounded bg-slate-950/60">
+    <svg viewBox="0 0 96 54" className="w-24 h-[54px] rounded bg-black/30/60">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.8" />
       <circle cx={sx * 96} cy={sy * 54} r="2" fill={color} opacity="0.5" />
       <circle cx={ex * 96} cy={ey * 54} r="2.5" fill={color} />
@@ -915,7 +915,7 @@ function TrackReplay({
   const color = TYPE_COLOR[track.type] ?? "#94a3b8";
 
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-950/60 p-3 space-y-3">
+    <div className="rounded-md border border-white/15 bg-black/30/60 p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-slate-200">
           {track.type} · {new Date(track.started_at).toLocaleString()} ·{" "}
@@ -935,7 +935,7 @@ function TrackReplay({
             What the camera reported
           </div>
           <div
-            className="relative w-full rounded overflow-hidden bg-slate-950 border border-slate-800"
+            className="relative w-full rounded overflow-hidden bg-black/30 border border-white/15"
             style={{ aspectRatio: "16 / 9" }}
           >
             <img
@@ -970,14 +970,14 @@ function TrackReplay({
             <button
               type="button"
               onClick={togglePlay}
-              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-500 w-14"
+              className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:border-sky-500 w-14"
             >
               {playing ? "Pause" : "Play"}
             </button>
             <button
               type="button"
               onClick={restartBoth}
-              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-500 whitespace-nowrap"
+              className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:border-sky-500 whitespace-nowrap"
               title="Restart the replay and the footage together"
             >
               Restart both
@@ -1013,7 +1013,7 @@ function TrackReplay({
             <button
               type="button"
               onClick={() => setAlign((a) => Math.round((a - 0.25) * 100) / 100)}
-              className="px-1.5 py-0.5 rounded border border-slate-700 hover:border-sky-500 hover:text-slate-300"
+              className="px-1.5 py-0.5 rounded border border-white/15 hover:border-sky-500 hover:text-slate-300"
               aria-label="Footage earlier"
             >
               −0.25s
@@ -1025,7 +1025,7 @@ function TrackReplay({
             <button
               type="button"
               onClick={() => setAlign((a) => Math.round((a + 0.25) * 100) / 100)}
-              className="px-1.5 py-0.5 rounded border border-slate-700 hover:border-sky-500 hover:text-slate-300"
+              className="px-1.5 py-0.5 rounded border border-white/15 hover:border-sky-500 hover:text-slate-300"
               aria-label="Footage later"
             >
               +0.25s
@@ -1047,7 +1047,7 @@ function TrackReplay({
             The footage
           </div>
           <div
-            className="relative w-full rounded overflow-hidden bg-slate-950 border border-slate-800"
+            className="relative w-full rounded overflow-hidden bg-black/30 border border-white/15"
             style={{ aspectRatio: "16 / 9" }}
           >
             {clip.data ? (

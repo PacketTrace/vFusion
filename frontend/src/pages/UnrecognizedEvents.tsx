@@ -42,7 +42,7 @@ export default function UnrecognizedEvents() {
           <p className="text-slate-400 text-sm mt-1">
             Webhooks that arrived but don't fit any of the known families. Each row
             here is a webhook shape we should add to{" "}
-            <code className="bg-slate-800 px-1 rounded text-xs">
+            <code className="bg-white/10 px-1 rounded text-xs">
               backend/app/connectors/verkada/schemas.py
             </code>
             .
@@ -69,7 +69,7 @@ export default function UnrecognizedEvents() {
       </div>
 
       <div className="grid grid-cols-12 gap-4 min-h-[60vh]">
-        <div className="col-span-5 border border-slate-800 rounded-lg overflow-hidden bg-slate-900/50">
+        <div className="col-span-5 border border-white/15 rounded-lg overflow-hidden bg-white/5">
           {groups.isLoading ? (
             <div className="p-6 text-sm text-slate-500">Loading…</div>
           ) : !groups.data || groups.data.length === 0 ? (
@@ -77,15 +77,15 @@ export default function UnrecognizedEvents() {
               ✓ Every webhook so far fits the known taxonomy.
             </div>
           ) : (
-            <ul className="divide-y divide-slate-800">
+            <ul className="divide-y divide-white/10">
               {groups.data.map((g, i) => (
                 <li
                   key={`${g.webhook_type}|${g.notification_type}|${i}`}
                   onClick={() => setOpenSample(g.sample_event_id)}
                   className={`px-3 py-2 cursor-pointer text-sm transition-colors ${
                     openSample === g.sample_event_id
-                      ? "bg-slate-800"
-                      : "hover:bg-slate-800/50"
+                      ? "bg-white/10"
+                      : "hover:bg-white/5"
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -108,10 +108,10 @@ export default function UnrecognizedEvents() {
           )}
         </div>
 
-        <div className="col-span-7 border border-slate-800 rounded-lg bg-slate-900/50 overflow-hidden">
+        <div className="col-span-7 border border-white/15 rounded-lg bg-white/5 overflow-hidden">
           {sample.data ? (
             <div className="h-full flex flex-col">
-              <div className="px-4 py-3 border-b border-slate-800">
+              <div className="px-4 py-3 border-b border-white/15">
                 <div className="text-xs uppercase tracking-wider text-slate-500">
                   Sample payload
                 </div>
@@ -123,7 +123,7 @@ export default function UnrecognizedEvents() {
                 </div>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+                <div className="bg-black/30 rounded p-3 overflow-x-auto">
                   {sample.data.body_json !== null &&
                   sample.data.body_json !== undefined ? (
                     <JsonView value={sample.data.body_json} />

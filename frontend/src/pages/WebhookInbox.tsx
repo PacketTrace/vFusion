@@ -266,11 +266,11 @@ export default function WebhookInbox() {
       </div>
 
       <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
-        <div className="col-span-5 border border-slate-800 rounded-lg overflow-hidden bg-white/5/50 flex flex-col min-h-0">
+        <div className="col-span-5 border border-white/15 rounded-lg overflow-hidden bg-white/5 flex flex-col min-h-0">
           {items.length === 0 ? (
             <EmptyState />
           ) : (
-            <ul className="divide-y divide-slate-800 overflow-y-auto flex-1">
+            <ul className="divide-y divide-white/10 overflow-y-auto flex-1">
               {items.map((e) => (
                 <li
                   key={e.id}
@@ -323,7 +323,7 @@ export default function WebhookInbox() {
           )}
         </div>
 
-        <div className="col-span-7 border border-slate-800 rounded-lg bg-white/5/50 overflow-hidden flex flex-col min-h-0">
+        <div className="col-span-7 border border-white/15 rounded-lg bg-white/5 overflow-hidden flex flex-col min-h-0">
           {detail.data ? (
             <EventDetail
               event={detail.data}
@@ -360,7 +360,7 @@ function WebhookEndpointBanner() {
   const mode = cfg.data.tunnel_mode;
   if (mode === "lan") {
     return (
-      <div className="bg-white/5/50 border border-white/10 rounded-lg px-4 py-3 text-xs text-slate-400">
+      <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-xs text-slate-400">
         Running in <span className="font-semibold text-slate-200">LAN-only</span> mode —
         webhooks from Verkada's cloud can't reach this server. To accept real webhooks,
         bring up the stack with <code className="bg-white/10 px-1 py-0.5 rounded text-slate-200">--profile quick</code> (ephemeral URL)
@@ -436,7 +436,7 @@ function EmptyState() {
         your org and prompt you to enter your API key.
       </p>
       <p className="text-xs text-slate-500">Smoke-test it locally if you want:</p>
-      <pre className="p-2 bg-slate-950 rounded text-xs overflow-x-auto text-slate-300">
+      <pre className="p-2 bg-black/30 rounded text-xs overflow-x-auto text-slate-300">
         {`curl -X POST ${API_BASE}/hooks/test \\
   -H "Content-Type: application/json" \\
   -d '{"hello":"world"}'`}
@@ -484,7 +484,7 @@ function EventDetail({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-800 flex items-start justify-between gap-3">
+      <div className="px-4 py-3 border-b border-white/15 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span
@@ -585,7 +585,7 @@ function EventDetail({
         </Section>
 
         <Section title="Body">
-          <div className="bg-slate-950 rounded p-3 overflow-x-auto">{bodyView}</div>
+          <div className="bg-black/30 rounded p-3 overflow-x-auto">{bodyView}</div>
         </Section>
 
         <AssetGallery eventId={event.id} onZoom={setZoomed} />
@@ -712,7 +712,7 @@ function AssetHeaderPreview({
     // without pushing surrounding layout — we scale it via CSS transform
     // and lift it above siblings with z-index so it overlays the JSON
     // body instead of being clipped by it.
-    <div className="shrink-0 border border-slate-800 rounded overflow-visible bg-slate-950 w-40 relative group">
+    <div className="shrink-0 border border-white/15 rounded overflow-visible bg-black/30 w-40 relative group">
       <div className="bg-black flex items-center justify-center min-h-[80px] max-h-[120px] overflow-visible">
         {a.status === "ready" && isImage ? (
           // The hover:hover gate keeps the zoom on real pointers — on touch a
@@ -772,7 +772,7 @@ function AssetTile({
   const isImage =
     !asset.content_type || asset.content_type.startsWith("image/");
   return (
-    <div className="border border-slate-800 rounded overflow-hidden bg-slate-950">
+    <div className="border border-white/15 rounded overflow-hidden bg-black/30">
       <div className="bg-black flex items-center justify-center min-h-[100px]">
         {asset.status === "ready" && isImage ? (
           // No fixed aspect-ratio container — portrait LPR crops, vehicle

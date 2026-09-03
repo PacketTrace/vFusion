@@ -1723,7 +1723,7 @@ function AnalyticComposer({
             onChange={(e) => setIntent(e.target.value)}
             rows={2}
             placeholder="e.g. tell me when a delivery van is parked in the driveway, and who the carrier is"
-            className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
+            className="w-full px-2 py-1.5 rounded bg-black/30 border border-white/15 text-sm"
           />
           <div className="flex items-center gap-2">
             <button
@@ -1747,7 +1747,7 @@ function AnalyticComposer({
           )}
 
           {a && (
-            <div className="mt-2 rounded border border-slate-700 bg-slate-950/60 p-3 space-y-3">
+            <div className="mt-2 rounded border border-white/15 bg-black/30/60 p-3 space-y-3">
               <div>
                 <div className="text-sm text-slate-100">{a.name}</div>
                 {a.summary && (
