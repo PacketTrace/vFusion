@@ -118,7 +118,7 @@ async def preflight(
             fix=(
                 None
                 if ingest.connected
-                else "Set MQTT_INGEST_ENABLED=true and start the mqtt profile."
+                else "Start the broker: docker compose --profile mqtt up -d"
             ),
         )
     )
@@ -192,8 +192,9 @@ async def _occupancy_check(
     except VerkadaApiError as e:
         if e.status_code == 403:
             unknown.detail = (
-                "The API key lacks permission to read occupancy trends, so the "
-                "line cannot be verified from here."
+                "Verkada returned 403 reading occupancy trends. That can mean the "
+                "key lacks the scope, but Verkada also answers unknown paths with "
+                "403 — the line itself may well be fine."
             )
         else:
             unknown.detail = f"Lookup failed: {e}"
@@ -205,11 +206,21 @@ async def _occupancy_check(
     )
     presets = (hit or {}).get("preset_ids") or []
     if hit and presets:
+        classes = sorted(
+            {
+                p.get("object_class")
+                for p in (hit.get("presets") or [])
+                if isinstance(p, dict) and p.get("object_class")
+            }
+        )
+        detail = f"{len(presets)} line preset(s) configured."
+        if classes:
+            detail += (
+                f" Tracking {', '.join(classes)} — a class with no line "
+                "drawn for it will not be reported."
+            )
         return PreflightCheck(
-            id="line",
-            label="Occupancy Trends line drawn",
-            state="ok",
-            detail=f"{len(presets)} line preset(s) configured.",
+            id="line", label="Occupancy Trends line drawn", state="ok", detail=detail
         )
     return PreflightCheck(
         id="line",

@@ -278,11 +278,17 @@ class VerkadaClient:
     async def list_occupancy_trend_cameras(self) -> list[dict[str, Any]]:
         """Cameras that support Occupancy Trends, with their line preset ids.
 
-        Endpoint: ``GET /cameras/v1/analytics/occupancy_trends/camera``.
+        Endpoint: ``GET /cameras/v1/occupancy_trend_enabled`` -- note it
+        does not live under /analytics/ with the trend *data* endpoints,
+        which is an easy wrong guess, and a wrong path here comes back
+        403 rather than 404 so it reads as a missing key permission.
+
         A camera with no preset has no line drawn, which is the single
-        most common reason object-position MQTT produces nothing.
+        most common reason object-position MQTT produces nothing. Each
+        preset carries an ``object_class``, so a camera can be lined for
+        people and not vehicles.
         """
-        data = await self._get("/cameras/v1/analytics/occupancy_trends/camera")
+        data = await self._get("/cameras/v1/occupancy_trend_enabled")
         if isinstance(data, dict):
             for key in ("cameras", "camera", "items", "data"):
                 if isinstance(data.get(key), list):
