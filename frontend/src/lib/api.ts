@@ -190,6 +190,9 @@ export interface Connection {
   helix_event_count: number;
   scenarios_last_synced_at: string | null;
   scenario_count: number;
+  /** Masked tail of the stored API key, e.g. "••••••••1a2b3". Enough to
+   *  tell two keys apart when a 403 shows up, not enough to use. */
+  api_key_hint: string | null;
   created_at: string;
   updated_at: string;
 }

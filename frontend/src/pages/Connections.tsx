@@ -91,6 +91,7 @@ export default function Connections() {
                 <tr>
                   <th className="text-left px-3 py-2">Name</th>
                   <th className="text-left px-3 py-2">External ID</th>
+                  <th className="text-left px-3 py-2">API key</th>
                   <th className="text-left px-3 py-2">Status</th>
                   <th className="text-left px-3 py-2">Cameras</th>
                   <th className="text-left px-3 py-2">Doors</th>
@@ -346,6 +347,12 @@ function VerkadaRow({
       <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
       <td className="px-3 py-2 font-mono text-xs text-slate-400">
         {c.external_id ?? "—"}
+      </td>
+      <td
+        className="px-3 py-2 font-mono text-xs text-slate-400"
+        title="Last 5 characters of the stored key — for telling which key a 403 belongs to"
+      >
+        {c.api_key_hint ?? "—"}
       </td>
       <td className="px-3 py-2">
         <StatusBadge ready={c.setup_complete} />

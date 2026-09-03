@@ -106,6 +106,9 @@ class ConnectionOut(BaseModel):
     helix_event_count: int = 0
     scenarios_last_synced_at: datetime | None = None
     scenario_count: int = 0
+    # Last few characters of the stored API key, for telling two keys
+    # apart at a glance. Never the whole thing.
+    api_key_hint: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -127,6 +130,29 @@ class ConnectionUpdate(BaseModel):
 async def list_types() -> dict[str, dict[str, Any]]:
     """Field metadata for each connection type — drives dynamic forms in the UI."""
     return CONNECTION_TYPES
+
+
+# Enough of the key to recognise which one is in use, and not enough to
+# use. Five characters of a Verkada key is far too little to brute-force
+# anything with, and the alternative -- no way to tell two keys apart
+# without decrypting by hand -- is how you end up debugging a 403 against
+# the wrong credential.
+_HINT_CHARS = 5
+
+
+def _api_key_hint(conn: Connection) -> str | None:
+    """"••••1a2b3" for the stored key, or None if there isn't one."""
+    try:
+        secret = decrypt_secret(conn.encrypted_secret)
+    except Exception:
+        return None
+    key = secret.get("api_key")
+    if not isinstance(key, str) or not key:
+        return None
+    if len(key) <= _HINT_CHARS:
+        # Too short to reveal any of — a key this size is malformed anyway.
+        return "•" * 8
+    return "•" * 8 + key[-_HINT_CHARS:]
 
 
 async def _build_out(session: AsyncSession, conn: Connection) -> ConnectionOut:
@@ -159,6 +185,7 @@ async def _build_out(session: AsyncSession, conn: Connection) -> ConnectionOut:
         )
     ).scalar_one()
     out = ConnectionOut.model_validate(conn)
+    out.api_key_hint = _api_key_hint(conn)
     out.camera_count = cam_count
     out.door_count = door_count
     out.helix_event_count = helix_count
