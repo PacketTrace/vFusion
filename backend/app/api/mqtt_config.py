@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -631,26 +631,47 @@ async def stream_playlist(
 async def stream_segment(
     camera_id: str,
     name: str,
+    request: Request,
     connection_id: UUID | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """Proxy one media segment, re-attaching the credentials server-side."""
+    """Proxy one media segment, re-attaching the credentials server-side.
+
+    Range requests are forwarded rather than ignored. hls.js fetches
+    segments with XHR and takes whatever comes back, but Safari's native
+    player probes media with a Range header and expects a 206 -- answer
+    every probe with a 200 and it fetches the init segment, concludes the
+    server cannot serve media properly, and stops without an error.
+    """
     if not _SEGMENT_RE.match(name):
         raise HTTPException(status_code=400, detail="bad segment name")
     base, org_id, jwt = await _stream_context(session, connection_id)
+
+    forwarded: dict[str, str] = {}
+    rng = request.headers.get("range")
+    if rng:
+        forwarded["Range"] = rng
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         res = await client.get(
             f"{base}{STREAM_BASE}/{name}",
             params=_stream_query(org_id, camera_id, jwt),
+            headers=forwarded,
         )
-    if res.status_code != 200:
+    if res.status_code not in (200, 206):
         raise HTTPException(
             status_code=502, detail=f"segment failed: HTTP {res.status_code}"
         )
+
+    headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+    for header in ("content-range", "content-length"):
+        if header in res.headers:
+            headers[header.title()] = res.headers[header]
     return Response(
         content=res.content,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store"},
+        status_code=res.status_code,
+        media_type=res.headers.get("content-type", "video/mp4"),
+        headers=headers,
     )
 
 
