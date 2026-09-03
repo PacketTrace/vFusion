@@ -41,6 +41,8 @@ MQTT_DIR = Path(os.environ.get("MQTT_DIR", "/app/mqtt-host"))
 CERT_DIR = MQTT_DIR / "certs"
 PASSWD_PATH = MQTT_DIR / "passwd"
 CREDS_PATH = MQTT_DIR / "credentials.enc"
+# Not a secret, and needed by the UI to prefill the camera form.
+HOST_PATH = MQTT_DIR / "broker-host.txt"
 CA_PATH = CERT_DIR / "root_ca.pem"
 
 CERT_YEARS = 10
@@ -132,6 +134,11 @@ def generate_certs(broker_host: str) -> dict[str, str]:
     key_path.write_text(srv_key_pem)
     os.chmod(key_path, 0o600)
 
+    try:
+        HOST_PATH.write_text(broker_host)
+    except OSError as e:
+        logger.warning("could not record broker host: %s", e)
+
     logger.info("generated broker certs for %s", broker_host)
     return {
         "broker_host": broker_host,
@@ -211,7 +218,7 @@ def load_credentials() -> dict[str, str] | None:
 def clear() -> list[str]:
     """Remove all generated broker material. Returns what was deleted."""
     removed: list[str] = []
-    for path in (CREDS_PATH, PASSWD_PATH, CA_PATH,
+    for path in (CREDS_PATH, PASSWD_PATH, CA_PATH, HOST_PATH,
                  CERT_DIR / "server.pem", CERT_DIR / "server.key",
                  CERT_DIR / "fullchain.pem"):
         try:
@@ -228,12 +235,28 @@ def generate_password(length: int = 24) -> str:
     return secrets.token_urlsafe(length)
 
 
+def broker_host() -> str | None:
+    """The address the certificate was generated for.
+
+    Cameras must be pointed at exactly this — it is in the certificate's
+    SAN, so a different address that still routes will fail the
+    handshake. Storing it means the UI can fill the field in rather than
+    asking someone to remember it per camera.
+    """
+    try:
+        host = HOST_PATH.read_text().strip()
+    except OSError:
+        return None
+    return host or None
+
+
 def state() -> dict[str, object]:
     creds = load_credentials()
     return {
         "ca_present": CA_PATH.is_file(),
         "passwd_present": PASSWD_PATH.is_file(),
         "credentials_present": creds is not None,
+        "broker_host": broker_host(),
         "username": creds["username"] if creds else None,
         "cert_dir": str(CERT_DIR),
     }

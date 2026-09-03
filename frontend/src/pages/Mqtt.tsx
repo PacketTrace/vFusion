@@ -18,6 +18,7 @@ interface MqttStatus {
   ca_present: boolean;
   credentials_present: boolean;
   broker_username: string | null;
+  broker_host_port: string | null;
 }
 
 interface PreflightCheck {
@@ -145,6 +146,15 @@ export default function Mqtt() {
       preflight.refetch();
     },
   });
+
+  // Fill the camera form from the certificate. Cameras have to be
+  // pointed at exactly the address the cert was cut for — anything else
+  // routes fine and then fails the TLS handshake — so asking anyone to
+  // retype it per camera is inviting a mismatch.
+  const knownBroker = status.data?.broker_host_port ?? null;
+  useEffect(() => {
+    if (knownBroker && !brokerHostPort) setBrokerHostPort(knownBroker);
+  }, [knownBroker, brokerHostPort]);
 
   const live = useLiveTracks(cameraId);
 
@@ -298,6 +308,20 @@ export default function Mqtt() {
               Credentials come from step 0 and are sent straight to the camera —
               nothing to copy.
             </p>
+            {knownBroker && brokerHostPort !== knownBroker && (
+              <p className="text-[11px] text-amber-400/90">
+                The certificate was generated for{" "}
+                <span className="font-mono">{knownBroker}</span>. A different
+                address will fail the camera's TLS check.{" "}
+                <button
+                  type="button"
+                  onClick={() => setBrokerHostPort(knownBroker)}
+                  className="underline underline-offset-2 hover:text-amber-200"
+                >
+                  Use it
+                </button>
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => configure.mutate()}

@@ -66,6 +66,8 @@ class MqttStatus(BaseModel):
     ca_present: bool
     credentials_present: bool
     broker_username: str | None
+    # host:port cameras should be pointed at, from the certificate.
+    broker_host_port: str | None
 
 
 @router.get("/status", response_model=MqttStatus)
@@ -77,6 +79,7 @@ async def status() -> MqttStatus:
         ca_present=bool(state["ca_present"]),
         credentials_present=bool(state["credentials_present"]),
         broker_username=state["username"],
+        broker_host_port=(f"{state['broker_host']}:443" if state.get("broker_host") else None),
     )
 
 
