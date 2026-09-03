@@ -66,20 +66,20 @@ function AppShell() {
     <div className="h-full flex flex-col">
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
-          {/* A reactor, not a blinking cursor. Two nuclei orbit the
-              wordmark continuously — the containment hum — and every few
-              seconds they meet at the core and release, which flares the
-              text. Hovering spins it up. All decorative, all stilled
-              under prefers-reduced-motion. */}
+          {/* Tokamak: a containment ring with two particles running it,
+              and a ring pulse on ignition rather than a glow. The last
+              version threw a radial flash over the word, which washed it
+              out, and orbited on a box tall enough to send the dots out
+              through the header border. This stays on its track. */}
           <div className="brand-mark font-semibold text-white tracking-tight relative select-none">
-            <span className="brand-core" aria-hidden="true" />
-            <span className="brand-orbit brand-orbit-a" aria-hidden="true">
+            <span className="brand-ring" aria-hidden="true" />
+            <span className="brand-pulse" aria-hidden="true" />
+            <span className="brand-track brand-track-a" aria-hidden="true">
               <i className="brand-dot" />
             </span>
-            <span className="brand-orbit brand-orbit-b" aria-hidden="true">
+            <span className="brand-track brand-track-b" aria-hidden="true">
               <i className="brand-dot" />
             </span>
-            <span className="brand-flash" aria-hidden="true" />
             <span className="brand-text relative">{brand}</span>
           </div>
           <nav className="flex items-center gap-1">
