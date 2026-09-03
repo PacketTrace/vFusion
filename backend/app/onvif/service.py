@@ -322,34 +322,55 @@ def users(state: dict[str, Any]) -> str:
 # Media
 # ---------------------------------------------------------------------------
 
-def _audio_configs() -> str:
-    """The audio half of a profile.
+def _kbps() -> str:
+    return str(settings.AUDIO_BITRATE_KBPS)
 
-    Without these a client is told the device has no audio, and a client
-    told that has no reason to set an audio track up -- however good the
-    AAC in the RTSP stream is. The description is what decides whether
-    the stream's audio is ever asked for.
 
-    Bitrate is kbit/s and SampleRate is kHz here, which is not the unit
-    either is stored in anywhere else in this file.
+def _multicast() -> str:
+    """Required by the schema even for a device that does not multicast.
+
+    tt:VideoEncoderConfiguration and tt:AudioEncoderConfiguration both
+    declare Multicast as mandatory, immediately before SessionTimeout.
+    Omitting it leaves the sequence short, and a client validating
+    against the schema treats what follows as unexpected.
     """
-    kbps = "".join(c for c in settings.AUDIO_BITRATE if c.isdigit()) or "128"
     return (
-        '<tt:AudioSourceConfiguration token="asc">'
-        "<tt:Name>AudioSource</tt:Name><tt:UseCount>2</tt:UseCount>"
-        "<tt:SourceToken>as0</tt:SourceToken>"
-        "</tt:AudioSourceConfiguration>"
-        '<tt:AudioEncoderConfiguration token="aec">'
-        "<tt:Name>AudioEncoder</tt:Name><tt:UseCount>2</tt:UseCount>"
-        "<tt:Encoding>AAC</tt:Encoding>"
-        f"<tt:Bitrate>{kbps}</tt:Bitrate>"
-        f"<tt:SampleRate>{settings.AUDIO_RATE // 1000}</tt:SampleRate>"
         "<tt:Multicast><tt:Address><tt:Type>IPv4</tt:Type>"
         "<tt:IPv4Address>0.0.0.0</tt:IPv4Address></tt:Address>"
         "<tt:Port>0</tt:Port><tt:TTL>1</tt:TTL>"
         "<tt:AutoStart>false</tt:AutoStart></tt:Multicast>"
-        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
-        "</tt:AudioEncoderConfiguration>"
+    )
+
+
+def _audio_source_config(element: str = "tt:AudioSourceConfiguration") -> str:
+    return (
+        f'<{element} token="asc">'
+        "<tt:Name>AudioSource</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:SourceToken>as0</tt:SourceToken>"
+        f"</{element}>"
+    )
+
+
+def _audio_encoder_config(element: str = "tt:AudioEncoderConfiguration") -> str:
+    """The audio half of a profile.
+
+    Without it a client is told the device has no audio, and a client
+    told that has no reason to set an audio track up -- however good the
+    AAC in the RTSP stream is. The description decides whether the
+    stream's audio is ever asked for.
+
+    Bitrate is kbit/s and SampleRate is kHz here, which is neither unit
+    they are stored in anywhere else in this codebase.
+    """
+    return (
+        f'<{element} token="aec">'
+        "<tt:Name>AudioEncoder</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:Encoding>G711</tt:Encoding>"
+        f"<tt:Bitrate>{_kbps()}</tt:Bitrate>"
+        f"<tt:SampleRate>{settings.AUDIO_RATE // 1000}</tt:SampleRate>"
+        + _multicast()
+        + "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
+        f"</{element}>"
     )
 
 
@@ -375,37 +396,77 @@ def audio_source_configurations() -> str:
 
 
 def audio_encoder_configurations() -> str:
-    kbps = "".join(c for c in settings.AUDIO_BITRATE if c.isdigit()) or "128"
     return (
         "<trt:GetAudioEncoderConfigurationsResponse>"
-        '<trt:Configurations token="aec">'
-        "<tt:Name>AudioEncoder</tt:Name><tt:UseCount>2</tt:UseCount>"
-        "<tt:Encoding>AAC</tt:Encoding>"
-        f"<tt:Bitrate>{kbps}</tt:Bitrate>"
-        f"<tt:SampleRate>{settings.AUDIO_RATE // 1000}</tt:SampleRate>"
-        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
-        "</trt:Configurations>"
-        "</trt:GetAudioEncoderConfigurationsResponse>"
+        + _audio_encoder_config("trt:Configurations")
+        + "</trt:GetAudioEncoderConfigurationsResponse>"
     )
 
 
-def _profile(token: str, name: str, width: int, height: int, bitrate: str) -> str:
-    # RateControl wants kbit/s as a number; the setting is an ffmpeg
-    # string like "3000k".
-    kbps = "".join(c for c in bitrate if c.isdigit()) or "0"
+def audio_encoder_configuration() -> str:
     return (
-        f'<tt:Profiles token="{token}" fixed="true">'
-        f"<tt:Name>{name}</tt:Name>"
-        f'<tt:VideoSourceConfiguration token="vsc">'
+        "<trt:GetAudioEncoderConfigurationResponse>"
+        + _audio_encoder_config("trt:Configuration")
+        + "</trt:GetAudioEncoderConfigurationResponse>"
+    )
+
+
+def audio_encoder_options() -> str:
+    """What the audio encoder could be set to: exactly what it is.
+
+    Named in Verkada's own documentation as one of the calls a camera
+    must implement before audio can be configured, alongside the getters
+    and the setter. Offering a range would invite a client to pick
+    something this device cannot produce.
+    """
+    return (
+        "<trt:GetAudioEncoderConfigurationOptionsResponse><trt:Options>"
+        "<tt:Options><tt:Encoding>G711</tt:Encoding>"
+        f"<tt:BitrateList><tt:Items>{_kbps()}</tt:Items></tt:BitrateList>"
+        "<tt:SampleRateList><tt:Items>"
+        f"{settings.AUDIO_RATE // 1000}</tt:Items></tt:SampleRateList>"
+        "</tt:Options>"
+        "</trt:Options></trt:GetAudioEncoderConfigurationOptionsResponse>"
+    )
+
+
+def set_audio_encoder_configuration() -> str:
+    """Accept the write and change nothing.
+
+    Also named in Verkada's documentation as required. The device offers
+    one encoder configuration and no alternatives, so any valid request
+    asks for what is already in effect. Faulting would be truthful about
+    this being read-only and would stop audio being configured at all,
+    which is the opposite of useful.
+    """
+    return (
+        "<trt:SetAudioEncoderConfigurationResponse>"
+        "</trt:SetAudioEncoderConfigurationResponse>"
+    )
+
+
+def _video_source_config() -> str:
+    return (
+        '<tt:VideoSourceConfiguration token="vsc">'
         "<tt:Name>VideoSource</tt:Name><tt:UseCount>2</tt:UseCount>"
         "<tt:SourceToken>vs0</tt:SourceToken>"
         f'<tt:Bounds x="0" y="0" width="{settings.WIDTH}" '
         f'height="{settings.HEIGHT}"/>'
         "</tt:VideoSourceConfiguration>"
+    )
+
+
+def _video_encoder_config(
+    token: str, name: str, width: int, height: int, bitrate: str
+) -> str:
+    # RateControl wants kbit/s as a number; the setting is an ffmpeg
+    # string like "3000k".
+    kbps = "".join(c for c in bitrate if c.isdigit()) or "0"
+    return (
         f'<tt:VideoEncoderConfiguration token="vec_{token}">'
         f"<tt:Name>{name}</tt:Name><tt:UseCount>1</tt:UseCount>"
         "<tt:Encoding>H264</tt:Encoding>"
-        f'<tt:Resolution><tt:Width>{width}</tt:Width>'
+        f"<tt:Resolution><tt:Width>{width}</tt:Width>"
         f"<tt:Height>{height}</tt:Height></tt:Resolution>"
         "<tt:Quality>4</tt:Quality>"
         "<tt:RateControl>"
@@ -413,12 +474,37 @@ def _profile(token: str, name: str, width: int, height: int, bitrate: str) -> st
         "<tt:EncodingInterval>1</tt:EncodingInterval>"
         f"<tt:BitrateLimit>{kbps}</tt:BitrateLimit>"
         "</tt:RateControl>"
-        "<tt:H264><tt:GovLength>"
-        f"{settings.FPS}</tt:GovLength>"
+        f"<tt:H264><tt:GovLength>{settings.FPS}</tt:GovLength>"
         "<tt:H264Profile>Main</tt:H264Profile></tt:H264>"
-        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
+        + _multicast()
+        + "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
         "</tt:VideoEncoderConfiguration>"
-        + _audio_configs()
+    )
+
+
+def _profile(token: str, name: str, width: int, height: int, bitrate: str) -> str:
+    """One profile, in the order the schema demands.
+
+    tt:Profile is an xs:sequence, and its order is not decorative:
+
+        Name, VideoSourceConfiguration, AudioSourceConfiguration,
+        VideoEncoderConfiguration, AudioEncoderConfiguration, ...
+
+    The audio configurations were appended after the video encoder,
+    which reads fine and is wrong. A client built on generated bindings
+    -- which is what a Command Connector uses -- silently drops elements
+    that arrive out of sequence rather than complaining, so the profile
+    parsed as video-only and the camera showed no audio at all. Nothing
+    in the stream could have fixed that; the description is what decides
+    whether audio is ever asked for.
+    """
+    return (
+        f'<tt:Profiles token="{token}" fixed="true">'
+        f"<tt:Name>{name}</tt:Name>"
+        + _video_source_config()
+        + _audio_source_config()
+        + _video_encoder_config(token, name, width, height, bitrate)
+        + _audio_encoder_config()
         + "</tt:Profiles>"
     )
 

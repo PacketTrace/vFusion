@@ -65,9 +65,17 @@ SUB_BITRATE = os.environ.get("RTSP_SUB_BITRATE", "400k")
 # stream whose format changed, and a client that negotiated the earlier
 # one either drops the track for good or drops the session. Silence is
 # cheap; an inconsistent track is not.
-AUDIO_RATE = int(os.environ.get("RTSP_AUDIO_RATE", "48000"))
-AUDIO_CHANNELS = int(os.environ.get("RTSP_AUDIO_CHANNELS", "2"))
-AUDIO_BITRATE = os.environ.get("RTSP_AUDIO_BITRATE", "128k")
+# G.711 mu-law, 8 kHz mono, and not as a compromise: Verkada's Command
+# Connector supports nothing else on a third-party channel. Their
+# documentation is explicit that a camera which does not offer G.711
+# mu-law through ONVIF cannot have audio configured, whatever else it
+# supports. AAC at 48 kHz was better audio that would never have played.
+#
+# 64 kbit/s is not a setting -- it is what 8-bit mu-law at 8 kHz comes
+# to, and it is the number ONVIF expects to be told.
+AUDIO_RATE = int(os.environ.get("RTSP_AUDIO_RATE", "8000"))
+AUDIO_CHANNELS = int(os.environ.get("RTSP_AUDIO_CHANNELS", "1"))
+AUDIO_BITRATE_KBPS = 64
 
 # ONVIF clients ask for a JPEG. One frame a second, overwritten in place,
 # written by the same encoder as a third output.

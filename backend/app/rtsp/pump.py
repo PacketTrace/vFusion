@@ -465,9 +465,14 @@ def _h264(bitrate: str) -> list[str]:
     ]
 
 
-def _aac() -> list[str]:
+def _g711() -> list[str]:
+    """G.711 mu-law, because a Command Connector accepts nothing else.
+
+    Its bitrate is not configurable -- 8-bit samples at 8 kHz is 64
+    kbit/s by construction -- so there is no -b:a here to set.
+    """
     return [
-        "-c:a", "aac", "-b:a", settings.AUDIO_BITRATE,
+        "-c:a", "pcm_mulaw",
         "-ar", str(settings.AUDIO_RATE), "-ac", str(settings.AUDIO_CHANNELS),
     ]
 
@@ -522,7 +527,7 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
     if not onvif:
         return inputs + [
             "-map", "0:v", *_h264(settings.BITRATE),
-            "-map", "1:a", *_aac(),
+            "-map", "1:a", *_g711(),
             "-f", "rtsp", "-rtsp_transport", "tcp", main,
         ]
     return inputs + [
@@ -533,10 +538,10 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
             f"[j]fps=1[snap]"
         ),
         "-map", "[main]", *_h264(settings.BITRATE),
-        "-map", "1:a", *_aac(),
+        "-map", "1:a", *_g711(),
         "-f", "rtsp", "-rtsp_transport", "tcp", main,
         "-map", "[sub]", *_h264(settings.SUB_BITRATE),
-        "-map", "1:a", *_aac(),
+        "-map", "1:a", *_g711(),
         "-f", "rtsp", "-rtsp_transport", "tcp", sub,
         # Overwritten in place rather than accumulating files. ONVIF's
         # GetSnapshotUri points at whatever this last wrote. No audio

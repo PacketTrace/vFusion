@@ -203,8 +203,29 @@ def _respond(op: str, ns: str, root, state: dict, base: str) -> str | None:
         return service.audio_sources()
     if op == "GetAudioSourceConfigurations":
         return service.audio_source_configurations()
+    # The four Verkada's documentation names as required before audio can
+    # be configured on a third-party channel.
     if op == "GetAudioEncoderConfigurations":
         return service.audio_encoder_configurations()
+    if op == "GetAudioEncoderConfiguration":
+        return service.audio_encoder_configuration()
+    if op == "GetAudioEncoderConfigurationOptions":
+        return service.audio_encoder_options()
+    if op == "SetAudioEncoderConfiguration":
+        return service.set_audio_encoder_configuration()
+    if op in (
+        "GetCompatibleAudioEncoderConfigurations",
+        "GetCompatibleAudioSourceConfigurations",
+    ):
+        return (
+            service.audio_encoder_configurations().replace(
+                "GetAudioEncoderConfigurations", op
+            )
+            if "Encoder" in op
+            else service.audio_source_configurations().replace(
+                "GetAudioSourceConfigurations", op
+            )
+        )
 
     # Things this device genuinely has none of. "None" is the honest
     # answer and a fault is not — the client asked something reasonable.
