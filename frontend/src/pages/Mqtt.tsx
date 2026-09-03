@@ -286,21 +286,16 @@ export default function Mqtt() {
             </div>
           )}
           <div className="space-y-2">
-            <Labeled label="Broker address (host:port)">
-              <input
-                value={brokerHostPort}
-                onChange={(e) => {
-                  setBrokerTouched(true);
-                  setBrokerHostPort(e.target.value);
-                }}
-                placeholder="192.168.1.10:443"
-                className="w-full px-2 py-1 rounded bg-black/30 border border-white/15 text-sm font-mono"
-                spellCheck={false}
-              />
+            <Labeled label="Broker address">
+              <div className="px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono text-slate-200">
+                {knownBroker ?? "— run step 0 first —"}
+              </div>
             </Labeled>
             <p className="text-[11px] text-slate-500">
-              Must be reachable from the camera's network, must be static, and the
-              port must be 443, 123 or 53 — Verkada rejects everything else.
+              Taken from the certificate generated in step 0. It cannot differ:
+              the address is written into the certificate's SAN, so pointing a
+              camera anywhere else fails the TLS handshake even when the address
+              routes. Change it by regenerating above.
             </p>
             <p className="text-[11px] text-slate-500">
               Credentials come from step 0 and are sent straight to the camera —
