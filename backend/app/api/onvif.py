@@ -93,6 +93,14 @@ async def _dispatch(request: Request) -> Response:
         "result": "ok",
     }
     recent.append(note)
+    # Also to the container log. The ring buffer is behind the session
+    # gate, and the person debugging this is usually already tailing logs
+    # on the host with the Verify button in the other hand.
+    logger.info(
+        "onvif %s from %s: wsse=%s type=%s user=%s http_auth=%s",
+        note["op"], note["from"], note["wsse"], note["wsse_type"],
+        note["wsse_user"], note["http_auth"] or "-",
+    )
 
     if op not in OPEN:
         if not auth.verify(
