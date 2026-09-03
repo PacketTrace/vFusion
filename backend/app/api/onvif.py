@@ -78,7 +78,7 @@ async def _dispatch(request: Request) -> Response:
     except ET.ParseError as e:
         return Response(service.fault(f"malformed request: {e}"), media_type=XML)
 
-    op = service.operation(root)
+    op, ns = service.operation(root)
     state = settings.get()
     token = auth.extract(root)
     note = {
@@ -117,10 +117,13 @@ async def _dispatch(request: Request) -> Response:
                 service.unauthorized(), media_type=XML, status_code=400
             )
 
-    body = _respond(op, root, state, _base(request, state))
+    body = _respond(op, ns, root, state, _base(request, state))
     if body is None:
         note["result"] = "unsupported"
-        logger.info("onvif: unhandled operation %s", op or "(none)")
+        # Warning, not info: an operation this device does not answer is
+        # the single most likely reason a client rejects it, and it is the
+        # one line worth surfacing without turning debug logging on.
+        logger.warning("onvif: unhandled operation %s (ns %s)", op or "(none)", ns)
         return Response(
             service.fault(f"{op or 'operation'} is not supported"),
             media_type=XML,
@@ -129,33 +132,68 @@ async def _dispatch(request: Request) -> Response:
     return Response(service.envelope(body), media_type=XML)
 
 
-def _respond(op: str, root, state: dict, base: str) -> str | None:
-    # Dispatch is by operation name alone. The two service endpoints
-    # exist because ONVIF says they do, not because the operation sets
-    # overlap -- no name is served by both.
+def _respond(op: str, ns: str, root, state: dict, base: str) -> str | None:
+    media = ns == service.MEDIA_NS
 
+    # ---- device ----
     if op == "GetSystemDateAndTime":
         return service.system_date_and_time(datetime.now(timezone.utc))
     if op == "GetDeviceInformation":
         return service.device_information(state)
     if op == "GetCapabilities":
         return service.capabilities(base)
-    if op in ("GetServices", "GetServiceCapabilities"):
+    if op == "GetServices":
         return service.services(base)
     if op == "GetScopes":
         return service.scopes()
     if op == "GetUsers":
         return service.users(state)
+    if op == "GetNetworkInterfaces":
+        return service.network_interfaces(state.get("advertise_host", ""))
+    if op == "GetHostname":
+        return service.hostname()
+
+    # Defined in both WSDLs and different in each, which is why the
+    # namespace is carried this far rather than just the name.
+    if op == "GetServiceCapabilities":
+        return (
+            service.media_service_capabilities()
+            if media
+            else service.device_service_capabilities()
+        )
+
+    # ---- media ----
     if op == "GetProfiles":
         return service.profiles(state)
     if op == "GetProfile":
         return service.profile(state, service.profile_token(root))
     if op == "GetVideoSources":
         return service.video_sources()
+    if op == "GetVideoSourceConfigurations":
+        return service.video_source_configurations()
+    if op == "GetVideoSourceConfiguration":
+        return service.video_source_configuration()
+    if op == "GetVideoEncoderConfigurations":
+        return service.video_encoder_configurations()
+    if op == "GetVideoEncoderConfiguration":
+        return service.video_encoder_configuration(service.profile_token(root))
+    if op == "GetVideoEncoderConfigurationOptions":
+        return service.video_encoder_options()
     if op == "GetStreamUri":
         return service.stream_uri(state, service.profile_token(root))
     if op == "GetSnapshotUri":
         return service.snapshot_uri(state)
+
+    # Things this device genuinely has none of. "None" is the honest
+    # answer and a fault is not — the client asked something reasonable.
+    if op in (
+        "GetAudioSources",
+        "GetAudioSourceConfigurations",
+        "GetAudioEncoderConfigurations",
+        "GetMetadataConfigurations",
+        "GetOSDs",
+    ):
+        return service.empty(op)
     return None
 
 

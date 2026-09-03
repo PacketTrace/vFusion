@@ -64,15 +64,28 @@ def unauthorized() -> str:
     return fault("Sender not authorized", "ter:NotAuthorized")
 
 
-def operation(root: ET.Element) -> str:
-    """The local name of the first element in the SOAP body."""
+def operation(root: ET.Element) -> tuple[str, str]:
+    """(local name, namespace) of the first element in the SOAP body.
+
+    The namespace matters as well as the name. ``GetServiceCapabilities``
+    exists in both the device and media WSDLs and means different things
+    in each, so dispatching on the name alone answers one of them with
+    the other's response — which a client reads as a malformed device
+    rather than as a mistake worth reporting.
+    """
     body = root.find(f"{{{SOAP_ENV}}}Body")
     if body is None:
-        return ""
+        return "", ""
     for child in body:
         tag = child.tag
-        return tag.rsplit("}", 1)[-1] if "}" in tag else tag
-    return ""
+        if "}" in tag:
+            ns, _, local = tag[1:].partition("}")
+            return local, ns
+        return tag, ""
+    return "", ""
+
+
+MEDIA_NS = "http://www.onvif.org/ver10/media/wsdl"
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +181,51 @@ def scopes() -> str:
         for v in values
     )
     return f"<tds:GetScopesResponse>{items}</tds:GetScopesResponse>"
+
+
+def device_service_capabilities() -> str:
+    return (
+        "<tds:GetServiceCapabilitiesResponse><tds:Capabilities>"
+        '<tds:Network IPFilter="false" ZeroConfiguration="false" '
+        'IPVersion6="false" DynDNS="false" HostnameFromDHCP="false"/>'
+        '<tds:Security TLS1.0="false" TLS1.1="false" TLS1.2="false" '
+        'OnboardKeyGeneration="false" AccessPolicyConfig="false" '
+        'DefaultAccessPolicy="false" Dot1X="false" '
+        'RemoteUserHandling="false" X.509Token="false" SAMLToken="false" '
+        'KerberosToken="false" UsernameToken="true" HttpDigest="false" '
+        'RELToken="false"/>'
+        '<tds:System DiscoveryResolve="false" DiscoveryBye="false" '
+        'RemoteDiscovery="false" SystemBackup="false" SystemLogging="false" '
+        'FirmwareUpgrade="false" HttpFirmwareUpgrade="false" '
+        'HttpSystemBackup="false" HttpSystemLogging="false" '
+        'HttpSupportInformation="false"/>'
+        "</tds:Capabilities></tds:GetServiceCapabilitiesResponse>"
+    )
+
+
+def network_interfaces(host: str) -> str:
+    # There is no interface to report -- the device is a process. What a
+    # client wants from this is an address and a MAC to identify it by,
+    # and the MAC is derived from the device UUID so it stays put.
+    return (
+        "<tds:GetNetworkInterfacesResponse>"
+        '<tds:NetworkInterfaces token="eth0">'
+        "<tt:Enabled>true</tt:Enabled>"
+        "<tt:Info><tt:Name>eth0</tt:Name>"
+        f"<tt:HwAddress>{host}</tt:HwAddress>"
+        "<tt:MTU>1500</tt:MTU></tt:Info>"
+        "</tds:NetworkInterfaces>"
+        "</tds:GetNetworkInterfacesResponse>"
+    )
+
+
+def hostname() -> str:
+    return (
+        "<tds:GetHostnameResponse><tds:HostnameInformation>"
+        "<tt:FromDHCP>false</tt:FromDHCP>"
+        f"<tt:Name>{MODEL.replace(' ', '')}</tt:Name>"
+        "</tds:HostnameInformation></tds:GetHostnameResponse>"
+    )
 
 
 def users(state: dict[str, Any]) -> str:
@@ -280,6 +338,131 @@ def snapshot_uri(state: dict[str, Any]) -> str:
         "<tt:Timeout>PT60S</tt:Timeout>"
         "</trt:MediaUri></trt:GetSnapshotUriResponse>"
     )
+
+
+def media_service_capabilities() -> str:
+    return (
+        "<trt:GetServiceCapabilitiesResponse><trt:Capabilities "
+        'SnapshotUri="true" Rotation="false" VideoSourceMode="false" '
+        'OSD="false">'
+        '<trt:ProfileCapabilities MaximumNumberOfProfiles="2"/>'
+        '<trt:StreamingCapabilities RTPMulticast="false" '
+        'RTP_TCP="true" RTP_RTSP_TCP="true" NonAggregateControl="false" '
+        'NoRTSPStreaming="false"/>'
+        "</trt:Capabilities></trt:GetServiceCapabilitiesResponse>"
+    )
+
+
+def _vec(token: str, name: str, width: int, height: int, bitrate: str) -> str:
+    kbps = "".join(c for c in bitrate if c.isdigit()) or "0"
+    return (
+        f'<tt:Configurations token="vec_{token}">'
+        f"<tt:Name>{name}</tt:Name><tt:UseCount>1</tt:UseCount>"
+        "<tt:Encoding>H264</tt:Encoding>"
+        f"<tt:Resolution><tt:Width>{width}</tt:Width>"
+        f"<tt:Height>{height}</tt:Height></tt:Resolution>"
+        "<tt:Quality>4</tt:Quality>"
+        "<tt:RateControl>"
+        f"<tt:FrameRateLimit>{settings.FPS}</tt:FrameRateLimit>"
+        "<tt:EncodingInterval>1</tt:EncodingInterval>"
+        f"<tt:BitrateLimit>{kbps}</tt:BitrateLimit></tt:RateControl>"
+        f"<tt:H264><tt:GovLength>{settings.FPS}</tt:GovLength>"
+        "<tt:H264Profile>Main</tt:H264Profile></tt:H264>"
+        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
+        "</tt:Configurations>"
+    )
+
+
+def video_encoder_configurations() -> str:
+    return (
+        "<trt:GetVideoEncoderConfigurationsResponse>"
+        + _vec("main", "MainStream", settings.WIDTH, settings.HEIGHT,
+               settings.BITRATE)
+        + _vec("sub", "SubStream", settings.SUB_WIDTH, settings.SUB_HEIGHT,
+               settings.SUB_BITRATE)
+        + "</trt:GetVideoEncoderConfigurationsResponse>"
+    )
+
+
+def video_encoder_configuration(token: str) -> str:
+    body = (
+        _vec("sub", "SubStream", settings.SUB_WIDTH, settings.SUB_HEIGHT,
+             settings.SUB_BITRATE)
+        if token == "sub"
+        else _vec("main", "MainStream", settings.WIDTH, settings.HEIGHT,
+                  settings.BITRATE)
+    )
+    # Same shape, different wrapper element name.
+    body = body.replace("tt:Configurations", "trt:Configuration")
+    return (
+        f"<trt:GetVideoEncoderConfigurationResponse>{body}"
+        "</trt:GetVideoEncoderConfigurationResponse>"
+    )
+
+
+def video_encoder_options() -> str:
+    """What the encoder could be set to.
+
+    Exactly what it is set to, and nothing else. The geometry is fixed
+    for the life of the stream because it is baked into the SDP a client
+    already negotiated, so advertising a range invites a client to ask
+    for something this device would then have to refuse.
+    """
+    return (
+        "<trt:GetVideoEncoderConfigurationOptionsResponse><trt:Options>"
+        "<tt:QualityRange><tt:Min>1</tt:Min><tt:Max>6</tt:Max></tt:QualityRange>"
+        "<tt:H264>"
+        f"<tt:ResolutionsAvailable><tt:Width>{settings.WIDTH}</tt:Width>"
+        f"<tt:Height>{settings.HEIGHT}</tt:Height></tt:ResolutionsAvailable>"
+        f"<tt:ResolutionsAvailable><tt:Width>{settings.SUB_WIDTH}</tt:Width>"
+        f"<tt:Height>{settings.SUB_HEIGHT}</tt:Height></tt:ResolutionsAvailable>"
+        f"<tt:GovLengthRange><tt:Min>{settings.FPS}</tt:Min>"
+        f"<tt:Max>{settings.FPS}</tt:Max></tt:GovLengthRange>"
+        f"<tt:FrameRateRange><tt:Min>{settings.FPS}</tt:Min>"
+        f"<tt:Max>{settings.FPS}</tt:Max></tt:FrameRateRange>"
+        "<tt:EncodingIntervalRange><tt:Min>1</tt:Min><tt:Max>1</tt:Max>"
+        "</tt:EncodingIntervalRange>"
+        "<tt:H264ProfilesSupported>Main</tt:H264ProfilesSupported>"
+        "</tt:H264></trt:Options>"
+        "</trt:GetVideoEncoderConfigurationOptionsResponse>"
+    )
+
+
+def _vsc() -> str:
+    return (
+        '<tt:Configurations token="vsc">'
+        "<tt:Name>VideoSource</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:SourceToken>vs0</tt:SourceToken>"
+        f'<tt:Bounds x="0" y="0" width="{settings.WIDTH}" '
+        f'height="{settings.HEIGHT}"/>'
+        "</tt:Configurations>"
+    )
+
+
+def video_source_configurations() -> str:
+    return (
+        "<trt:GetVideoSourceConfigurationsResponse>"
+        f"{_vsc()}</trt:GetVideoSourceConfigurationsResponse>"
+    )
+
+
+def video_source_configuration() -> str:
+    body = _vsc().replace("tt:Configurations", "trt:Configuration")
+    return (
+        f"<trt:GetVideoSourceConfigurationResponse>{body}"
+        "</trt:GetVideoSourceConfigurationResponse>"
+    )
+
+
+def empty(op: str, ns: str = "trt") -> str:
+    """A well-formed empty answer.
+
+    For the things this device genuinely has none of -- audio sources,
+    audio encoders, metadata configurations. A fault would be wrong: the
+    client asked a reasonable question and the honest answer is "none",
+    not "that operation does not exist here".
+    """
+    return f"<{ns}:{op}Response></{ns}:{op}Response>"
 
 
 def profile_token(root: ET.Element) -> str:
