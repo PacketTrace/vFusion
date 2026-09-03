@@ -166,7 +166,17 @@ class Ingest:
             self._event.clear()
 
     def status(self) -> dict[str, Any]:
+        # How long since anything arrived, across all cameras. "Connected"
+        # only says a socket is open; this says data is actually flowing,
+        # which is the question someone is really asking.
+        now = time.monotonic()
+        ages = [
+            now - st.last_message
+            for st in self.cameras.values()
+            if st.last_message
+        ]
         return {
+            "last_message_age_sec": round(min(ages), 1) if ages else None,
             "connected": self.connected,
             "enabled": enabled(),
             "host": os.environ.get("MQTT_HOST", "mqtt-broker"),

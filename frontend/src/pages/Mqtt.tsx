@@ -16,6 +16,7 @@ interface MqttStatus {
   total_messages: number;
   cameras: string[];
   track_timeout_sec: number;
+  last_message_age_sec: number | null;
   ca_present: boolean;
   credentials_present: boolean;
   broker_username: string | null;
@@ -630,42 +631,82 @@ function Figure({ type, color }: { type: string; color: string }) {
   );
 }
 
+/** Operational status, not implementation detail.
+ *
+ *  This previously reported "ingest: connected", the broker's internal
+ *  container hostname, and the broker username — none of which answer
+ *  the question someone opens this page with. Whether a socket is open
+ *  matters far less than whether data is arriving, and a value that can
+ *  only ever read "mqtt-broker" is not status at all.
+ */
 function StatusBar({ status }: { status?: MqttStatus }) {
   if (!status) return null;
-  const items: [string, string, boolean][] = [
-    [
-      "Ingest",
-      status.enabled
-        ? status.connected
-          ? "connected"
-          : "waiting for broker"
-        : "not set up",
-      status.connected,
-    ],
-    ["Broker", status.host, status.connected],
-    ["Certificate", status.ca_present ? "generated" : "missing", status.ca_present],
-    [
-      "Credentials",
-      status.credentials_present ? (status.broker_username ?? "stored") : "not set up",
-      status.credentials_present,
-    ],
-    ["Messages", status.total_messages.toLocaleString(), status.total_messages > 0],
+
+  const age = status.last_message_age_sec;
+  const flowing = age != null && age < 30;
+
+  const items: { label: string; value: string; good: boolean; hint?: string }[] = [
+    {
+      label: "Broker",
+      value: status.connected
+        ? "listening"
+        : status.enabled
+          ? "not running"
+          : "not set up",
+      good: status.connected,
+      hint: status.connected
+        ? "vFusion is subscribed and waiting for camera data"
+        : "The broker container is not reachable",
+    },
+    {
+      label: "Cameras publishing",
+      value: String(status.cameras.length),
+      good: status.cameras.length > 0,
+      hint: "Cameras that have sent object positions since the last restart",
+    },
+    {
+      label: "Data",
+      value:
+        age == null
+          ? "none yet"
+          : age < 2
+            ? "live"
+            : age < 90
+              ? `${Math.round(age)}s ago`
+              : `${Math.round(age / 60)}m ago`,
+      good: flowing,
+      hint: "Time since the most recent message from any camera",
+    },
+    {
+      label: "Messages",
+      value: status.total_messages.toLocaleString(),
+      good: status.total_messages > 0,
+      hint: "Total received since the backend started",
+    },
   ];
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-      {items.map(([label, value, good]) => (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {items.map((item) => (
         <div
-          key={label}
+          key={item.label}
+          title={item.hint}
           className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg px-3 py-2"
         >
-          <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
-          <div className={`text-sm font-mono ${good ? "text-emerald-300" : "text-slate-300"}`}>
-            {value}
+          <div className="text-[10px] uppercase tracking-wider text-slate-400">
+            {item.label}
+          </div>
+          <div
+            className={`text-sm font-mono ${
+              item.good ? "text-emerald-300" : "text-slate-300"
+            }`}
+          >
+            {item.value}
           </div>
         </div>
       ))}
       {status.last_error && (
-        <div className="col-span-2 sm:col-span-5 text-xs text-amber-300/90">
+        <div className="col-span-2 sm:col-span-4 text-xs text-amber-300/90">
           {status.last_error}
         </div>
       )}

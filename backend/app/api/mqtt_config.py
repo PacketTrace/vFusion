@@ -63,6 +63,7 @@ class MqttStatus(BaseModel):
     total_messages: int
     cameras: list[str]
     track_timeout_sec: float
+    last_message_age_sec: float | None
     ca_present: bool
     credentials_present: bool
     broker_username: str | None
