@@ -374,6 +374,9 @@ export default function Byoa() {
   // the picked Verkada connection (re-resolve the matching Helix type).
   const [pickedTemplate, setPickedTemplate] = useState<BuiltinTemplate | null>(null);
   const [pasteId, setPasteId] = useState(false);
+  // The prompt box only appears once there is a prompt — generated,
+  // picked from a template, or explicitly asked for.
+  const [promptOpen, setPromptOpen] = useState(false);
 
   // "Use it" fills the prompt and pairs Helix, both of which live well
   // below the composer — so pressing it looked like nothing happened.
@@ -990,18 +993,32 @@ export default function Byoa() {
               picking a card. Sits with a hairline divider above so
               the visual break between "templates" and "custom" is
               obvious without taking much vertical space. */}
-          {allTemplates.length > 0 && (
+          {allTemplates.length > 0 && (promptOpen || prompt.trim()) && (
             <div className="border-t border-white/10 mt-3 pt-3">
               <div className="flex items-baseline gap-2 mb-1.5">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                  Custom prompt
+                  Prompt
                 </div>
                 <div className="text-[10px] text-slate-500">
-                  or write your own analytic
+                  {prompt.trim()
+                    ? "edit it before running, if you like"
+                    : "write your own analytic"}
                 </div>
               </div>
             </div>
           )}
+          {allTemplates.length > 0 && !promptOpen && !prompt.trim() && (
+            <div className="border-t border-white/10 mt-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setPromptOpen(true)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+              >
+                or write a prompt yourself
+              </button>
+            </div>
+          )}
+          {(promptOpen || prompt.trim()) && (
           <textarea
             ref={promptRef}
             value={prompt}
@@ -1015,6 +1032,7 @@ export default function Byoa() {
                 : "border-white/15"
             }`}
           />
+          )}
         </Field>
 
         {/* Optional Helix post-step. Same machinery the verkada_helix_event
@@ -1232,6 +1250,21 @@ export default function Byoa() {
         </div>
       </Card>
 
+
+      {source === "camera" && (
+        <MakeItRun
+          analyticName={pickedTemplate?.name ?? "Analytic"}
+          prompt={prompt}
+          model={model}
+          mode={mode}
+          cameraId={cameraId}
+          verkadaConnId={verkadaConnId}
+          geminiConnId={geminiConnId}
+          helixEventTypeUid={postToHelix ? helixEventTypeUid : ""}
+          helixMapping={pickedTemplate?.helix_attribute_mapping ?? null}
+          durationSec={durationSec}
+        />
+      )}
 
       <p className="text-xs text-slate-500">
         Each run shows up under the Runs tab with the captured clip/image,
@@ -1641,7 +1674,7 @@ function AnalyticComposer({
   const a = compose.data;
 
   return (
-    <div className="mb-4 rounded-lg border border-sky-500/25 bg-gradient-to-br from-sky-500/10 to-transparent p-3">
+    <div className="mb-4 rounded-lg border border-white/15 bg-white/5 p-3">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -1650,7 +1683,7 @@ function AnalyticComposer({
         <span className="flex items-start gap-2.5">
           <span
             aria-hidden="true"
-            className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sky-500/20 text-sky-300 text-xs"
+            className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white/10 text-slate-300 text-xs"
           >
             ✦
           </span>
@@ -1770,6 +1803,202 @@ function AnalyticComposer({
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+
+/** "It works — now make it keep happening."
+ *
+ *  A one-shot run already carries everything a flow needs except what
+ *  starts it: the connections, the camera, live-vs-clip, the model, the
+ *  prompt, the Helix type and the mapping. The hard part of building
+ *  this by hand is not the graph, it is the wiring — getting
+ *  {{ steps.analyze.output.json.x }} into the right Helix attribute —
+ *  and that is already known here. So this asks the one open question
+ *  and assembles the rest.
+ */
+function MakeItRun({
+  analyticName,
+  prompt,
+  model,
+  mode,
+  cameraId,
+  verkadaConnId,
+  geminiConnId,
+  helixEventTypeUid,
+  helixMapping,
+  durationSec,
+}: {
+  analyticName: string;
+  prompt: string;
+  model: string;
+  mode: "live" | "historical";
+  cameraId: string;
+  verkadaConnId: string | null;
+  geminiConnId: string | null;
+  helixEventTypeUid: string;
+  helixMapping: Record<string, string> | null;
+  durationSec: number;
+}) {
+  const navigate = useNavigate();
+  const [when, setWhen] = useState<"camera" | "schedule">("camera");
+  const [objects, setObjects] = useState("person");
+  const [everyMinutes, setEveryMinutes] = useState(15);
+  const ready = !!cameraId && !!verkadaConnId && !!geminiConnId && !!prompt.trim();
+
+  const create = useMutation({
+    mutationFn: () => {
+      // A camera-triggered run analyses the event that fired it; a
+      // scheduled one has no event, so it looks at the camera now.
+      const byEvent = when === "camera";
+      const analyzeConfig: Record<string, unknown> = {
+        connection_id: verkadaConnId,
+        gemini_connection_id: geminiConnId,
+        camera_id: byEvent ? "{{ trigger.data.camera_id }}" : cameraId,
+        model,
+        prompt,
+      };
+      if (mode === "historical") {
+        analyzeConfig.start_epoch = byEvent ? "{{ trigger.data.created }}" : "";
+        analyzeConfig.duration_sec = String(durationSec);
+        analyzeConfig.pre_roll_sec = "2";
+      }
+
+      const nodes: Record<string, unknown>[] = [
+        {
+          id: "analyze",
+          name: "analyze",
+          label: "Analyze the camera",
+          kind: "action",
+          action_type: "gemini_analyze_camera",
+          position: { x: 220, y: 0 },
+          config: analyzeConfig,
+        },
+      ];
+      const edges: Record<string, unknown>[] = [];
+
+      if (helixEventTypeUid) {
+        // Rewrite the template-local {{ output.* }} shorthand to point at
+        // the analyze step, which is what the engine resolves.
+        const attributes = Object.fromEntries(
+          Object.entries(helixMapping ?? {}).map(([attr, ref]) => [
+            attr,
+            ref.replace(/output\./g, "steps.analyze.output."),
+          ]),
+        );
+        nodes.push({
+          id: "post_helix",
+          name: "post_helix",
+          label: "Post to Helix",
+          kind: "action",
+          action_type: "verkada_helix_event",
+          position: { x: 220, y: 240 },
+          config: {
+            connection_id: verkadaConnId,
+            camera_id: byEvent ? "{{ trigger.data.camera_id }}" : cameraId,
+            event_type_uid: helixEventTypeUid,
+            attributes: Object.keys(attributes).length
+              ? attributes
+              : { Summary: "{{ steps.analyze.output.text }}" },
+          },
+        });
+        edges.push({ id: "e_analyze_helix", source: "analyze", target: "post_helix" });
+      }
+
+      return apiPost<{ id: string }>("/api/flows", {
+        name: `${analyticName} — auto`,
+        // Off until it is looked at. A flow that starts firing on every
+        // motion event the moment a button is pressed is a surprise bill
+        // and a surprise write to someone's Helix log.
+        enabled: false,
+        trigger_type: byEvent ? "verkada_webhook" : "schedule",
+        trigger_config: byEvent
+          ? {
+              family: "camera",
+              notification_type: "alert_rule_motion",
+              filters: { camera_id: cameraId, ...(objects ? { objects } : {}) },
+            }
+          : { kind: "interval", every_minutes: everyMinutes },
+        nodes,
+        edges,
+      });
+    },
+    onSuccess: (flow) => navigate(`/flows/${flow.id}/edit`),
+  });
+
+  return (
+    <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+      <div className="text-sm text-slate-100">Make this run on its own</div>
+      <p className="text-[11px] text-slate-400 mt-0.5 mb-3">
+        Everything above carries over — camera, prompt, model and the Helix
+        mapping. The only open question is what starts it.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <ModeBtn active={when === "camera"} onClick={() => setWhen("camera")}>
+          When this camera sees something
+        </ModeBtn>
+        <ModeBtn active={when === "schedule"} onClick={() => setWhen("schedule")}>
+          On a schedule
+        </ModeBtn>
+      </div>
+
+      {when === "camera" ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[11px] text-slate-400">Run when it detects</span>
+          <select
+            value={objects}
+            onChange={(e) => setObjects(e.target.value)}
+            className="px-2 py-1 rounded bg-white/5 border border-white/15 text-sm"
+          >
+            <option value="person">a person</option>
+            <option value="vehicle">a vehicle</option>
+            <option value="animal">an animal</option>
+            <option value="">anything moving</option>
+          </select>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[11px] text-slate-400">Run every</span>
+          <select
+            value={everyMinutes}
+            onChange={(e) => setEveryMinutes(Number(e.target.value))}
+            className="px-2 py-1 rounded bg-white/5 border border-white/15 text-sm"
+          >
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>hour</option>
+            <option value={360}>6 hours</option>
+            <option value={1440}>day</option>
+          </select>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 mt-4">
+        <button
+          type="button"
+          onClick={() => create.mutate()}
+          disabled={!ready || create.isPending}
+          className="text-sm px-4 py-2 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+        >
+          {create.isPending ? "Building…" : "Build the flow"}
+        </button>
+        <span className="text-[11px] text-slate-500">
+          Opens in the flow editor, switched off. Nothing runs until you enable
+          and save it.
+        </span>
+      </div>
+      {!ready && (
+        <p className="text-[11px] text-amber-400/80 mt-2">
+          Pick a camera, both connections and a prompt first.
+        </p>
+      )}
+      {create.isError && (
+        <p className="text-xs text-rose-300 mt-2">
+          {(create.error as Error).message}
+        </p>
       )}
     </div>
   );
