@@ -1056,28 +1056,54 @@ export default function Byoa() {
                 to notice it.
               */}
               <div>
-                <Field
-                  label="Helix event type"
-                  required
-                  help={
-                    helixTypes.data && helixTypes.data.length === 0
-                      ? "No event types synced yet. Click 'Sync helix' on the connection."
-                      : "Synced from Verkada — pick which event type to post against."
+                {(() => {
+                  const paired = pickedTemplate?.helix_event_type;
+                  const missing =
+                    !!paired && !pairedTypeExists(helixTypes.data ?? [], paired);
+                  // A paired analytic's attribute mapping only makes
+                  // sense against its own type. Offering the picker here
+                  // lets someone post Package Delivery attributes to a
+                  // Deer Sighting schema — Verkada accepts it and the
+                  // row is quietly wrong. So while the paired type is
+                  // missing, creating it is the only move.
+                  if (missing) {
+                    return (
+                      <Field
+                        label="Helix event type"
+                        required
+                        help={`This analytic writes ${Object.keys(paired.event_schema).length} attributes that only fit ${paired.name}. Create it to continue.`}
+                      >
+                        <div className="px-2 py-1.5 rounded bg-white/5 border border-dashed border-white/15 text-sm text-slate-400">
+                          {paired.name} — not on this org yet
+                        </div>
+                      </Field>
+                    );
                   }
-                >
-                  <select
-                    value={helixEventTypeUid}
-                    onChange={(e) => setHelixEventTypeUid(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-                  >
-                    <option value="">— pick an event type —</option>
-                    {(helixTypes.data ?? []).map((et) => (
-                      <option key={et.id} value={et.event_type_uid}>
-                        {et.name ?? "(unnamed)"}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                  return (
+                    <Field
+                      label="Helix event type"
+                      required
+                      help={
+                        helixTypes.data && helixTypes.data.length === 0
+                          ? "No event types synced yet. Click 'Sync helix' on the connection."
+                          : "Synced from Verkada — pick which event type to post against."
+                      }
+                    >
+                      <select
+                        value={helixEventTypeUid}
+                        onChange={(e) => setHelixEventTypeUid(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                      >
+                        <option value="">— pick an event type —</option>
+                        {(helixTypes.data ?? []).map((et) => (
+                          <option key={et.id} value={et.event_type_uid}>
+                            {et.name ?? "(unnamed)"}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  );
+                })()}
                 {(() => {
                   // Only surface the create affordance when the paired
                   // prompt's type isn't already in the synced list (or
@@ -1086,20 +1112,10 @@ export default function Byoa() {
                   // name (case-insensitive) — uid wins because the
                   // template ships with one, but legacy types in older
                   // orgs sometimes only line up by name.
-                  const synced = helixTypes.data ?? [];
-                  const targetUid =
-                    pickedTemplate?.helix_event_type?.event_type_uid ?? "";
-                  const targetName =
-                    pickedTemplate?.helix_event_type?.name ?? "";
-                  const exists =
-                    !!pickedTemplate?.helix_event_type &&
-                    synced.some(
-                      (et) =>
-                        (targetUid && et.event_type_uid === targetUid) ||
-                        (targetName &&
-                          (et.name ?? "").toLowerCase() ===
-                            targetName.toLowerCase()),
-                    );
+                  const exists = pairedTypeExists(
+                    helixTypes.data ?? [],
+                    pickedTemplate?.helix_event_type,
+                  );
                   if (exists) return null;
                   return (
                     <button
@@ -1538,6 +1554,25 @@ function CostEstimate({
   );
 }
 
+
+/** Whether a paired template's Helix type already exists on the org.
+ *
+ *  Matched by uid first, then name (case-insensitive) — the uid is what
+ *  templates ship, but types created by hand in older orgs often only
+ *  line up by name.
+ */
+function pairedTypeExists(
+  synced: { event_type_uid: string; name?: string | null }[],
+  paired?: { event_type_uid: string; name: string },
+): boolean {
+  if (!paired) return false;
+  return synced.some(
+    (et) =>
+      (paired.event_type_uid && et.event_type_uid === paired.event_type_uid) ||
+      (paired.name &&
+        (et.name ?? "").toLowerCase() === paired.name.toLowerCase()),
+  );
+}
 
 interface ComposedAnalytic {
   name: string;
