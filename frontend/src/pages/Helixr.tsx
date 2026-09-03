@@ -180,7 +180,7 @@ function EventTypeList({
                   {et.name ?? "(unnamed)"}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <code className="text-[10px] font-mono text-slate-500">
+                  <code className="text-[10px] font-mono text-slate-600">
                     {et.event_type_uid}
                   </code>
                   {confirming === et.event_type_uid ? (
@@ -205,16 +205,32 @@ function EventTypeList({
                       </button>
                     </span>
                   ) : (
+                    // A text link the width of the word "Delete", sat
+                    // beside a 36-character uid, is genuinely hard to
+                    // find. A bordered icon button with a real hit area
+                    // reads as a control at a glance without competing
+                    // with the type name.
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setConfirming(et.event_type_uid);
                       }}
-                      className="text-[11px] text-slate-500 hover:text-rose-300"
+                      aria-label={`Delete ${et.name ?? "event type"}`}
                       title="Delete this event type from Verkada"
+                      className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-slate-400 opacity-70 transition-[opacity,color,border-color] duration-150 ease-out-strong hover:opacity-100 hover:border-rose-600/60 hover:text-rose-300"
                     >
-                      Delete
+                      <svg
+                        viewBox="0 0 16 16"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.6 9a1 1 0 0 0 1 1h4.8a1 1 0 0 0 1-1L12 4M6.5 7v4M9.5 7v4" />
+                      </svg>
                     </button>
                   )}
                 </div>
