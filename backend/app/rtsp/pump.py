@@ -219,22 +219,34 @@ class Pump:
         self._read_fd = None
 
     async def _drain(self, proc: asyncio.subprocess.Process) -> None:
-        """Keep the last few lines ffmpeg wrote, and keep the pipe empty."""
+        """Keep the last few lines ffmpeg wrote, and keep the pipe empty.
+
+        Read in chunks and split on carriage returns as well as newlines:
+        ffmpeg ends each stats line with a bare \\r so it can overwrite
+        itself on a terminal, and readline() would hold the whole run of
+        them until some error happened to emit a newline.
+        """
         if proc.stderr is None:
             return
+        buffer = ""
         with contextlib.suppress(Exception):
             while True:
-                raw = await proc.stderr.readline()
-                if not raw:
+                chunk = await proc.stderr.read(4096)
+                if not chunk:
                     return
-                line = raw.decode("utf-8", "replace").strip()
-                if line:
+                buffer += chunk.decode("utf-8", "replace")
+                parts = buffer.replace("\r", "\n").split("\n")
+                buffer = parts.pop()
+                for line in (p.strip() for p in parts):
+                    if not line:
+                        continue
                     self.log.append(line)
-                    self.last_error = line
-                    # To the container log as well. The page shows this,
-                    # but a stream that will not start is debugged with
-                    # logs open, not with a browser.
                     logger.warning("ffmpeg: %s", line)
+                    # A stats line is not a failure. Letting it land in
+                    # last_error would put "frame=1234 fps=24 speed=1x"
+                    # where the page says what went wrong.
+                    if not line.startswith(("frame=", "size=")):
+                        self.last_error = line
 
     async def _play_next(self) -> None:
         # Cleared before the check, not inside standby: an upload landing
@@ -532,7 +544,12 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
         # to a fixed path, and without it ffmpeg refuses the second run
         # with "already exists. Exiting." -- which takes down the two RTSP
         # outputs sharing the process, for a JPEG neither depends on.
+        # -stats every few seconds, which is the only way to find out
+        # whether this is keeping up. speed below 1x means frames are
+        # being produced slower than real time, and a stream that falls
+        # behind and catches up is a stream that visibly stutters.
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-stats", "-stats_period", "5",
         *probe,
         "-f", "rawvideo", "-pix_fmt", "yuv420p",
         "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
