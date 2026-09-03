@@ -21,6 +21,7 @@ camera has no profiles" and sends you looking in the wrong place.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -203,19 +204,82 @@ def device_service_capabilities() -> str:
     )
 
 
-def network_interfaces(host: str) -> str:
-    # There is no interface to report -- the device is a process. What a
-    # client wants from this is an address and a MAC to identify it by,
-    # and the MAC is derived from the device UUID so it stays put.
+def mac_for(device_uuid: str) -> str:
+    """A stable MAC, derived from the device UUID.
+
+    There is no network card to read one off -- the device is a process
+    sharing a container's stack. Clients display this and some key on it,
+    so it has to be stable across restarts, which a real interface's
+    address would not be. The 02 prefix marks it locally administered,
+    which is what it is: made up, and honestly so.
+    """
+    digest = hashlib.sha256(device_uuid.encode()).digest()[:5]
+    return "02:" + ":".join(f"{b:02x}" for b in digest)
+
+
+def network_interfaces(state: dict[str, Any]) -> str:
     return (
         "<tds:GetNetworkInterfacesResponse>"
         '<tds:NetworkInterfaces token="eth0">'
         "<tt:Enabled>true</tt:Enabled>"
         "<tt:Info><tt:Name>eth0</tt:Name>"
-        f"<tt:HwAddress>{host}</tt:HwAddress>"
+        f"<tt:HwAddress>{mac_for(state.get('device_uuid', ''))}</tt:HwAddress>"
         "<tt:MTU>1500</tt:MTU></tt:Info>"
         "</tds:NetworkInterfaces>"
         "</tds:GetNetworkInterfacesResponse>"
+    )
+
+
+def discovery_mode() -> str:
+    """NonDiscoverable, which is the truth.
+
+    vFusion answers no WS-Discovery probes -- a bridge-networked
+    container cannot receive them. A client that found this device did so
+    because someone typed its address, and saying otherwise would invite
+    it to expect a ProbeMatch that never comes.
+    """
+    return (
+        "<tds:GetDiscoveryModeResponse>"
+        "<tds:DiscoveryMode>NonDiscoverable</tds:DiscoveryMode>"
+        "</tds:GetDiscoveryModeResponse>"
+    )
+
+
+def network_protocols() -> str:
+    return (
+        "<tds:GetNetworkProtocolsResponse>"
+        "<tds:NetworkProtocols><tt:Name>HTTP</tt:Name>"
+        "<tt:Enabled>true</tt:Enabled>"
+        f"<tt:Port>{settings.ONVIF_PUBLIC_PORT}</tt:Port></tds:NetworkProtocols>"
+        "<tds:NetworkProtocols><tt:Name>RTSP</tt:Name>"
+        "<tt:Enabled>true</tt:Enabled>"
+        f"<tt:Port>{settings.PUBLIC_PORT}</tt:Port></tds:NetworkProtocols>"
+        "</tds:GetNetworkProtocolsResponse>"
+    )
+
+
+def dns() -> str:
+    return (
+        "<tds:GetDNSResponse><tds:DNSInformation>"
+        "<tt:FromDHCP>false</tt:FromDHCP>"
+        "</tds:DNSInformation></tds:GetDNSResponse>"
+    )
+
+
+def ntp() -> str:
+    return (
+        "<tds:GetNTPResponse><tds:NTPInformation>"
+        "<tt:FromDHCP>false</tt:FromDHCP>"
+        "</tds:NTPInformation></tds:GetNTPResponse>"
+    )
+
+
+def zero_configuration() -> str:
+    return (
+        "<tds:GetZeroConfigurationResponse><tds:ZeroConfiguration>"
+        "<tt:InterfaceToken>eth0</tt:InterfaceToken>"
+        "<tt:Enabled>false</tt:Enabled>"
+        "</tds:ZeroConfiguration></tds:GetZeroConfigurationResponse>"
     )
 
 

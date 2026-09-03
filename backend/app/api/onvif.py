@@ -149,9 +149,21 @@ def _respond(op: str, ns: str, root, state: dict, base: str) -> str | None:
     if op == "GetUsers":
         return service.users(state)
     if op == "GetNetworkInterfaces":
-        return service.network_interfaces(state.get("advertise_host", ""))
+        return service.network_interfaces(state)
     if op == "GetHostname":
         return service.hostname()
+    if op == "GetDiscoveryMode":
+        return service.discovery_mode()
+    if op == "GetNetworkProtocols":
+        return service.network_protocols()
+    if op == "GetDNS":
+        return service.dns()
+    if op == "GetNTP":
+        return service.ntp()
+    if op == "GetZeroConfiguration":
+        return service.zero_configuration()
+    if op in ("GetRelayOutputs", "GetNetworkDefaultGateway", "GetDot11Capabilities"):
+        return service.empty(op, "tds")
 
     # Defined in both WSDLs and different in each, which is why the
     # namespace is carried this far rather than just the name.
