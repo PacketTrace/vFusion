@@ -323,6 +323,29 @@ export interface HelixBootstrapResponse {
   results: HelixBootstrapResultRow[];
 }
 
+/** An analytic composed from a description: the prompt, the Helix
+ *  event type it writes into, and the mapping between the JSON keys the
+ *  prompt promises and that type's attributes. The three have to agree,
+ *  which is why they travel together. */
+export interface ComposedAnalytic {
+  name: string;
+  summary?: string;
+  prompt: string;
+  helix_event_type: {
+    event_type_uid: string;
+    name: string;
+    event_schema: Record<string, string>;
+  };
+  helix_attribute_mapping: Record<string, string>;
+  model?: string;
+}
+
+/** One that has been kept. */
+export interface SavedAnalytic extends ComposedAnalytic {
+  id: string;
+  created_at: string;
+}
+
 export interface PromptTemplate {
   id: string;
   name: string;

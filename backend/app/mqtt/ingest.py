@@ -117,6 +117,15 @@ class Ingest:
         self.last_error: str | None = None
         self.started_at: float | None = None
         self.total_messages = 0
+        # Tracks that finished and were deliberately not written, split by
+        # why. Without these the only "drops" figure in the UI is the
+        # retroactive one over recorded history — and that one can never
+        # exceed zero at unchanged thresholds, because a suppressed track
+        # was never recorded to begin with. Per process, like the message
+        # count above: history outlives a restart, these do not.
+        self.recorded_tracks = 0
+        self.suppressed_tracks = 0
+        self.brief_tracks = 0
         self._event = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -186,6 +195,9 @@ class Ingest:
                 round(time.monotonic() - self.started_at, 1) if self.started_at else None
             ),
             "total_messages": self.total_messages,
+            "recorded_tracks": self.recorded_tracks,
+            "suppressed_tracks": self.suppressed_tracks,
+            "brief_tracks": self.brief_tracks,
             "cameras": sorted(self.cameras),
             "track_timeout_sec": TRACK_TIMEOUT_SEC,
         }
@@ -268,10 +280,13 @@ class Ingest:
         """Persist a finished track, if it was substantial enough to matter."""
         duration = track.last_seen - track.first_seen
         if duration < history.MIN_DURATION_SEC or not track.path:
+            self.brief_tracks += 1
             return
         if not _qualifies(track, filters.get()):
+            self.suppressed_tracks += 1
             return
         started = datetime.fromtimestamp(track.first_wall, tz=timezone.utc)
+        self.recorded_tracks += 1
         history.record(
             {
                 "camera_id": camera_id,

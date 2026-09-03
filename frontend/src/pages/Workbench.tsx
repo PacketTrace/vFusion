@@ -22,9 +22,12 @@ type Tab = "byoa" | "helixr";
 const TABS: { key: Tab; label: string; blurb: string }[] = [
   {
     key: "byoa",
-    label: "BYOA",
+    // The tab is "Build" and the URL is still ?tab=byoa: renaming the
+    // label is cosmetic, renaming the param would break every "Run it
+    // back" link already sitting in a Runs row.
+    label: "Build",
     blurb:
-      "Brew Your Own Analytics — one-shot Gemini run. Pick a camera, write a prompt, see what comes back without baking it into a flow first.",
+      "One-shot Gemini run. Pick a camera, write a prompt, see what comes back without baking it into a flow first.",
   },
   {
     key: "helixr",

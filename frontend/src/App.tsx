@@ -140,7 +140,7 @@ function AppShell() {
                 `${navItem} ${isActive ? navActive : navInactive}`
               }
             >
-              Flows
+              Automate
             </NavLink>
             <NavLink
               to="/workbench"

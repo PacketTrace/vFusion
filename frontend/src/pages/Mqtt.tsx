@@ -14,6 +14,9 @@ interface MqttStatus {
   last_error: string | null;
   uptime_sec: number | null;
   total_messages: number;
+  recorded_tracks: number;
+  suppressed_tracks: number;
+  brief_tracks: number;
   cameras: string[];
   track_timeout_sec: number;
   last_message_age_sec: number | null;
@@ -452,7 +455,7 @@ export default function Mqtt() {
 
       {status.data?.mode !== "external" && (
       <Card title="Noise filter">
-        <NoiseFilter cameraId={cameraId} />
+        <NoiseFilter cameraId={cameraId} status={status.data} />
       </Card>
 
       )}
@@ -782,6 +785,23 @@ function StatusBar({ status }: { status?: MqttStatus }) {
             zero here means nothing has moved — not that anything is wrong.
           </div>
         )}
+      {/* Where the messages went. Someone looking at "155 messages" and
+          "9 tracks" has no way to reconcile the two, and the gap is
+          entirely made of tracks that were deliberately not written —
+          suppressed by the noise filter, or too short to mean anything.
+          Naming both makes the arithmetic close. */}
+      {status.total_messages > 0 && (
+        <div className="col-span-2 sm:col-span-4 text-[11px] text-slate-500">
+          Those messages became{" "}
+          <span className="text-slate-300">{status.recorded_tracks}</span> recorded
+          track{status.recorded_tracks === 1 ? "" : "s"} —{" "}
+          <span className="text-slate-300">{status.suppressed_tracks}</span> more
+          were suppressed by the noise filter and{" "}
+          <span className="text-slate-300">{status.brief_tracks}</span> were too
+          brief to record. All four counters reset when the backend restarts;
+          the history further down does not.
+        </div>
+      )}
     </div>
   );
 }
@@ -1263,7 +1283,13 @@ function TrackReplay({
  *  is a guess until it is checked against real detections, and the
  *  history holds hundreds of them.
  */
-function NoiseFilter({ cameraId }: { cameraId: string }) {
+function NoiseFilter({
+  cameraId,
+  status,
+}: {
+  cameraId: string;
+  status?: MqttStatus;
+}) {
   const qc = useQueryClient();
   const current = useQuery({
     queryKey: ["mqtt-filters"],
@@ -1403,6 +1429,23 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
             </span>
           ))}
         </div>
+      )}
+      {/* The row above is a what-if over recorded history, and history
+          only ever holds tracks that already passed the thresholds in
+          force when they were written. So at unchanged settings it reads
+          "drops 0" however much work the filter is actually doing, which
+          looks broken while data is visibly arriving. The live counter is
+          the one that answers "is this doing anything". */}
+      {status && status.recorded_tracks + status.suppressed_tracks > 0 && (
+        <p className="text-[11px] text-slate-500">
+          Live since the backend restarted, these thresholds have kept{" "}
+          <span className="font-mono text-emerald-300">{status.recorded_tracks}</span>{" "}
+          and suppressed{" "}
+          <span className="font-mono text-rose-300">{status.suppressed_tracks}</span>.
+          The row above can only ever drop tracks that are already on record,
+          so it stays at zero until you raise a slider past where it was when
+          they were written.
+        </p>
       )}
 
       {inspect && (

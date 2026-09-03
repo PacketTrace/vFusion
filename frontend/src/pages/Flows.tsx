@@ -124,12 +124,13 @@ export default function Flows() {
       />
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Flows</h1>
+          <h1 className="text-2xl font-semibold text-white">Automate</h1>
           <p className="text-slate-400 text-sm mt-1">
             {tab === "templates" ? (
               <>
-                Starter flows, pre-wired with a trigger, AI analysis and a Helix
-                event type. Install one and it becomes a flow you own.
+                Starting points: whole flows pre-wired with a trigger, AI
+                analysis and a Helix event type, and the analytics you have
+                composed in Build.
               </>
             ) : tab === "runs" ? (
               <>

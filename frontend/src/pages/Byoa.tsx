@@ -6,10 +6,12 @@ import {
   API_BASE,
   apiGet,
   apiPost,
+  ComposedAnalytic,
   Connection,
   HelixEventType,
   PromptTemplate,
   RunDetail,
+  SavedAnalytic,
   VerkadaCamera,
   WebhookEvent,
 } from "../lib/api";
@@ -355,8 +357,8 @@ export default function Byoa() {
     queryFn: () => apiGet<SavedAnalytic[]>("/api/byoa/analytics"),
   });
 
-  const allTemplates = useMemo<BuiltinTemplate[]>(
-    () => [
+  const allTemplates = useMemo<BuiltinTemplate[]>(() => {
+    const merged: BuiltinTemplate[] = [
       ...(savedAnalytics.data ?? []).map((a) => ({
         name: a.name,
         value: a.prompt,
@@ -365,9 +367,20 @@ export default function Byoa() {
       })),
       ...(userTemplates.data ?? []).map((t) => ({ name: t.name, value: t.value })),
       ...(builtinTemplates.data ?? []),
-    ],
-    [savedAnalytics.data, userTemplates.data, builtinTemplates.data],
-  );
+    ];
+    // Name is the identity here: it keys the cards and decides which one
+    // renders as selected. Three sources feed this list and nothing stops
+    // them sharing a name — a saved analytic called "Package Arrival"
+    // would render twice, collide on the React key, and light both copies
+    // up at once. First wins, so a saved analytic shadows the builtin it
+    // was derived from rather than sitting next to it.
+    const seen = new Set<string>();
+    return merged.filter((t) => {
+      if (seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
+    });
+  }, [savedAnalytics.data, userTemplates.data, builtinTemplates.data]);
 
   // The template the operator picked most recently. Held in local state
   // so we can render the "Pairs with X" hint and react to changes in
@@ -393,6 +406,28 @@ export default function Byoa() {
     setPromptFlash(true);
     window.setTimeout(() => setPromptFlash(false), 1400);
   };
+
+  // Arriving from Templates → "Open in Build" with ?analytic=<id>.
+  // Applied once: the URL keeps saying so after the operator picks
+  // something else, and re-applying on every render would fight them
+  // for the selection.
+  const preselectId = searchParams.get("analytic");
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || !preselectId) return;
+    const found = (savedAnalytics.data ?? []).find((a) => a.id === preselectId);
+    if (!found) return;
+    preselected.current = true;
+    setPrompt(found.prompt);
+    setPickedTemplate({
+      name: found.name,
+      value: found.prompt,
+      helix_event_type: found.helix_event_type,
+      helix_attribute_mapping: found.helix_attribute_mapping,
+    });
+    setPostToHelix(true);
+    setPromptOpen(true);
+  }, [preselectId, savedAnalytics.data]);
 
   // When a paired template is selected, auto-toggle "Post to Helix" and
   // try to select the matching event type by name on the current
@@ -618,10 +653,15 @@ export default function Byoa() {
                         // mapping is the new source of truth.
                         setRestoredMapping(null);
                       }}
+                      aria-pressed={active}
+                      // Hover used to tint sky as well, one step down from
+                      // the selected card. Two blue-bordered cards on
+                      // screen at once reads as two selections, so hover
+                      // is neutral now and blue means picked, full stop.
                       className={`text-left p-3 rounded-md border transition duration-200 ease-out-strong ${
                         active
                           ? "border-sky-400/80 bg-sky-950/40 scale-[1.02] shadow-[0_0_14px_rgba(56,189,248,0.35)]"
-                          : "border-white/15 bg-white/5 hover:border-sky-700/60 hover:bg-sky-950/20"
+                          : "border-white/15 bg-white/5 hover:border-white/35 hover:bg-white/[0.08]"
                       }`}
                     >
                       <div className="flex items-start gap-2">
@@ -638,6 +678,17 @@ export default function Byoa() {
                             </div>
                           )}
                         </div>
+                        {/* A border colour alone has to be compared
+                            against five other cards to be read. A mark
+                            that is either there or not does not. */}
+                        {active && (
+                          <span
+                            className="text-sky-300 text-sm leading-none mt-1 shrink-0"
+                            aria-hidden
+                          >
+                            &#10003;
+                          </span>
+                        )}
                       </div>
                     </button>
                   );
@@ -1626,24 +1677,6 @@ function pairedTypeExists(
       (paired.name &&
         (et.name ?? "").toLowerCase() === paired.name.toLowerCase()),
   );
-}
-
-interface ComposedAnalytic {
-  name: string;
-  summary?: string;
-  prompt: string;
-  helix_event_type: {
-    event_type_uid: string;
-    name: string;
-    event_schema: Record<string, string>;
-  };
-  helix_attribute_mapping: Record<string, string>;
-  model?: string;
-}
-
-interface SavedAnalytic extends ComposedAnalytic {
-  id: string;
-  created_at: string;
 }
 
 /** Describe an analytic in words; get back a prompt, a Helix event type

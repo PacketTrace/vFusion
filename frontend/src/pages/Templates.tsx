@@ -13,7 +13,9 @@ import {
   FlowTemplateDetail,
   FlowTemplateListItem,
   HelixEventTypeDef,
+  SavedAnalytic,
 } from "../lib/api";
+import ConfirmDialog from "../components/ConfirmDialog";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import TemplateSummaryStrip from "../components/TemplateSummaryStrip";
 
@@ -48,14 +50,156 @@ export default function Templates({ embedded = false }: { embedded?: boolean }) 
         <div>
           <h1 className="text-2xl font-semibold text-white">Templates</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Starter flows you can use as-is. Each template ships pre-wired with
-            a trigger, AI analysis, and (where relevant) a Helix event type so
-            the result lands in Verkada Command without extra plumbing.
+            Starting points you can use as-is: complete flows, pre-wired with a
+            trigger and AI analysis, and the analytics you have composed —
+            prompts kept with the Helix event type they write into.
           </p>
         </div>
       )}
-      <FlowTemplatesPanel />
+      {/* Two kinds of starting point, one page. A flow template is a
+          whole automation — trigger, analysis, Helix write — while an
+          analytic is only the "what to look for" half, which you point
+          at a camera in Build or drop into a step of your own. They
+          lived in two different destinations before, which meant a
+          saved analytic effectively vanished once you made it. */}
+      <Section
+        title="Flows"
+        blurb="Complete automations. Install one and it becomes a flow you own."
+      >
+        <FlowTemplatesPanel />
+      </Section>
+      <Section
+        title="Analytics"
+        blurb="Just a prompt and the Helix event type it writes into — no trigger. Run one in Build, or pick it inside a flow's analysis step."
+      >
+        <AnalyticsPanel />
+      </Section>
     </div>
+  );
+}
+
+
+function Section({
+  title,
+  blurb,
+  children,
+}: {
+  title: string;
+  blurb: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 pb-2">
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <p className="text-[11px] text-slate-500">{blurb}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Analytics panel — prompts composed in Build, kept with their pairing
+// ---------------------------------------------------------------------------
+
+function AnalyticsPanel() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState<SavedAnalytic | null>(null);
+
+  const list = useQuery({
+    queryKey: ["byoa-analytics"],
+    queryFn: () => apiGet<SavedAnalytic[]>("/api/byoa/analytics"),
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => apiDelete(`/api/byoa/analytics/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["byoa-analytics"] }),
+  });
+
+  if (list.isLoading) {
+    return <div className="text-sm text-slate-500">Loading…</div>;
+  }
+  if (!list.data || list.data.length === 0) {
+    return (
+      <div className="border border-white/15 rounded-lg bg-white/5 p-6 text-sm text-slate-400">
+        <p className="font-medium text-slate-200 mb-1">No saved analytics yet.</p>
+        <p>
+          Describe what you want spotted on{" "}
+          <button
+            type="button"
+            onClick={() => navigate("/workbench?tab=byoa")}
+            className="text-sky-400 hover:underline"
+          >
+            Build
+          </button>{" "}
+          and save the result — it lands here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete "${pendingDelete?.name ?? ""}"?`}
+        body="The prompt and its Helix pairing go. Flows already using it keep their own copy, and the event type stays on your Verkada org."
+        busy={del.isPending}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) del.mutate(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {list.data.map((a) => (
+          <div
+            key={a.id}
+            className="border border-white/15 rounded-lg bg-white/5 p-3 flex flex-col gap-2"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-100 leading-tight">
+                  {a.name}
+                </div>
+                {a.summary && (
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {a.summary}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingDelete(a)}
+                title="Delete this analytic"
+                className="text-xs px-2 py-1 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800 shrink-0"
+              >
+                Delete
+              </button>
+            </div>
+            {a.helix_event_type?.name && (
+              <div className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60 self-start">
+                🧬 {a.helix_event_type.name}
+              </div>
+            )}
+            {/* The prompt is the analytic. A few lines of it separate two
+                similarly-named entries in a way the name alone cannot. */}
+            <p className="text-[11px] text-slate-500 font-mono line-clamp-3 whitespace-pre-wrap">
+              {a.prompt}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate(`/workbench?tab=byoa&analytic=${a.id}`)}
+              className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
+            >
+              Open in Build
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
