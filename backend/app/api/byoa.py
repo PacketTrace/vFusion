@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.byoa import analytics_store
+from app.crypto import decrypt_secret
 
 from app.connectors.verkada.footage import CLIP_ROOT, IMAGE_ROOT
 from app.db import get_session
@@ -798,8 +799,10 @@ async def compose(
         raise HTTPException(status_code=400, detail="no Gemini connection configured")
     try:
         secret = decrypt_secret(conn.encrypted_secret)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="could not decrypt connection") from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail=f"could not decrypt connection: {e}"
+        ) from e
     api_key = secret.get("api_key")
     if not api_key:
         raise HTTPException(status_code=400, detail="Gemini connection has no api_key")

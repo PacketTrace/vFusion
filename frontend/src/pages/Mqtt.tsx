@@ -812,9 +812,15 @@ function TrackReplay({
   // is per-clip and cannot be a constant; this is the correction, kept
   // per camera so it only has to be found once.
   const alignKey = `mqtt-align-${track.camera_id}`;
+  // 0.75s is where this lands in practice: the clip starts on a segment
+  // boundary before the track, so the footage runs behind the replay
+  // until it is pulled forward. Still per-camera and still adjustable —
+  // segment cadence differs by camera.
   const [align, setAlign] = useState(() => {
-    const saved = Number(localStorage.getItem(alignKey));
-    return Number.isFinite(saved) ? saved : 0;
+    const raw = localStorage.getItem(alignKey);
+    if (raw === null) return 0.75;
+    const saved = Number(raw);
+    return Number.isFinite(saved) ? saved : 0.75;
   });
   useEffect(() => {
     localStorage.setItem(alignKey, String(align));
