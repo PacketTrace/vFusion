@@ -92,6 +92,7 @@ export default function Mqtt() {
       apiPost<{
         broker_host_port: string;
         username: string;
+        password_rotated: boolean;
         san: string;
         expires: string;
         next_steps: string[];
@@ -194,10 +195,15 @@ export default function Mqtt() {
           <div className="mt-3 text-xs space-y-2">
             <p className="text-emerald-300">
               Certificate written for {setup.data.san}, valid to {setup.data.expires}.
+              {setup.data.password_rotated
+                ? " New broker password generated."
+                : " Existing broker password kept."}
             </p>
             <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 space-y-1">
               <p className="text-amber-200">
-                Shown once — the broker keeps only a hash of it.
+                {setup.data.password_rotated
+                  ? "The broker must be restarted to pick up the new password."
+                  : "Restart the TLS terminator so it serves the new certificate."}
               </p>
               {setup.data.next_steps.map((line) => (
                 <pre

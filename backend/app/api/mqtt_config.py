@@ -115,9 +115,11 @@ async def preflight(
                 if ingest.connected
                 else f"Not connected: {ingest.last_error or 'ingest disabled'}"
             ),
+            # detail already carries the specific command when we know
+            # what went wrong; a generic fix underneath it just competes.
             fix=(
                 None
-                if ingest.connected
+                if ingest.connected or ingest.last_error
                 else "Start the broker: docker compose --profile mqtt up -d"
             ),
         )
@@ -417,6 +419,10 @@ class SetupRequest(BaseModel):
     username: str = "vfusion"
     # Omit to have one generated -- it is only ever typed by a camera.
     password: str | None = None
+    # Existing credentials are reused by default. Changing them requires
+    # restarting mosquitto, which vFusion cannot do, so it should be a
+    # thing you asked for rather than a side effect of regenerating certs.
+    rotate_password: bool = False
 
 
 @router.post("/setup")
@@ -438,11 +444,21 @@ async def setup(body: SetupRequest) -> dict[str, Any]:
     if not host:
         raise HTTPException(status_code=400, detail="broker_host is required")
 
-    password = body.password or provision.generate_password()
+    existing = provision.load_credentials()
+    reuse = existing is not None and not body.rotate_password and body.password is None
+    password = (
+        existing["password"] if reuse and existing else (body.password or provision.generate_password())
+    )
+    username = existing["username"] if reuse and existing else body.username
     try:
         info = provision.generate_certs(host)
-        provision.write_password_file(body.username, password)
-        provision.save_credentials(body.username, password)
+        if not reuse:
+            # Only touch the password file when the password actually
+            # changes: mosquitto reads it once at startup, so rewriting it
+            # under a running broker locks out the very credentials this
+            # process is about to use.
+            provision.write_password_file(username, password)
+            provision.save_credentials(username, password)
     except OSError as e:
         raise HTTPException(
             status_code=500,
@@ -450,9 +466,11 @@ async def setup(body: SetupRequest) -> dict[str, Any]:
         ) from e
 
     await ingest.restart()
+    restart_needed = ["mqtt-tls"] + ([] if reuse else ["mqtt-broker"])
     return {
         "broker_host_port": f"{host}:443",
-        "username": body.username,
+        "username": username,
+        "password_rotated": not reuse,
         "san": info["san"],
         "expires": info["expires"],
         # Deliberately no password here. It is stored encrypted and used
@@ -460,7 +478,9 @@ async def setup(body: SetupRequest) -> dict[str, Any]:
         # operator to write down and nothing to lose by closing the tab.
         "next_steps": [
             "Start the broker:  docker compose --profile mqtt up -d",
-            "Already running?  docker compose restart mqtt-broker mqtt-tls  (mosquitto only reads its password file at startup)",
+            "Already running?  docker compose restart " + " ".join(restart_needed)
+            + ("  (mosquitto only reads its password file at startup)" if not reuse
+               else "  (nginx only reads certificates at startup)"),
         ],
     }
 
