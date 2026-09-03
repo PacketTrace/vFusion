@@ -8,6 +8,30 @@ import {
   TriggerField,
 } from "../lib/api";
 import { useCameras } from "../lib/cameras";
+import { ValueGroup, ValuePicker } from "./ValuePicker";
+
+
+/** Split a field profile into the two menus we can honestly label:
+ *  values we have actually received, and values that only exist because
+ *  somebody synced them from Command. A field with too many distinct
+ *  values to enumerate (ids, plates) yields no options and the picker
+ *  degrades to a plain text box. */
+function valueGroups(prof: FilterFieldProfile | undefined): ValueGroup[] {
+  if (!prof) return [];
+  return [
+    {
+      label: "Seen in webhooks",
+      options: prof.values.map((v) => ({ value: String(v) })),
+    },
+    {
+      label: "From Command",
+      options: (prof.synced_values ?? []).map((v) => ({
+        value: String(v),
+        note: "not yet seen",
+      })),
+    },
+  ];
+}
 
 
 export interface TriggerConfigState {
@@ -223,14 +247,14 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                   <option value="">— field —</option>
                   {commonFields.map((opt) => (
                     <option key={opt.field} value={opt.field}>
-                      {opt.field} — on {opt.present_pct}% of these
+                      {opt.field}
                     </option>
                   ))}
                   {rareFields.length > 0 && (
                     <optgroup label="Rarely present (likely noise)">
                       {rareFields.map((opt) => (
                         <option key={opt.field} value={opt.field}>
-                          {opt.field} — {opt.present_pct}%
+                          {opt.field}
                         </option>
                       ))}
                     </optgroup>
@@ -266,26 +290,11 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                     onChange={(v) => setFilter(i, { value: v })}
                   />
                 ) : (
-                  <>
-                    <input
-                      value={f.value}
-                      onChange={(e) => setFilter(i, { value: e.target.value })}
-                      list={`vals-${i}`}
-                      className="flex-1 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
-                      placeholder="value to match"
-                      spellCheck={false}
-                    />
-                    <datalist id={`vals-${i}`}>
-                      {[
-                        ...(profiled.find((o) => o.field === f.field)?.values ??
-                          []),
-                        ...(profiled.find((o) => o.field === f.field)
-                          ?.synced_values ?? []),
-                      ].map((v) => (
-                        <option key={String(v)} value={String(v)} />
-                      ))}
-                    </datalist>
-                  </>
+                  <ValuePicker
+                    value={f.value}
+                    onChange={(v) => setFilter(i, { value: v })}
+                    groups={valueGroups(profiled.find((o) => o.field === f.field))}
+                  />
                 )}
               </div>
               {(() => {
@@ -295,32 +304,12 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                   <div className="text-[11px] text-slate-500">
                     Seen on {prof.present} of {prof.sample_size} recent{" "}
                     {value.notificationType || value.family} events
-                    {prof.values.length > 0 ? (
-                      <>
-                        {" "}
-                        · values:{" "}
-                        <span className="font-mono text-slate-400">
-                          {prof.values.slice(0, 6).join(", ")}
-                        </span>
-                        {prof.distinct_count > 6
-                          ? ` +${prof.distinct_count - 6} more`
-                          : ""}
-                      </>
-                    ) : prof.distinct_count > 0 ? (
-                      ` · ${prof.distinct_count} distinct values (too many to list)`
-                    ) : null}
-                    {prof.synced_values && prof.synced_values.length > 0 ? (
-                      <div className="text-slate-500">
-                        Also selectable from Command:{" "}
-                        <span className="font-mono text-slate-400">
-                          {prof.synced_values.slice(0, 6).join(", ")}
-                        </span>
-                        {prof.synced_values.length > 6
-                          ? ` +${prof.synced_values.length - 6} more`
-                          : ""}{" "}
-                        — synced, not yet seen on camera
-                      </div>
-                    ) : null}
+                    {prof.values.length === 0 && prof.distinct_count > 0
+                      ? ` · ${prof.distinct_count} distinct values (too many to list — type one)`
+                      : ""}
+                    {prof.synced_values && prof.synced_values.length > 0
+                      ? ` · plus ${prof.synced_values.length} synced from Command, not yet seen on camera`
+                      : ""}
                   </div>
                 );
               })()}
