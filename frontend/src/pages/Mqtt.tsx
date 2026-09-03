@@ -710,9 +710,6 @@ function Figure({ type, color }: { type: string; color: string }) {
             <line x1="11.5" y1="28" x2="11.5" y2="37.5" />
             <g className="walk-shin">
               <line x1="11.5" y1="37.5" x2="11.5" y2="46" />
-              <g className="walk-foot">
-                <line x1="10.4" y1="46.3" x2="14.6" y2="46.3" />
-              </g>
             </g>
           </g>
         </g>
@@ -726,9 +723,6 @@ function Figure({ type, color }: { type: string; color: string }) {
           <line x1="11.5" y1="28" x2="11.5" y2="37.5" />
           <g className="walk-shin">
             <line x1="11.5" y1="37.5" x2="11.5" y2="46" />
-            <g className="walk-foot">
-              <line x1="10.4" y1="46.3" x2="14.6" y2="46.3" />
-            </g>
           </g>
         </g>
         <g className="walk-arm walk-phase-b">

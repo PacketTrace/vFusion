@@ -94,10 +94,14 @@ export default function Flows() {
   // Templates are flows you have not made yet, so they live here rather
   // than in a separate destination.
   const requestedTab = searchParams.get("tab");
+  // Templates first. Someone opening Automate either has flows already —
+  // in which case one click gets them there — or has none, and the
+  // useful answer to an empty list is the shelf of starting points
+  // rather than a panel saying there is nothing here.
   const tab =
-    requestedTab === "templates" || requestedTab === "runs"
+    requestedTab === "flows" || requestedTab === "runs"
       ? requestedTab
-      : "flows";
+      : "templates";
   const setTab = (next: string) => {
     const q = new URLSearchParams(searchParams);
     q.set("tab", next);

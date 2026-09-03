@@ -227,7 +227,6 @@ button:not(:disabled):active {
 
 .animate-walk .walk-leg,
 .animate-walk .walk-shin,
-.animate-walk .walk-foot,
 .animate-walk .walk-arm,
 .animate-walk .walk-forearm {
   transform-box: view-box;
@@ -248,17 +247,6 @@ button:not(:disabled):active {
 .animate-walk .walk-shin {
   transform-origin: 47.917% 78.125%; /* knee (11.5, 37.5) */
   animation-name: walk-knee;
-  animation-timing-function: linear;
-}
-
-/* The ankle. Rotating rigidly with the shin is what makes a figure look
-   like it is walking on its ankles: the foot swings through like a
-   pointed stump and never meets the ground flat. A real one counter-
-   rotates against the shin — toe up to clear the swing and to land heel
-   first, flat through mid-stance, pointed at push-off. */
-.animate-walk .walk-foot {
-  transform-origin: 47.917% 95.833%; /* ankle (11.5, 46) */
-  animation-name: walk-ankle;
   animation-timing-function: linear;
 }
 
@@ -287,37 +275,49 @@ button:not(:disabled):active {
   animation: walk-bob 500ms var(--ease-in-out) infinite;
 }
 
+/* A note on signs, because getting them wrong produced a moonwalk that
+   was otherwise a perfectly good walk cycle.
+ *
+ * SVG's y axis points down, so rotate() is clockwise on screen. A limb
+ * hanging from a joint has its far end at +y, and rotating it by a
+ * positive angle sends that end towards -x — backwards, for a figure
+ * facing right. Every "forward" here is therefore negative, and knee
+ * flexion (heel back and up) is positive. The first pass had both
+ * inverted, which cancelled out into a coherent gait running the wrong
+ * way: legs reaching back at contact, knees bending forwards.
+ */
+
 /* Hip. Furthest forward at contact, furthest back at toe-off, and the
    return swing is quicker than the stance it replaces. */
 @keyframes walk-thigh {
-  0%   { transform: rotate(21deg); }
-  15%  { transform: rotate(13deg); }
-  32%  { transform: rotate(1deg); }
-  50%  { transform: rotate(-19deg); }
-  64%  { transform: rotate(-7deg); }
-  82%  { transform: rotate(13deg); }
-  100% { transform: rotate(21deg); }
+  0%   { transform: rotate(-21deg); }
+  15%  { transform: rotate(-13deg); }
+  32%  { transform: rotate(-1deg); }
+  50%  { transform: rotate(19deg); }
+  64%  { transform: rotate(7deg); }
+  82%  { transform: rotate(-13deg); }
+  100% { transform: rotate(-21deg); }
 }
 
 /* Knee. Never hyperextends — every value is flexion. The small dip at
    12% is the loading response, the body absorbing its own weight; the
    deep fold at 62% is what lets the foot pass the standing one. */
 @keyframes walk-knee {
-  0%   { transform: rotate(-4deg); }
-  12%  { transform: rotate(-17deg); }
-  30%  { transform: rotate(-6deg); }
-  48%  { transform: rotate(-33deg); }
-  62%  { transform: rotate(-61deg); }
-  80%  { transform: rotate(-27deg); }
-  93%  { transform: rotate(-5deg); }
-  100% { transform: rotate(-4deg); }
+  0%   { transform: rotate(4deg); }
+  12%  { transform: rotate(17deg); }
+  30%  { transform: rotate(6deg); }
+  48%  { transform: rotate(33deg); }
+  62%  { transform: rotate(61deg); }
+  80%  { transform: rotate(27deg); }
+  93%  { transform: rotate(5deg); }
+  100% { transform: rotate(4deg); }
 }
 
 /* Shoulder. Roughly two thirds the leg's throw, as arms do. */
 @keyframes walk-shoulder {
-  0%   { transform: rotate(15deg); }
-  50%  { transform: rotate(-15deg); }
-  100% { transform: rotate(15deg); }
+  0%   { transform: rotate(-15deg); }
+  50%  { transform: rotate(15deg); }
+  100% { transform: rotate(-15deg); }
 }
 
 /* Elbow. Held bent throughout and bent most at the front of the swing —
@@ -326,20 +326,6 @@ button:not(:disabled):active {
   0%   { transform: rotate(-27deg); }
   50%  { transform: rotate(-11deg); }
   100% { transform: rotate(-27deg); }
-}
-
-/* Ankle, relative to the shin. The values are what is left after the
-   thigh and knee have had their say, so the foot lands close to flat
-   and pushes off pointed rather than tracking the shin all the way
-   round. */
-@keyframes walk-ankle {
-  0%   { transform: rotate(-22deg); }  /* heel strike, toe up */
-  14%  { transform: rotate(2deg); }    /* foot flat */
-  32%  { transform: rotate(4deg); }    /* mid-stance, weight over it */
-  48%  { transform: rotate(24deg); }   /* push-off, toe pointed */
-  62%  { transform: rotate(-2deg); }   /* toe lifts to clear */
-  80%  { transform: rotate(-16deg); }
-  100% { transform: rotate(-22deg); }
 }
 
 @keyframes walk-bob {
