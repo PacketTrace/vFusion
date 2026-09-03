@@ -586,12 +586,28 @@ async def _stream_context(
 
 
 def _stream_query(org_id: str, camera_id: str, jwt: str) -> dict[str, str]:
+    """Query for the live HLS stream.
+
+    low_res, not high_res, and the reason is the whole feature: Verkada
+    serves high_res as HEVC and low_res as H.264. No transcode flag
+    changes that -- transcode=true still returns hevc at high_res. HEVC
+    is why nothing rendered: Chrome downloaded segments and decoded
+    nothing, and the codebase's existing consumers all run the stream
+    through ffmpeg, which decodes it happily and hid the problem.
+
+    low_res also happens to publish three segments rather than two,
+    which satisfies the three-target-durations rule Safari enforces
+    before it will start a live stream.
+
+    Resolution costs nothing here: the boxes are normalised coordinates
+    and scale to whatever size the video renders at.
+    """
     return {
         "org_id": org_id,
         "camera_id": camera_id,
-        "resolution": "high_res",
+        "resolution": "low_res",
         "type": "stream",
-        "codec": "hevc",
+        "codec": "h264",
         "transcode": "false",
         "start_time": "0",
         "end_time": "0",
@@ -725,7 +741,8 @@ async def stream_segment(
     if not _SEGMENT_RE.match(name):
         raise HTTPException(status_code=400, detail="bad segment name")
 
-    cached = _SEG_CACHE.get(name)
+    key = f"{camera_id}/{name}"
+    cached = _SEG_CACHE.get(key)
     if cached is None:
         base, org_id, jwt = await _stream_context(session, connection_id)
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -738,11 +755,11 @@ async def stream_segment(
                 status_code=502, detail=f"segment failed: HTTP {res.status_code}"
             )
         cached = res.content
-        _SEG_CACHE[name] = cached
+        _SEG_CACHE[key] = cached
         while len(_SEG_CACHE) > _SEG_CACHE_MAX:
             _SEG_CACHE.popitem(last=False)
     else:
-        _SEG_CACHE.move_to_end(name)
+        _SEG_CACHE.move_to_end(key)
 
     size = len(cached)
     headers = {
