@@ -17,8 +17,10 @@ operators can iterate on a prompt + Helix mapping using their own
 sample footage before committing to a real flow.
 """
 
+import asyncio
 import json as _json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -28,6 +30,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.byoa import analytics_store
 
 from app.connectors.verkada.footage import CLIP_ROOT, IMAGE_ROOT
 from app.db import get_session
@@ -630,3 +634,209 @@ async def dry_run(
     await pool.enqueue_job("run_byoa_upload", str(run.id))
 
     return DryRunResponse(run_id=run.id, media_kind=media_kind)
+
+
+# ---------------------------------------------------------------------------
+# Compose an analytic from a description
+# ---------------------------------------------------------------------------
+
+# The generated prompt has to produce JSON whose keys line up with the
+# Helix schema's attributes, because the mapping between them is
+# mechanical. Asking for all three in one response is what keeps them
+# consistent -- generating a prompt and a schema separately is how you
+# get an attribute nothing ever populates.
+COMPOSE_MODELS = ("gemini-2.5-pro", "gemini-2.5-flash")
+
+COMPOSE_PROMPT = """You design video analytics for security cameras.
+
+The operator will describe, in their own words, something they want a
+camera to watch for. Turn it into three things that must agree with each
+other:
+
+1. A prompt for a vision model that analyses one still frame or a short
+   clip and answers with ONLY a JSON object -- no prose, no code fence.
+2. A Helix event type: a short human name and a flat schema of
+   attributes, one per field the prompt returns.
+3. A mapping from each Helix attribute to the JSON key that fills it.
+
+Rules that matter:
+- Every JSON key the prompt promises MUST have a Helix attribute, and
+  every attribute MUST be filled by a key. No orphans either way.
+- Keep it to 2-4 fields. More fields means more for the model to get
+  wrong, and Helix rows become unreadable.
+- All Helix attribute types are "string". Numbers and booleans go in as
+  strings.
+- Free-text fields must carry a hard character cap in the prompt --
+  Helix truncates long values. 200 characters is a good cap.
+- Tell the model what to answer when the thing is absent: a "none" or
+  "unknown" value, never an empty response.
+- Include two or three short example outputs in the prompt. They do more
+  for reliability than any amount of instruction.
+- Helix attribute names are Title Case and human readable. JSON keys are
+  lowercase_snake.
+
+Respond with ONLY this JSON object:
+
+{
+  "name": "short name for this analytic, Title Case",
+  "summary": "one sentence on what it detects and when to use it",
+  "prompt": "the full prompt text for the vision model",
+  "helix_event_type": {
+    "name": "Helix event type name, may start with one emoji",
+    "event_schema": {"Attribute Name": "string"}
+  },
+  "helix_attribute_mapping": {"Attribute Name": "{{ output.json.key }}"}
+}
+
+The operator asked for:
+__INTENT__
+"""
+
+
+class ComposeRequest(BaseModel):
+    intent: str
+    gemini_connection_id: UUID | None = None
+
+
+def _compose(api_key: str, intent: str) -> tuple[dict[str, Any], str]:
+    """Generate an analytic. Returns (parsed, model that answered)."""
+    from google import genai
+
+    prompt = COMPOSE_PROMPT.replace("__INTENT__", intent.strip())
+    client = genai.Client(api_key=api_key)
+    last: Exception | None = None
+    for model in COMPOSE_MODELS:
+        try:
+            res = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": 4096,
+                },
+            )
+            text = (res.text or "").strip()
+            if not text:
+                raise RuntimeError("model returned an empty response")
+            return _json.loads(text), model
+        except Exception as e:  # noqa: BLE001 — try the next model
+            last = e
+            continue
+    raise RuntimeError(f"could not compose an analytic: {last}")
+
+
+def _validate_composed(data: Any) -> dict[str, Any]:
+    """Reject anything whose three parts do not line up.
+
+    A prompt promising a key nothing maps, or an attribute no key fills,
+    produces an analytic that runs and quietly logs blanks -- the failure
+    only shows up in Helix days later.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("response was not an object")
+    for key in ("name", "prompt", "helix_event_type", "helix_attribute_mapping"):
+        if not data.get(key):
+            raise ValueError(f"response is missing {key!r}")
+
+    het = data["helix_event_type"]
+    if not isinstance(het, dict) or not isinstance(het.get("event_schema"), dict):
+        raise ValueError("helix_event_type needs a name and an event_schema")
+
+    mapping = data["helix_attribute_mapping"]
+    if not isinstance(mapping, dict):
+        raise ValueError("helix_attribute_mapping must be an object")
+
+    attrs = set(het["event_schema"])
+    mapped = set(mapping)
+    if attrs != mapped:
+        missing = ", ".join(sorted(attrs - mapped)) or "none"
+        extra = ", ".join(sorted(mapped - attrs)) or "none"
+        raise ValueError(
+            f"schema and mapping disagree — attributes with no mapping: {missing}; "
+            f"mappings with no attribute: {extra}"
+        )
+
+    # Every mapping should reference a JSON key the prompt asks for.
+    prompt_text = str(data["prompt"])
+    unreferenced = [
+        attr
+        for attr, ref in mapping.items()
+        if isinstance(ref, str)
+        and ref.strip().startswith("{{")
+        and (m := re.search(r"output\.json\.([A-Za-z0-9_]+)", ref))
+        and m.group(1) not in prompt_text
+    ]
+    if unreferenced:
+        raise ValueError(
+            "the prompt never mentions the JSON keys behind: "
+            + ", ".join(unreferenced)
+        )
+
+    het.setdefault("event_type_uid", "")
+    data["helix_event_type"] = {
+        "event_type_uid": het.get("event_type_uid") or "",
+        "name": str(het.get("name") or data["name"]),
+        "event_schema": {str(k): "string" for k in het["event_schema"]},
+    }
+    return data
+
+
+@router.post("/compose")
+async def compose(
+    body: ComposeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Turn a plain-language description into a runnable analytic."""
+    if not body.intent.strip():
+        raise HTTPException(status_code=400, detail="describe what you want to detect")
+
+    q = select(Connection).where(Connection.type == "gemini")
+    if body.gemini_connection_id:
+        q = q.where(Connection.id == body.gemini_connection_id)
+    conn = (await session.execute(q)).scalars().first()
+    if conn is None:
+        raise HTTPException(status_code=400, detail="no Gemini connection configured")
+    try:
+        secret = decrypt_secret(conn.encrypted_secret)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="could not decrypt connection") from e
+    api_key = secret.get("api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Gemini connection has no api_key")
+
+    try:
+        raw, model = await asyncio.to_thread(_compose, api_key, body.intent)
+        analytic = _validate_composed(raw)
+    except (ValueError, _json.JSONDecodeError) as e:
+        raise HTTPException(status_code=422, detail=f"the model's answer was unusable: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    analytic["model"] = model
+    return analytic
+
+
+class SaveAnalyticRequest(BaseModel):
+    name: str
+    summary: str | None = None
+    prompt: str
+    helix_event_type: dict[str, Any]
+    helix_attribute_mapping: dict[str, str]
+
+
+@router.get("/analytics")
+async def list_analytics() -> list[dict[str, Any]]:
+    """Analytics saved from a description, for the template picker."""
+    return analytics_store.list_all()
+
+
+@router.post("/analytics")
+async def save_analytic(body: SaveAnalyticRequest) -> dict[str, Any]:
+    return await analytics_store.add(body.model_dump())
+
+
+@router.delete("/analytics/{analytic_id}")
+async def delete_analytic(analytic_id: str) -> dict[str, bool]:
+    if not await analytics_store.remove(analytic_id):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"deleted": True}

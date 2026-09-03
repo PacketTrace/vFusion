@@ -347,12 +347,26 @@ export default function Byoa() {
   // Merge templates: user entries first, then built-ins. User templates
   // never carry Helix pairing (no UI for setting it yet) so they coerce
   // to the same BuiltinTemplate shape with the optional fields absent.
+  // Analytics composed from a description. Stored with their Helix
+  // pairing intact, so they enter the picker as paired templates and
+  // get the same "create the event type" treatment as the built-ins.
+  const savedAnalytics = useQuery({
+    queryKey: ["byoa-analytics"],
+    queryFn: () => apiGet<SavedAnalytic[]>("/api/byoa/analytics"),
+  });
+
   const allTemplates = useMemo<BuiltinTemplate[]>(
     () => [
+      ...(savedAnalytics.data ?? []).map((a) => ({
+        name: a.name,
+        value: a.prompt,
+        helix_event_type: a.helix_event_type,
+        helix_attribute_mapping: a.helix_attribute_mapping,
+      })),
       ...(userTemplates.data ?? []).map((t) => ({ name: t.name, value: t.value })),
       ...(builtinTemplates.data ?? []),
     ],
-    [userTemplates.data, builtinTemplates.data],
+    [savedAnalytics.data, userTemplates.data, builtinTemplates.data],
   );
 
   // The template the operator picked most recently. Held in local state
@@ -843,6 +857,21 @@ export default function Byoa() {
           />
           </>
         )}
+
+        <AnalyticComposer
+          geminiConnectionId={geminiConnId}
+          onUse={(a) => {
+            setPrompt(a.prompt);
+            setPickedTemplate({
+              name: a.name,
+              value: a.prompt,
+              helix_event_type: a.helix_event_type,
+              helix_attribute_mapping: a.helix_attribute_mapping,
+            });
+            setPostToHelix(true);
+          }}
+          onSaved={() => savedAnalytics.refetch()}
+        />
 
         <Field label="Prompt" required>
           {allTemplates.length > 0 && (
@@ -1470,6 +1499,183 @@ function CostEstimate({
         Actual cost shows up on the Stats page after the run. Google's
         billing is the source of truth.
       </div>
+    </div>
+  );
+}
+
+
+interface ComposedAnalytic {
+  name: string;
+  summary?: string;
+  prompt: string;
+  helix_event_type: {
+    event_type_uid: string;
+    name: string;
+    event_schema: Record<string, string>;
+  };
+  helix_attribute_mapping: Record<string, string>;
+  model?: string;
+}
+
+interface SavedAnalytic extends ComposedAnalytic {
+  id: string;
+  created_at: string;
+}
+
+/** Describe an analytic in words; get back a prompt, a Helix event type
+ *  and the mapping between them.
+ *
+ *  Those three have to agree — every JSON key the prompt promises needs
+ *  an attribute, and every attribute needs a key — and writing them by
+ *  hand is where people come unstuck. Generating them together is the
+ *  only way they stay consistent, so the model is asked for all three at
+ *  once and the server rejects a set that does not line up.
+ */
+function AnalyticComposer({
+  geminiConnectionId,
+  onUse,
+  onSaved,
+}: {
+  geminiConnectionId: string | null;
+  onUse: (a: ComposedAnalytic) => void;
+  onSaved: () => void;
+}) {
+  const [intent, setIntent] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const compose = useMutation({
+    mutationFn: () =>
+      apiPost<ComposedAnalytic>("/api/byoa/compose", {
+        intent,
+        gemini_connection_id: geminiConnectionId,
+      }),
+  });
+
+  const save = useMutation({
+    mutationFn: (a: ComposedAnalytic) =>
+      apiPost<SavedAnalytic>("/api/byoa/analytics", {
+        name: a.name,
+        summary: a.summary,
+        prompt: a.prompt,
+        helix_event_type: a.helix_event_type,
+        helix_attribute_mapping: a.helix_attribute_mapping,
+      }),
+    onSuccess: onSaved,
+  });
+
+  const a = compose.data;
+
+  return (
+    <div className="mb-4 rounded-lg border border-white/15 bg-white/5 p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-sm text-slate-200">
+          Describe an analytic and have it built
+        </span>
+        <span className="text-xs text-slate-500">{open ? "Hide" : "Open"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={intent}
+            onChange={(e) => setIntent(e.target.value)}
+            rows={2}
+            placeholder="e.g. tell me when a delivery van is parked in the driveway, and who the carrier is"
+            className="w-full px-2 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => compose.mutate()}
+              disabled={!intent.trim() || compose.isPending}
+              className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white disabled:opacity-40"
+            >
+              {compose.isPending ? "Building…" : "Build it"}
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Writes the prompt, the Helix event type and the mapping between
+              them.
+            </span>
+          </div>
+
+          {compose.isError && (
+            <p className="text-xs text-rose-300">
+              {(compose.error as Error).message}
+            </p>
+          )}
+
+          {a && (
+            <div className="mt-2 rounded border border-slate-700 bg-slate-950/60 p-3 space-y-3">
+              <div>
+                <div className="text-sm text-slate-100">{a.name}</div>
+                {a.summary && (
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {a.summary}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+                  Helix event type · {a.helix_event_type.name}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.keys(a.helix_event_type.event_schema).map((attr) => (
+                    <span
+                      key={attr}
+                      className="text-[11px] px-2 py-0.5 rounded border border-white/10 bg-white/5 text-slate-300 font-mono"
+                      title={a.helix_attribute_mapping[attr]}
+                    >
+                      {attr}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <details>
+                <summary className="text-[11px] text-slate-500 cursor-pointer">
+                  The prompt it wrote
+                </summary>
+                <pre className="mt-1 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-56 overflow-y-auto">
+                  {a.prompt}
+                </pre>
+              </details>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onUse(a)}
+                  className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white"
+                >
+                  Use it
+                </button>
+                <button
+                  type="button"
+                  onClick={() => save.mutate(a)}
+                  disabled={save.isPending || save.isSuccess}
+                  className="text-sm px-3 py-1.5 rounded border border-slate-600 text-slate-200 hover:border-sky-500 disabled:opacity-40"
+                >
+                  {save.isSuccess ? "Saved" : save.isPending ? "Saving…" : "Save for reuse"}
+                </button>
+                {a.model && (
+                  <span className="text-[11px] text-slate-600">
+                    written by {a.model}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                "Use it" loads the prompt and turns on Helix posting — vFusion
+                will offer to create the event type on your org if it does not
+                exist yet. Nothing is written to Verkada until then.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
