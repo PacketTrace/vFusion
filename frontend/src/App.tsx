@@ -66,8 +66,16 @@ function AppShell() {
     <div className="h-full flex flex-col">
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
-          <div className="font-semibold text-white tracking-tight">
-            {brand}
+          {/* Two nuclei drift toward each other, meet, and release a
+              flash — a fusion event, at the size and frequency of a
+              blinking cursor. Ambient rather than attention-seeking:
+              one cycle every eight seconds, and nothing moves at all
+              under prefers-reduced-motion. */}
+          <div className="brand-mark font-semibold text-white tracking-tight relative select-none">
+            <span className="brand-nucleus brand-nucleus-a" aria-hidden="true" />
+            <span className="brand-nucleus brand-nucleus-b" aria-hidden="true" />
+            <span className="brand-flash" aria-hidden="true" />
+            <span className="relative">{brand}</span>
           </div>
           <nav className="flex items-center gap-1">
             <NavLink
