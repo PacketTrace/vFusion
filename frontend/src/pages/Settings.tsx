@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import Connections from "./Connections";
+import Stats from "./Stats";
 
 import { ONBOARDING_QUERY_KEY } from "../components/OnboardingGate";
 import {
@@ -29,7 +30,9 @@ export default function Settings() {
   // own top-level destination — it is set up once and then rarely
   // touched, unlike the pages people work in daily.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "connections" ? "connections" : "retention";
+  const requested = searchParams.get("tab");
+  const tab =
+    requested === "connections" || requested === "stats" ? requested : "retention";
   const setTab = (next: string) => {
     const p = new URLSearchParams(searchParams);
     p.set("tab", next);
@@ -43,12 +46,15 @@ export default function Settings() {
         <p className="text-slate-400 text-sm mt-1">
           {tab === "connections"
             ? "Verkada orgs and Gemini keys this instance can use."
-            : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
+            : tab === "stats"
+              ? "Counters for ingest, flow runs, spend and on-disk storage."
+              : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
         </p>
         <div className="mt-4 flex items-center gap-1 border-b border-white/10">
           {[
             { key: "retention", label: "Retention" },
             { key: "connections", label: "Connections" },
+            { key: "stats", label: "Stats" },
           ].map((t) => (
             <button
               key={t.key}
@@ -67,6 +73,7 @@ export default function Settings() {
       </div>
 
       {tab === "connections" && <Connections />}
+      {tab === "stats" && <Stats />}
       {tab === "retention" && (
       <>
 

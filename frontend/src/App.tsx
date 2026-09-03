@@ -112,14 +112,6 @@ function AppShell() {
               Workbench
             </NavLink>
             <NavLink
-              to="/stats"
-              className={({ isActive }) =>
-                `${navItem} ${isActive ? navActive : navInactive}`
-              }
-            >
-              Stats
-            </NavLink>
-            <NavLink
               to="/mqtt"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
