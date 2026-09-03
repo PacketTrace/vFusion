@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
 
 import re
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
 from app.connectors.verkada.footage import FootageError, get_stream_key
@@ -543,6 +543,19 @@ _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+\.(m4s|mp4|ts)$")
 
 STREAM_BASE = "/stream/cameras/v1/footage/stream"
 
+# Upstream publishes a two-segment window -- eight seconds against a
+# four-second target duration. Apple's spec says a client should not start
+# playback until a live playlist holds three target durations, so Safari
+# fetches the init segment and then reloads the playlist forever without
+# ever requesting media. hls.js ignores the rule and plays, which is why
+# this looked like a Safari-only codec problem.
+#
+# So remember the segments we have already seen and republish a longer
+# window. The names stay valid upstream for a while, and anything we
+# served recently is still in the segment cache.
+_WINDOW: "dict[str, deque]" = {}
+_WINDOW_SEGMENTS = 6
+
 
 async def _stream_context(
     session: AsyncSession, connection_id: UUID | None
@@ -611,18 +624,52 @@ async def stream_playlist(
             status_code=502, detail=f"stream playlist failed: HTTP {res.status_code}"
         )
 
-    lines: list[str] = []
+    header: list[str] = []
+    fresh: list[tuple[str, list[str]]] = []
+    pending: list[str] = []
+    upstream_seq = 0
     for line in res.text.splitlines():
         if line.startswith("#EXT-X-MAP:"):
             m = re.search(r'URI="([^"?]+)', line)
             if m:
-                line = f'#EXT-X-MAP:URI="seg/{m.group(1)}"'
-        elif line and not line.startswith("#"):
-            line = f"seg/{line.split('?', 1)[0]}"
-        lines.append(line)
+                header.append(f'#EXT-X-MAP:URI="seg/{m.group(1)}"')
+            continue
+        if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
+            try:
+                upstream_seq = int(line.split(":", 1)[1])
+            except ValueError:
+                upstream_seq = 0
+            continue
+        if line.startswith("#EXTINF") or line.startswith("#EXT-X-PROGRAM-DATE-TIME"):
+            pending.append(line)
+            continue
+        if line.startswith("#"):
+            header.append(line)
+            continue
+        if line:
+            fresh.append((line.split("?", 1)[0], pending))
+            pending = []
+
+    window = _WINDOW.setdefault(camera_id, deque(maxlen=_WINDOW_SEGMENTS))
+    known = {name for name, _ in window}
+    for name, tags in fresh:
+        if name not in known:
+            window.append((name, tags))
+
+    names = [name for name, _ in window]
+    # MEDIA-SEQUENCE must number the first segment we publish, which is
+    # older than the first one upstream is currently advertising.
+    older = 0
+    if fresh:
+        first_upstream = fresh[0][0]
+        older = names.index(first_upstream) if first_upstream in names else 0
+    body = header + [f"#EXT-X-MEDIA-SEQUENCE:{max(0, upstream_seq - older)}"]
+    for name, tags in window:
+        body.extend(tags)
+        body.append(f"seg/{name}")
 
     return Response(
-        content="\n".join(lines) + "\n",
+        content="\n".join(body) + "\n",
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-store"},
     )
