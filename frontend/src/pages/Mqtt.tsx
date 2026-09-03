@@ -406,13 +406,45 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
     setError(null);
     setPlaying(false);
     const src = `${API_BASE}/api/mqtt/stream/${cameraId}/index.m3u8`;
+    let cancelled = false;
+
+    // Fetch the playlist ourselves first. A <video> that cannot load its
+    // source reports nothing useful — it just stays black — so this turns
+    // an auth failure or an upstream error into a message instead of a
+    // blank rectangle.
+    fetch(src, { credentials: "include" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          setError(
+            `Stream unavailable (HTTP ${res.status}). ${body.slice(0, 200)}`,
+          );
+          return;
+        }
+        // The camera sends HEVC. Where MSE cannot decode it, hls.js will
+        // attach and play silently to a black frame, so check up front.
+        const hevcOk =
+          typeof MediaSource !== "undefined" &&
+          MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"');
+        if (!video.canPlayType("application/vnd.apple.mpegurl") && !hevcOk) {
+          setError(
+            "This browser cannot decode HEVC, which is the only codec this " +
+              "camera streams. Safari plays it; Chrome only does with hardware support.",
+          );
+        }
+      })
+      .catch((e) => !cancelled && setError(`Stream request failed: ${e}`));
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      // Safari plays HLS natively, and is also the browser most likely to
-      // decode this camera's HEVC.
+      // Safari plays HLS natively. The playlist is on the API origin, so
+      // it needs credentials — without this the request goes out without
+      // the session cookie and 401s invisibly.
+      video.crossOrigin = "use-credentials";
       video.src = src;
       video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
       return () => {
+        cancelled = true;
         video.removeAttribute("src");
         video.load();
       };
@@ -441,6 +473,7 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
       );
     });
     return () => {
+      cancelled = true;
       hls.destroy();
       hlsRef.current = null;
     };
