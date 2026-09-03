@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import mqtt_config as mqtt_api
+from app.api import onvif as onvif_api
 from app.api import rtsp as rtsp_api
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
@@ -98,6 +99,13 @@ _PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/api/auth",
     "/api/config",
     "/api/health",
+    # ONVIF is not unauthenticated — it authenticates differently. A
+    # camera client proves itself with a WS-UsernameToken digest inside
+    # the SOAP envelope, checked per operation in app/api/onvif.py, and
+    # has no way to obtain or present a session cookie. Leaving it behind
+    # this gate means the Connector gets a 401 it cannot interpret before
+    # any of that runs.
+    "/onvif",
     # FastAPI's interactive docs — handy in dev, harmless in prod since
     # they only describe the API surface, not its data.
     "/docs",
@@ -147,6 +155,7 @@ app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(mqtt_api.router)
 app.include_router(rtsp_api.router)
+app.include_router(onvif_api.router)
 app.include_router(settings_api.router)
 
 

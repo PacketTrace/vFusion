@@ -147,7 +147,10 @@ class Pump:
 
         state = settings.get()
         self._encoder = await asyncio.create_subprocess_exec(
-            *_encoder_cmd(settings.publish_url(state)),
+            *_encoder_cmd(
+                settings.publish_url(state),
+                settings.publish_url(state, settings.sub_stream(state)),
+            ),
             stdin=self._read_fd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
@@ -321,21 +324,50 @@ def _standby_cmd() -> list[str]:
     ] + _raw_out()
 
 
-def _encoder_cmd(target: str) -> list[str]:
+def _h264(bitrate: str) -> list[str]:
+    return [
+        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+        "-profile:v", "main", "-pix_fmt", "yuv420p",
+        # A keyframe every second. A client can only start decoding at
+        # one, so this bounds how long "connected" takes to become
+        # "showing a picture".
+        "-g", str(settings.FPS), "-keyint_min", str(settings.FPS),
+        "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate,
+    ]
+
+
+def _encoder_cmd(main: str, sub: str) -> list[str]:
+    """One process, three outputs: main stream, sub-stream, snapshot.
+
+    Three ffmpeg processes reading the same source would need the frames
+    fanned out to each, and a pipe has one reader. Splitting inside a
+    single filter graph decodes once and keeps all three outputs on one
+    process — so they share a lifetime, and the sub-stream cannot drop
+    while the main one stays up.
+
+    It also means any output failing takes the whole encoder down, which
+    is the right trade: a client watching a sub-stream that silently died
+    while the device still claims to offer it is worse than a restart.
+    """
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-f", "rawvideo", "-pix_fmt", "yuv420p",
         "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
         "-i", "pipe:0",
-        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-        "-profile:v", "main", "-pix_fmt", "yuv420p",
-        # A keyframe every second. The Connector can only start decoding
-        # at one, so this bounds how long "connected" takes to become
-        # "showing a picture".
-        "-g", str(settings.FPS), "-keyint_min", str(settings.FPS),
-        "-b:v", settings.BITRATE, "-maxrate", settings.BITRATE,
-        "-bufsize", settings.BITRATE,
-        "-f", "rtsp", "-rtsp_transport", "tcp", target,
+        "-filter_complex",
+        (
+            f"[0:v]split=3[main][s][j];"
+            f"[s]scale={settings.SUB_WIDTH}:{settings.SUB_HEIGHT}[sub];"
+            f"[j]fps=1[snap]"
+        ),
+        "-map", "[main]", *_h264(settings.BITRATE),
+        "-f", "rtsp", "-rtsp_transport", "tcp", main,
+        "-map", "[sub]", *_h264(settings.SUB_BITRATE),
+        "-f", "rtsp", "-rtsp_transport", "tcp", sub,
+        # Overwritten in place rather than accumulating files. ONVIF's
+        # GetSnapshotUri points at whatever this last wrote.
+        "-map", "[snap]", "-c:v", "mjpeg", "-q:v", "6",
+        "-update", "1", "-f", "image2", str(settings.SNAPSHOT_PATH),
     ]
 
 

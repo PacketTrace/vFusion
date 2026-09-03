@@ -26,6 +26,10 @@ type Status = {
   height: number;
   fps: number;
   port: number;
+  sub_width: number;
+  sub_height: number;
+  onvif_port: number;
+  onvif_url: string;
   readers: number | null;
   queued: number;
   played: number;
@@ -245,23 +249,50 @@ export default function Rtsp() {
 
         {s?.url && s.read_password && (
           <div className="mt-4 space-y-2">
+            {/* ONVIF first. It is the same device either way, but the
+                Connector gets more from it — two profiles, a snapshot
+                and the encoder settings — where RTSP hands over a URL
+                and nothing else. */}
             <p className="text-[11px] text-slate-400">
               In Command: <strong className="text-slate-200">Add Cameras</strong> →{" "}
-              <strong className="text-slate-200">RTSP</strong>, then paste these.
+              <strong className="text-slate-200">IP</strong>. Put the same address
+              in both range boxes.
               {!s.enabled && (
                 <span className="text-slate-500">
                   {" "}
-                  They exist as soon as an address is saved, so you can test the
-                  stream yourself before pointing Verkada at it — but nothing
-                  answers on that URL until it is on.
+                  These exist as soon as an address is saved, so you can test
+                  before pointing Verkada at it — but nothing answers until the
+                  stream is on.
                 </span>
               )}
             </p>
-            <CopyRow label="RTSP URL (HQ)" value={s.url} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <CopyRow label="IP address from / to" value={s.advertise_host} />
+              <CopyRow label="Port number" value={String(s.onvif_port)} />
+              <div className="text-[10px] text-slate-500 self-end pb-1.5">
+                Two profiles: {s.width}×{s.height} main, {s.sub_width}×
+                {s.sub_height} sub, plus a JPEG snapshot.
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <CopyRow label="Username" value={s.read_username} />
               <CopyRow label="Password" value={s.read_password} secret />
             </div>
+
+            <details className="pt-1">
+              <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">
+                Or add it as a plain RTSP URL
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p className="text-[11px] text-slate-500">
+                  The <strong className="text-slate-400">RTSP</strong> tab, same
+                  credentials. One stream, no snapshot, and the Connector learns
+                  nothing about the encoder — worth using only for something that
+                  cannot speak ONVIF.
+                </p>
+                <CopyRow label="RTSP URL (HQ)" value={s.url} />
+              </div>
+            </details>
             <button
               type="button"
               onClick={() => rotate.mutate()}

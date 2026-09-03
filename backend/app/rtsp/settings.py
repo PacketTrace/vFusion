@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import secrets
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,24 @@ WIDTH = int(os.environ.get("RTSP_WIDTH", "1920"))
 HEIGHT = int(os.environ.get("RTSP_HEIGHT", "1080"))
 FPS = int(os.environ.get("RTSP_FPS", "24"))
 BITRATE = os.environ.get("RTSP_BITRATE", "3000k")
+
+# The sub-stream. Real cameras advertise a second, smaller profile and
+# clients reach for it for thumbnails, previews and multi-up views; a
+# device offering only a full-rate stream makes those pull 1080p they do
+# not want. It is a second output on the same encoder rather than a
+# second process, so it shares the decode and the pipe.
+SUB_WIDTH = int(os.environ.get("RTSP_SUB_WIDTH", "640"))
+SUB_HEIGHT = int(os.environ.get("RTSP_SUB_HEIGHT", "360"))
+SUB_BITRATE = os.environ.get("RTSP_SUB_BITRATE", "400k")
+
+# ONVIF clients ask for a JPEG. One frame a second, overwritten in place,
+# written by the same encoder as a third output.
+SNAPSHOT_PATH = Path(os.environ.get("RTSP_SNAPSHOT_FILE", "/app/data/rtsp/snapshot.jpg"))
+
+# The port the ONVIF client is told to reach. The device services live in
+# the backend app, so this is a second published mapping onto the same
+# container port rather than a separate server.
+ONVIF_PUBLIC_PORT = int(os.environ.get("ONVIF_PUBLIC_PORT", "8000"))
 
 # Where the publisher connects. Inside the compose network the sidecar
 # answers to its service name; what we hand Verkada is a LAN address,
@@ -83,6 +102,10 @@ def _blank() -> dict[str, Any]:
         "publish_username": "vfusion",
         "publish_password": "",
         "loop": False,
+        # Stable for the life of the install. ONVIF clients key a device
+        # on its EndpointReference, and a value that changed on restart
+        # would look like a different camera every time.
+        "device_uuid": "",
     }
 
 
@@ -117,7 +140,25 @@ def public() -> dict[str, Any]:
         "height": HEIGHT,
         "fps": FPS,
         "port": PUBLIC_PORT,
+        "sub_width": SUB_WIDTH,
+        "sub_height": SUB_HEIGHT,
+        "onvif_port": ONVIF_PUBLIC_PORT,
+        "onvif_url": onvif_url(current),
     }
+
+
+def sub_stream(state: dict[str, Any] | None = None) -> str:
+    current = state or get()
+    return f"{current.get('stream') or DEFAULT_STREAM}_sub"
+
+
+def onvif_url(state: dict[str, Any] | None = None) -> str:
+    """The device service address, or "" if we have no host to put in it."""
+    current = state or get()
+    host = str(current.get("advertise_host") or "").strip()
+    if not host:
+        return ""
+    return f"http://{host}:{ONVIF_PUBLIC_PORT}/onvif/device_service"
 
 
 def url_for(state: dict[str, Any] | None = None) -> str:
@@ -129,13 +170,31 @@ def url_for(state: dict[str, Any] | None = None) -> str:
     return f"rtsp://{host}:{PUBLIC_PORT}/{current.get('stream') or DEFAULT_STREAM}"
 
 
-def publish_url(state: dict[str, Any] | None = None) -> str:
+def publish_url(
+    state: dict[str, Any] | None = None, stream: str | None = None
+) -> str:
     """Where the encoder pushes, inside the compose network."""
     current = state or get()
     user = current.get("publish_username") or "vfusion"
     pw = current.get("publish_password") or ""
-    stream = current.get("stream") or DEFAULT_STREAM
-    return f"rtsp://{user}:{pw}@{INTERNAL_HOST}:{PORT}/{stream}"
+    path = stream or current.get("stream") or DEFAULT_STREAM
+    return f"rtsp://{user}:{pw}@{INTERNAL_HOST}:{PORT}/{path}"
+
+
+def stream_url(state: dict[str, Any] | None = None, stream: str | None = None) -> str:
+    """What a client is told to pull, with no credentials in it.
+
+    ONVIF hands the URI over separately from the credentials, and a URL
+    carrying an embedded password ends up in client logs and config
+    exports. The client authenticates with the same user it used for
+    ONVIF itself.
+    """
+    current = state or get()
+    host = str(current.get("advertise_host") or "").strip()
+    if not host:
+        return ""
+    path = stream or current.get("stream") or DEFAULT_STREAM
+    return f"rtsp://{host}:{PUBLIC_PORT}/{path}"
 
 
 def _password() -> str:
@@ -157,6 +216,8 @@ async def put(entry: dict[str, Any]) -> dict[str, Any]:
             current["read_password"] = _password()
         if not current["publish_password"]:
             current["publish_password"] = _password()
+        if not current["device_uuid"]:
+            current["device_uuid"] = str(uuid.uuid4())
         _write(current)
     return public()
 
