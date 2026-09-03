@@ -925,29 +925,58 @@ async def preview_filters(
     """
     tracks = history.read(camera_id=camera_id, limit=2000)
     kept: list[dict[str, Any]] = []
-    dropped = 0
+    dropped: list[dict[str, Any]] = []
     for t in tracks:
-        path = t.get("path") or []
-        area = float(t.get("max_size") or 0.0)
-        travelled = 0.0
-        if len(path) >= 2:
-            ox, oy = path[0][0], path[0][1]
-            travelled = max(
-                ((p[0] - ox) ** 2 + (p[1] - oy) ** 2) ** 0.5 for p in path
-            )
+        area, travelled = history.measure(t)
+        row = {**t, "area": round(area, 4), "travelled": round(travelled, 4)}
         if area >= min_area and (min_movement <= 0 or travelled >= min_movement):
-            kept.append(t)
+            kept.append(row)
         else:
-            dropped += 1
+            dropped.append(row)
+
     by_type: dict[str, int] = {}
     for t in kept:
         by_type[t.get("type", "unknown")] = by_type.get(t.get("type", "unknown"), 0) + 1
+
+    # The survivors closest to being cut. A count of what a threshold
+    # removes says nothing about whether it is about to remove something
+    # real — these are the rows to look at for that.
+    def margin(row: dict[str, Any]) -> float:
+        m = row["area"] - min_area
+        if min_movement > 0:
+            m = min(m, row["travelled"] - min_movement)
+        return m
+
+    marginal = sorted(kept, key=margin)[:8]
+
     return {
         "considered": len(tracks),
         "kept": len(kept),
-        "dropped": dropped,
+        "dropped": len(dropped),
         "kept_by_type": by_type,
+        # Capped: this is for eyeballing, and the whole set is on record.
+        "would_drop": dropped[:60],
+        "closest_kept": marginal,
     }
+
+
+class PurgeRequest(BaseModel):
+    min_area: float
+    min_movement: float
+
+
+@router.post("/filters/purge")
+async def purge_history(body: PurgeRequest) -> dict[str, Any]:
+    """Delete recorded tracks that fail these thresholds.
+
+    Separate from saving the thresholds: applying a filter going forward
+    and rewriting what is already on record are different decisions, and
+    the second one cannot be undone.
+    """
+    result = await asyncio.to_thread(
+        history.prune_below, body.min_area, body.min_movement
+    )
+    return result
 
 
 @router.get("/history")

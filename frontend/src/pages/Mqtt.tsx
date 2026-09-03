@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { API_BASE, apiDelete, apiGet, apiPost, apiPut } from "../lib/api";
 import { useCameras } from "../lib/cameras";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 interface MqttStatus {
   connected: boolean;
@@ -1130,6 +1131,8 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         kept: number;
         dropped: number;
         kept_by_type: Record<string, number>;
+        would_drop: (TrackRecord & { area: number; travelled: number })[];
+        closest_kept: (TrackRecord & { area: number; travelled: number })[];
       }>(
         `/api/mqtt/filters/preview?min_area=${minArea}&min_movement=${minMove}${
           cameraId ? `&camera_id=${cameraId}` : ""
@@ -1152,6 +1155,21 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
   const dirty =
     current.data != null &&
     (minArea !== current.data.min_area || minMove !== current.data.min_movement);
+
+  const [showDropped, setShowDropped] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const purge = useMutation({
+    mutationFn: () =>
+      apiPost<{ removed: number; kept: number }>("/api/mqtt/filters/purge", {
+        min_area: minArea,
+        min_movement: minMove,
+      }),
+    onSuccess: () => {
+      setConfirmPurge(false);
+      qc.invalidateQueries({ queryKey: ["mqtt-history"] });
+      qc.invalidateQueries({ queryKey: ["mqtt-filter-preview"] });
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -1224,20 +1242,143 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      {preview.data && preview.data.closest_kept.length > 0 && (
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
+            Closest survivors — check these before applying
+          </div>
+          <p className="text-[11px] text-slate-500 mb-2">
+            The kept tracks nearest the threshold. A count of what gets removed
+            says nothing about whether the setting is about to remove something
+            real; these are the rows that would go next.
+          </p>
+          <TrackRows rows={preview.data.closest_kept} />
+        </div>
+      )}
+
+      {preview.data && preview.data.dropped > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowDropped((v) => !v)}
+            className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+          >
+            {showDropped ? "Hide" : "Show"} the {preview.data.dropped} tracks
+            this would remove
+          </button>
+          {showDropped && (
+            <div className="mt-2">
+              <TrackRows rows={preview.data.would_drop} />
+              {preview.data.would_drop.length < preview.data.dropped && (
+                <p className="text-[11px] text-slate-600 mt-1">
+                  Showing the first {preview.data.would_drop.length} of{" "}
+                  {preview.data.dropped}.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-3">
         <button
           type="button"
           onClick={() => save.mutate()}
           disabled={!dirty || save.isPending}
           className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
         >
-          {save.isPending ? "Saving…" : dirty ? "Apply" : "Applied"}
+          {save.isPending ? "Saving…" : dirty ? "Apply going forward" : "Applied"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmPurge(true)}
+          disabled={!preview.data?.dropped || purge.isPending}
+          className="text-sm px-3 py-1.5 rounded-md border border-rose-700/60 bg-rose-900/30 text-rose-200 hover:bg-rose-900/50 disabled:opacity-40"
+        >
+          {purge.isPending
+            ? "Removing…"
+            : `Also remove ${preview.data?.dropped ?? 0} past tracks`}
         </button>
         <span className="text-[11px] text-slate-500">
-          Applies to the live view and to what gets recorded from now on.
-          Existing rows stay.
+          Applying affects the live view and new recordings. Removing past
+          tracks rewrites the history and cannot be undone.
         </span>
       </div>
+      {purge.data && (
+        <p className="text-xs text-emerald-300">
+          Removed {purge.data.removed}; {purge.data.kept} kept.
+        </p>
+      )}
+      {purge.isError && (
+        <p className="text-xs text-rose-300">{(purge.error as Error).message}</p>
+      )}
+
+      <ConfirmDialog
+        open={confirmPurge}
+        title={`Remove ${preview.data?.dropped ?? 0} recorded tracks?`}
+        body={`Every track below ${(minArea * 100).toFixed(1)}% of frame${
+          minMove > 0 ? ` or under ${(minMove * 100).toFixed(1)}% movement` : ""
+        } is deleted from the history. Look through the list above first — this rewrites the files and cannot be undone.`}
+        confirmLabel="Remove them"
+        busy={purge.isPending}
+        onCancel={() => setConfirmPurge(false)}
+        onConfirm={() => purge.mutate()}
+      />
+    </div>
+  );
+}
+
+
+/** Compact track rows with their measurements and route, for judging a
+ *  threshold by eye rather than by count. */
+function TrackRows({
+  rows,
+}: {
+  rows: (TrackRecord & { area: number; travelled: number })[];
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="text-slate-500 uppercase tracking-wider text-[10px]">
+          <tr>
+            <th className="text-left px-2 py-1">When</th>
+            <th className="text-left px-2 py-1">Type</th>
+            <th className="text-left px-2 py-1">Dwell</th>
+            <th className="text-left px-2 py-1">Size</th>
+            <th className="text-left px-2 py-1">Moved</th>
+            <th className="text-left px-2 py-1">Path</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t) => (
+            <tr
+              key={`${t.obj_id}-${t.started_at}`}
+              className="border-t border-white/10"
+            >
+              <td className="px-2 py-1 font-mono text-slate-300 whitespace-nowrap">
+                {new Date(t.started_at).toLocaleTimeString()}
+              </td>
+              <td className="px-2 py-1 whitespace-nowrap">
+                <span
+                  className="inline-block w-2 h-2 rounded-sm mr-1.5"
+                  style={{ background: TYPE_COLOR[t.type] ?? "#94a3b8" }}
+                />
+                {t.type}
+              </td>
+              <td className="px-2 py-1 font-mono">{t.duration_sec}s</td>
+              <td className="px-2 py-1 font-mono">
+                {(t.area * 100).toFixed(2)}%
+              </td>
+              <td className="px-2 py-1 font-mono">
+                {(t.travelled * 100).toFixed(1)}%
+              </td>
+              <td className="px-2 py-1">
+                <PathSpark path={t.path} color={TYPE_COLOR[t.type] ?? "#94a3b8"} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -57,7 +57,7 @@ def record(entry: dict[str, Any]) -> None:
         logger.warning("could not record track: %s", e)
 
 
-def prune() -> None:
+def prune_expired() -> None:
     """Drop files older than the retention window."""
     try:
         cutoff = datetime.now(timezone.utc).date().toordinal() - RETENTION_DAYS
@@ -70,6 +70,66 @@ def prune() -> None:
                 path.unlink()
     except OSError as e:
         logger.warning("could not prune track history: %s", e)
+
+
+def measure(entry: dict[str, Any]) -> tuple[float, float]:
+    """(area, distance travelled) for a recorded track."""
+    area = float(entry.get("max_size") or 0.0)
+    path = entry.get("path") or []
+    if len(path) < 2:
+        return area, 0.0
+    ox, oy = path[0][0], path[0][1]
+    travelled = max(
+        ((p[0] - ox) ** 2 + (p[1] - oy) ** 2) ** 0.5 for p in path
+    )
+    return area, travelled
+
+
+def prune_below(min_area: float, min_movement: float) -> dict[str, int]:
+    """Delete recorded tracks that fail the given thresholds.
+
+    Rewrites each day file without them. Unrecoverable, which is why the
+    UI shows exactly what will go before offering this — the count alone
+    is not enough to judge whether a threshold is too aggressive.
+    """
+    removed = 0
+    kept = 0
+    try:
+        files = sorted(HISTORY_DIR.glob("*.jsonl"))
+    except OSError as e:
+        logger.warning("could not list history for prune: %s", e)
+        return {"removed": 0, "kept": 0}
+
+    for path in files:
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            continue
+        survivors: list[str] = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                # Unparseable rows are left alone rather than silently
+                # dropped — a prune should only remove what it judged.
+                survivors.append(line)
+                continue
+            area, travelled = measure(entry)
+            if area >= min_area and (min_movement <= 0 or travelled >= min_movement):
+                survivors.append(line)
+                kept += 1
+            else:
+                removed += 1
+        if len(survivors) == len(lines):
+            continue
+        try:
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text("\n".join(survivors) + ("\n" if survivors else ""))
+            tmp.replace(path)
+        except OSError as e:
+            logger.warning("could not rewrite %s: %s", path, e)
+
+    return {"removed": removed, "kept": kept}
 
 
 def read(
