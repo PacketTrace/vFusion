@@ -72,9 +72,9 @@ services:
       # Persisted FERNET_KEY lives here when FERNET_KEY env is unset.
       # Survives container/image rebuilds; back up this volume for DR.
       - vfusion_secrets:/app/secrets
-      # Read-only: the backend hands root_ca.pem to cameras when it
-      # pushes their MQTT config.
-      - ./mqtt/certs:/app/mqtt-certs:ro
+      # Read-write: vFusion generates the broker certs and password file
+      # itself, then hands root_ca.pem to cameras when it pushes config.
+      - ./mqtt:/app/mqtt-host
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"

@@ -88,6 +88,27 @@ export default function Mqtt() {
     },
   });
 
+  const [setupHost, setSetupHost] = useState("");
+  const setup = useMutation({
+    mutationFn: () =>
+      apiPost<{
+        broker_host_port: string;
+        username: string;
+        password: string;
+        san: string;
+        expires: string;
+        next_steps: string[];
+      }>("/api/mqtt/setup", { broker_host: setupHost }),
+    onSuccess: (d) => {
+      // Carry straight into step 2 — these are exactly the values the
+      // camera needs, and retyping them is a chance to get them wrong.
+      setBrokerHostPort(d.broker_host_port);
+      setUsername(d.username);
+      setPassword(d.password);
+      status.refetch();
+    },
+  });
+
   const live = useLiveTracks(cameraId);
 
   const online = useMemo(
@@ -110,6 +131,58 @@ export default function Mqtt() {
       </div>
 
       <StatusBar status={status.data} />
+
+      <Card title="0 · Set up the broker">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[16rem]">
+            <Labeled label="Address cameras will connect to">
+              <input
+                value={setupHost}
+                onChange={(e) => setSetupHost(e.target.value)}
+                placeholder="192.168.1.10"
+                className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
+                spellCheck={false}
+              />
+            </Labeled>
+          </div>
+          <button
+            onClick={() => setup.mutate()}
+            disabled={!setupHost || setup.isPending}
+            className="text-sm px-3 py-1.5 rounded border border-slate-600 text-slate-200 hover:border-sky-500 disabled:opacity-40"
+          >
+            {setup.isPending ? "Generating…" : "Generate certificate + credentials"}
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-2 max-w-2xl">
+          Host or IP only — the port is always 443. This address is written into
+          the certificate, so changing it later means regenerating and re-pushing
+          every camera. Use something that will not move: a static IP, a DHCP
+          reservation or a DNS name.
+        </p>
+        {setup.isError && (
+          <p className="text-xs text-rose-300 mt-2">{(setup.error as Error).message}</p>
+        )}
+        {setup.data && (
+          <div className="mt-3 text-xs space-y-2">
+            <p className="text-emerald-300">
+              Certificate written for {setup.data.san}, valid to {setup.data.expires}.
+            </p>
+            <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 space-y-1">
+              <p className="text-amber-200">
+                Shown once — the broker keeps only a hash of it.
+              </p>
+              {setup.data.next_steps.map((line) => (
+                <pre
+                  key={line}
+                  className="font-mono text-[11px] text-slate-300 whitespace-pre-wrap break-all"
+                >
+                  {line}
+                </pre>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="1 · Pick a camera">
