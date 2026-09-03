@@ -15,7 +15,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.connectors.verkada import poi_store
+from app.connectors.verkada import fixture_index, poi_store
+from app.connectors.verkada import TAXONOMY
 from app.connectors.verkada.schemas import (
     AccessEventData,
     AlarmSiteStateChangedData,
@@ -220,6 +221,10 @@ class FilterFieldProfile(BaseModel):
     # present == 0 is filterable but unproven; an undeclared one is a field
     # Verkada started sending that our schema has not caught up with.
     declared: bool = False
+    # A bundled sample of this exact event type populates this path. A
+    # stronger claim than "declared": the family model describes access
+    # events in general, a fixture describes door_forced_open itself.
+    from_sample: bool = False
 
 
 @router.get("/filter-fields", response_model=list[FilterFieldProfile])
@@ -284,6 +289,9 @@ async def filter_fields(
             bucket[str(raw)] = bucket.get(str(raw), 0) + 1
 
     declared = _declared_paths(family)
+    sampled = fixture_index.paths_for(
+        notification_type or _webhook_type_for(family), _walk
+    )
     out: list[FilterFieldProfile] = []
     for path, count in present.items():
         bucket = values.get(path, {})
@@ -301,6 +309,29 @@ async def filter_fields(
                 distinct_count=distinct,
                 type=types.get(path, "str"),
                 declared=path in declared,
+                from_sample=path in sampled,
+            )
+        )
+
+    # Paths a known sample of this exact type carries. Ranked above the
+    # family model because they are type-level fact rather than
+    # family-level inference -- and they reach inside the Any-typed
+    # blobs the model cannot describe (user_info.email and friends).
+    seen = {p.field for p in out}
+    for path, kind in sorted(sampled.items()):
+        if path in seen:
+            continue
+        out.append(
+            FilterFieldProfile(
+                field=path,
+                present=0,
+                sample_size=total,
+                present_pct=0.0,
+                values=[],
+                distinct_count=0,
+                type=kind,
+                declared=path in declared,
+                from_sample=True,
             )
         )
 
@@ -361,6 +392,19 @@ def _walk(data: dict[str, Any], prefix: str = "", depth: int = 0):
             # A whole object is never compared as a unit; only its leaves.
             continue
         yield path, raw
+
+
+def _webhook_type_for(family: str | None) -> str | None:
+    """The webhook_type a family is keyed by when it has no notification_type.
+
+    lpr and sensor_alert payloads carry no notification_type at all, so
+    their bundled samples are filed under the outer webhook_type instead.
+    """
+    spec = TAXONOMY.get(family or "") or {}
+    wt = spec.get("webhook_type")
+    if isinstance(wt, str):
+        return wt
+    return None
 
 
 def _declared_paths(family: str | None) -> dict[str, str]:

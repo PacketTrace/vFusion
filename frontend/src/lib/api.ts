@@ -418,6 +418,9 @@ export interface FilterFieldProfile {
    *  filterable but unproven; undeclared means Verkada sent something our
    *  schema does not know about. */
   declared?: boolean;
+  /** A bundled sample of this exact event type carries this path —
+   *  type-level fact, as opposed to family-level inference. */
+  from_sample?: boolean;
 }
 
 export interface NotificationTypeMeta {

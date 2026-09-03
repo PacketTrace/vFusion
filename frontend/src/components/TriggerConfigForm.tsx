@@ -127,7 +127,13 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
   const rareFields = profiled.filter(
     (f) => f.present_pct < 5 && f.present > 0,
   );
-  const unseenFields = profiled.filter((f) => f.present === 0);
+  // Two different claims, so two different groups. A bundled sample of
+  // this exact type is evidence about this type; the family model only
+  // says other events of the same family carry it.
+  const sampledFields = profiled.filter((f) => f.present === 0 && f.from_sample);
+  const inferredFields = profiled.filter(
+    (f) => f.present === 0 && !f.from_sample,
+  );
 
   const familyEntry = taxonomy.data?.[value.family];
   const filterFieldOptions = buildFilterFieldOptions(
@@ -273,9 +279,18 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                       ))}
                     </optgroup>
                   )}
-                  {unseenFields.length > 0 && (
-                    <optgroup label="Declared, no samples yet">
-                      {unseenFields.map((opt) => (
+                  {sampledFields.length > 0 && (
+                    <optgroup label="In a known sample of this event">
+                      {sampledFields.map((opt) => (
+                        <option key={opt.field} value={opt.field}>
+                          {opt.field}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {inferredFields.length > 0 && (
+                    <optgroup label="Other events in this family carry this">
+                      {inferredFields.map((opt) => (
                         <option key={opt.field} value={opt.field}>
                           {opt.field}
                         </option>
@@ -332,10 +347,11 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                   <div className="text-[11px] text-slate-500">
                     {prof.present === 0 ? (
                       <>
-                        No samples yet
-                        {prof.declared
-                          ? " — the payload schema says this event carries it, so the filter is valid but unproven."
-                          : "."}
+                        {prof.from_sample
+                          ? "Not seen in your events yet, but a known sample of this event type carries it."
+                          : prof.declared
+                            ? "Not seen yet. Other events in this family carry it — unconfirmed for this type."
+                            : "Not seen in your events yet."}
                       </>
                     ) : (
                       <>
