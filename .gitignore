@@ -22,3 +22,7 @@ dist/
 
 # Internal agent/dev handoff notes — never publish
 CONTINUE.md
+
+# Broker TLS material — generated per-deployment by mqtt/gen-certs.sh
+mqtt/certs/
+mqtt/passwd

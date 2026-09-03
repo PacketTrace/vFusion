@@ -13,6 +13,7 @@ import FlowEditor from "./pages/FlowEditor";
 import Connections from "./pages/Connections";
 import Runs from "./pages/Runs";
 import Mcp from "./pages/Mcp";
+import Mqtt from "./pages/Mqtt";
 import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
@@ -127,6 +128,15 @@ function AppShell() {
               Stats
             </NavLink>
             <NavLink
+              to="/mqtt"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+              title="Configure cameras to publish object positions, and watch the stream"
+            >
+              Object position
+            </NavLink>
+            <NavLink
               to="/mcp"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -165,6 +175,7 @@ function AppShell() {
           <Route path="/workbench" element={<Workbench />} />
           <Route path="/byoa" element={<Workbench />} />
           <Route path="/stats" element={<Stats />} />
+          <Route path="/mqtt" element={<Mqtt />} />
           <Route path="/mcp" element={<Mcp />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>

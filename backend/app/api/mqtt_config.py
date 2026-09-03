@@ -1,0 +1,391 @@
+"""Configure cameras to publish object positions, and serve what arrives.
+
+The manual version of this is a sequence of steps where every one of them
+fails silently in the same way -- the camera connects and simply never
+publishes -- so the endpoints here check the preconditions up front and
+name the specific thing that is wrong.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response, StreamingResponse
+
+from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
+from app.crypto import decrypt_secret
+from app.db import get_session
+from app.models import Connection, VerkadaCamera
+from app.mqtt.ingest import ingest
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/mqtt", tags=["mqtt"])
+
+# Mounted read-only from ./mqtt/certs. This is the CA the camera is told to
+# trust; handing it the leaf instead is the classic "unknown ca" failure.
+CA_PATH = Path("/app/mqtt-certs/root_ca.pem")
+
+# Verkada rejects anything else in broker_host_port.
+ALLOWED_PORTS = {"443", "123", "53"}
+
+
+class MqttStatus(BaseModel):
+    connected: bool
+    enabled: bool
+    host: str
+    topic: str
+    last_error: str | None
+    uptime_sec: float | None
+    total_messages: int
+    cameras: list[str]
+    track_timeout_sec: float
+    ca_present: bool
+
+
+@router.get("/status", response_model=MqttStatus)
+async def status() -> MqttStatus:
+    """Is the ingest loop up, and has anything ever arrived on it."""
+    return MqttStatus(**ingest.status(), ca_present=CA_PATH.is_file())
+
+
+class PreflightCheck(BaseModel):
+    id: str
+    label: str
+    # ok = verified good, fail = verified bad, unknown = we could not tell
+    state: str
+    detail: str
+    fix: str | None = None
+
+
+@router.get("/preflight/{camera_id}", response_model=list[PreflightCheck])
+async def preflight(
+    camera_id: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> list[PreflightCheck]:
+    """Everything that has to be true before a camera will publish.
+
+    Each of these has cost somebody an afternoon at least once. The
+    occupancy-trends line is the worst of them: without it the camera
+    connects, authenticates, and publishes nothing at all, which looks
+    identical to a broken broker.
+    """
+    checks: list[PreflightCheck] = []
+
+    checks.append(
+        PreflightCheck(
+            id="ca",
+            label="Broker certificate generated",
+            state="ok" if CA_PATH.is_file() else "fail",
+            detail=(
+                "root_ca.pem is present and will be pushed to the camera."
+                if CA_PATH.is_file()
+                else "No CA found at mqtt/certs/root_ca.pem."
+            ),
+            fix=None if CA_PATH.is_file() else "Run ./mqtt/gen-certs.sh <broker-address> on the host.",
+        )
+    )
+
+    checks.append(
+        PreflightCheck(
+            id="ingest",
+            label="Broker reachable from vFusion",
+            state="ok" if ingest.connected else "fail",
+            detail=(
+                "Subscribed to the ingest broker."
+                if ingest.connected
+                else f"Not connected: {ingest.last_error or 'ingest disabled'}"
+            ),
+            fix=(
+                None
+                if ingest.connected
+                else "Set MQTT_INGEST_ENABLED=true and start the mqtt profile."
+            ),
+        )
+    )
+
+    cam = (
+        await session.execute(
+            select(VerkadaCamera).where(VerkadaCamera.camera_id == camera_id)
+        )
+    ).scalars().first()
+
+    if cam is None:
+        checks.append(
+            PreflightCheck(
+                id="camera",
+                label="Camera known",
+                state="unknown",
+                detail="Camera is not in the local cache.",
+                fix="Sync cameras on the Connections page.",
+            )
+        )
+        return checks
+
+    online = bool(cam.status) and cam.status.lower() != "offline"
+    checks.append(
+        PreflightCheck(
+            id="online",
+            label="Camera online",
+            state="ok" if online else "fail",
+            detail=f"Status is {cam.status or 'unknown'}.",
+            fix=None if online else "An offline camera cannot be configured or publish.",
+        )
+    )
+
+    raw = cam.raw if isinstance(cam.raw, dict) else {}
+    people = raw.get("people_history_enabled")
+    checks.append(
+        PreflightCheck(
+            id="analytics",
+            label="People analytics enabled",
+            state="ok" if people else ("fail" if people is False else "unknown"),
+            detail=f"people_history_enabled is {people!r}.",
+            fix=None if people else "Enable People History on the camera in Command.",
+        )
+    )
+
+    # The occupancy-trends line. There is no API to draw one, so the most
+    # this can do is tell the operator to go draw it.
+    checks.append(await _occupancy_check(session, camera_id, connection_id))
+    return checks
+
+
+async def _occupancy_check(
+    session: AsyncSession, camera_id: str, connection_id: UUID | None
+) -> PreflightCheck:
+    unknown = PreflightCheck(
+        id="line",
+        label="Occupancy Trends line drawn",
+        state="unknown",
+        detail="Could not verify.",
+        fix=(
+            "Command → Camera → Analytics → Occupancy Trends → Edit Lines. "
+            "Without a line the camera connects but never publishes."
+        ),
+    )
+    client = await _client_for(session, connection_id)
+    if client is None:
+        unknown.detail = "No Verkada connection is set up."
+        return unknown
+    try:
+        cameras = await client.list_occupancy_trend_cameras()
+    except VerkadaApiError as e:
+        if e.status_code == 403:
+            unknown.detail = (
+                "The API key lacks permission to read occupancy trends, so the "
+                "line cannot be verified from here."
+            )
+        else:
+            unknown.detail = f"Lookup failed: {e}"
+        return unknown
+
+    hit = next(
+        (c for c in cameras if isinstance(c, dict) and c.get("camera_id") == camera_id),
+        None,
+    )
+    presets = (hit or {}).get("preset_ids") or []
+    if hit and presets:
+        return PreflightCheck(
+            id="line",
+            label="Occupancy Trends line drawn",
+            state="ok",
+            detail=f"{len(presets)} line preset(s) configured.",
+        )
+    return PreflightCheck(
+        id="line",
+        label="Occupancy Trends line drawn",
+        state="fail",
+        detail="No line preset on this camera — it will connect but never publish.",
+        fix="Command → Camera → Analytics → Occupancy Trends → Edit Lines.",
+    )
+
+
+async def _client_for(
+    session: AsyncSession, connection_id: UUID | None
+) -> VerkadaClient | None:
+    q = select(Connection).where(Connection.type == "verkada")
+    if connection_id:
+        q = q.where(Connection.id == connection_id)
+    conn = (await session.execute(q)).scalars().first()
+    if conn is None:
+        return None
+    try:
+        secret = decrypt_secret(conn.encrypted_secret)
+    except Exception:
+        return None
+    api_key = secret.get("api_key")
+    if not api_key:
+        return None
+    return VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
+
+
+class ConfigureRequest(BaseModel):
+    broker_host_port: str
+    client_username: str
+    client_password: str
+    connection_id: UUID | None = None
+
+
+@router.get("/config/{camera_id}")
+async def get_config(
+    camera_id: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """What the camera currently thinks its broker is."""
+    client = await _client_for(session, connection_id)
+    if client is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+    try:
+        return await client.get_object_position_mqtt_config(camera_id)
+    except VerkadaApiError as e:
+        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+
+
+@router.post("/config/{camera_id}")
+async def set_config(
+    camera_id: str,
+    body: ConfigureRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Point a camera at this broker, then read it back to prove it stuck.
+
+    The read-back is not defensive padding. The API returns 200 and
+    silently discards the config if either credential is missing, so the
+    only way to know it took is to ask.
+    """
+    host, _, port = body.broker_host_port.rpartition(":")
+    if not host or port not in ALLOWED_PORTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "broker_host_port must be host:port with port 443, 123 or 53 — "
+                "Verkada rejects everything else."
+            ),
+        )
+    if not body.client_username or not body.client_password:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Both a username and a password are required. The API accepts "
+                "the request without them and then discards the config."
+            ),
+        )
+    if not CA_PATH.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail="No CA at mqtt/certs/root_ca.pem — run ./mqtt/gen-certs.sh first.",
+        )
+
+    client = await _client_for(session, body.connection_id)
+    if client is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+
+    ca = CA_PATH.read_text()
+    try:
+        await client.set_object_position_mqtt_config(
+            camera_id=camera_id,
+            broker_host_port=body.broker_host_port,
+            client_username=body.client_username,
+            client_password=body.client_password,
+            broker_cert=ca,
+        )
+        readback = await client.get_object_position_mqtt_config(camera_id)
+    except VerkadaApiError as e:
+        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+
+    persisted = bool(readback.get("broker_host_port")) and bool(
+        readback.get("client_username")
+    )
+    return {
+        "persisted": persisted,
+        "config": readback,
+        "note": (
+            "Camera reconnects within ~5–25s of a config change."
+            if persisted
+            else "Verkada accepted the call but stored nothing — re-send with both credentials."
+        ),
+    }
+
+
+def _permission_hint(e: VerkadaApiError) -> str:
+    if e.status_code == 403:
+        return (
+            "Verkada refused the request (403). Object-position MQTT config needs "
+            "an API key with read/write access to Cameras; a read-only key returns "
+            "this even though it can list cameras."
+        )
+    if e.status_code == 401:
+        return "Verkada rejected the API key (401)."
+    return str(e)
+
+
+@router.get("/frame/{camera_id}")
+async def frame(
+    camera_id: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Latest still from the camera, to draw boxes on top of.
+
+    Proxied rather than linked so the signed footage URL never reaches the
+    browser. Deliberately uncached — a stale backdrop under live boxes is
+    worse than no backdrop.
+    """
+    client = await _client_for(session, connection_id)
+    if client is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+    try:
+        image = await client.get_latest_thumbnail(camera_id)
+    except VerkadaApiError as e:
+        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+    return Response(
+        content=image,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/live")
+async def live(camera_id: str | None = Query(default=None)) -> StreamingResponse:
+    """Server-sent stream of current boxes, pushed as messages arrive.
+
+    Event-driven rather than polled: a fixed tick would add up to its own
+    interval of latency to every object, and the point of this stream is
+    to show the camera's view of the world as it happens. The one-second
+    wakeup only exists so tracks visibly expire when nothing is moving.
+    """
+
+    async def gen():
+        yield "retry: 2000\n\n"
+        while True:
+            try:
+                await ingest.wait_for_change(timeout=1.0)
+                payload = {
+                    "cameras": ingest.snapshot(camera_id),
+                    "connected": ingest.connected,
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # never kill the stream over one frame
+                logger.debug("live stream frame failed: %s", e)
+                await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

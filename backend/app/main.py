@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import mqtt_config as mqtt_api
+from app.mqtt import ingest as mqtt_ingest
 from app.api import (
     auth as auth_api,
     byoa,
@@ -50,9 +52,15 @@ async def lifespan(app: FastAPI):
         pass
     # arq pool for enqueuing flow runs.
     app.state.arq_pool = await make_pool()
+    # Object-position ingest. Opt-in, and deliberately non-fatal: a broker
+    # that is down must not stop the rest of the app from booting, so the
+    # loop retries in the background and reports itself via /api/mqtt/status.
+    if mqtt_ingest.enabled():
+        mqtt_ingest.ingest.start()
     try:
         yield
     finally:
+        await mqtt_ingest.ingest.stop()
         await app.state.arq_pool.close()
 
 
@@ -125,6 +133,7 @@ app.include_router(flow_builder.router)
 app.include_router(byoa.router)
 app.include_router(mcp_api.router)
 app.include_router(config_api.router)
+app.include_router(mqtt_api.router)
 app.include_router(settings_api.router)
 
 

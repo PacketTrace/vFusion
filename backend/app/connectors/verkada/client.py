@@ -253,6 +253,81 @@ class VerkadaClient:
             params = {"page_size": 200, "page_token": token}
         return people
 
+    async def get_latest_thumbnail(self, camera_id: str) -> bytes:
+        """Most recent still from a camera, as JPEG bytes.
+
+        Endpoint: ``GET /cameras/v1/footage/thumbnails/latest`` -- it
+        returns the image itself rather than a URL, which is what we want:
+        the URL form carries a signed JWT and those must not reach a
+        browser or a log.
+        """
+        token = await self._ensure_token()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            res = await client.get(
+                f"{self.base_url}/cameras/v1/footage/thumbnails/latest",
+                headers={"x-verkada-auth": token},
+                params={"camera_id": camera_id, "resolution": "hi-res"},
+            )
+        if res.status_code != 200:
+            raise VerkadaApiError(
+                f"thumbnail fetch failed: HTTP {res.status_code}",
+                status_code=res.status_code,
+            )
+        return res.content
+
+    async def list_occupancy_trend_cameras(self) -> list[dict[str, Any]]:
+        """Cameras that support Occupancy Trends, with their line preset ids.
+
+        Endpoint: ``GET /cameras/v1/analytics/occupancy_trends/camera``.
+        A camera with no preset has no line drawn, which is the single
+        most common reason object-position MQTT produces nothing.
+        """
+        data = await self._get("/cameras/v1/analytics/occupancy_trends/camera")
+        if isinstance(data, dict):
+            for key in ("cameras", "camera", "items", "data"):
+                if isinstance(data.get(key), list):
+                    return data[key]
+        if isinstance(data, list):
+            return data
+        raise VerkadaApiError(
+            f"unexpected occupancy_trend_cameras response shape: {type(data).__name__}"
+        )
+
+    async def get_object_position_mqtt_config(self, camera_id: str) -> dict[str, Any]:
+        """The broker a camera is currently pointed at (password never returned)."""
+        data = await self._get(
+            "/cameras/v1/analytics/object_position_mqtt",
+            params={"camera_id": camera_id},
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def set_object_position_mqtt_config(
+        self,
+        camera_id: str,
+        broker_host_port: str,
+        client_username: str,
+        client_password: str,
+        broker_cert: str,
+    ) -> dict[str, Any]:
+        """Point a camera at an MQTT broker.
+
+        ``broker_cert`` must be the CA certificate, not the server leaf --
+        the camera uses it as its trust anchor and rejects a leaf with
+        "unknown ca". Both credentials are required despite the docs
+        calling them optional: without them the API returns success and
+        stores nothing.
+        """
+        return await self._post(
+            "/cameras/v1/analytics/object_position_mqtt",
+            json={
+                "camera_id": camera_id,
+                "broker_host_port": broker_host_port,
+                "client_username": client_username,
+                "client_password": client_password,
+                "broker_cert": broker_cert,
+            },
+        )
+
     async def list_helix_event_types(self) -> list[dict[str, Any]]:
         """Return all Helix video-tagging event types defined in this org.
 
