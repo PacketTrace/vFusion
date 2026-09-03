@@ -19,6 +19,7 @@ import { FamilyBadge, SignatureBadge } from "../components/Badges";
 import PendingSetupBanner from "../components/PendingSetupBanner";
 import { useBrand } from "../lib/brand";
 import { useCameraLookup } from "../lib/cameras";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 const methodColor: Record<string, string> = {
   GET: "bg-sky-900 text-sky-200",
@@ -122,6 +123,10 @@ export default function WebhookInbox() {
     enabled: selectedId !== null,
   });
 
+  // Deleting the event you are looking at is one click from losing the
+  // payload — and payloads are the raw material for fixtures, so they
+  // are worth more than the retention window suggests.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const del = useMutation({
     mutationFn: (id: string) => apiDelete(`/api/webhook-events/${id}`),
     onSuccess: () => {
@@ -149,11 +154,22 @@ export default function WebhookInbox() {
 
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete this webhook event?"
+        body="The stored payload goes with it. If it is an event type you are still collecting samples of, copy the JSON first."
+        busy={del.isPending}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) del.mutate(pendingDelete);
+          setPendingDelete(null);
+        }}
+      />
       <div>
         <h1 className="text-2xl font-semibold text-white">Webhook Explorer</h1>
         <p className="text-slate-400 text-sm mt-1">
           Every request to{" "}
-          <code className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200">
+          <code className="bg-white/10 px-1.5 py-0.5 rounded text-slate-200">
             {exampleBase}/hooks/&lt;anything&gt;
           </code>{" "}
           is captured, classified, and signature-checked.
@@ -190,7 +206,7 @@ export default function WebhookInbox() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder='search body, slug, notification_type, camera / door name — e.g. "Front Door"'
-            className="w-full px-3 py-1.5 rounded-md bg-slate-900 border border-slate-700 text-sm focus:outline-none focus:border-sky-600"
+            className="w-full px-3 py-1.5 rounded-md bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
           />
           {searchInput && (
             <button
@@ -205,7 +221,7 @@ export default function WebhookInbox() {
         <select
           value={familyFilter}
           onChange={(e) => setFamilyFilter(e.target.value as Family | "")}
-          className="px-3 py-1.5 rounded-md bg-slate-900 border border-slate-700 text-sm focus:outline-none focus:border-sky-600"
+          className="px-3 py-1.5 rounded-md bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
         >
           <option value="">All families</option>
           {FAMILIES.map((f) => (
@@ -250,7 +266,7 @@ export default function WebhookInbox() {
       </div>
 
       <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
-        <div className="col-span-5 border border-slate-800 rounded-lg overflow-hidden bg-slate-900/50 flex flex-col min-h-0">
+        <div className="col-span-5 border border-slate-800 rounded-lg overflow-hidden bg-white/5/50 flex flex-col min-h-0">
           {items.length === 0 ? (
             <EmptyState />
           ) : (
@@ -261,14 +277,14 @@ export default function WebhookInbox() {
                   onClick={() => setSelectedId(e.id)}
                   className={`px-3 py-2 cursor-pointer text-sm transition-colors ${
                     selectedId === e.id
-                      ? "bg-slate-800"
-                      : "hover:bg-slate-800/50"
+                      ? "bg-white/10"
+                      : "hover:bg-white/5"
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        methodColor[e.method] ?? "bg-slate-800 text-slate-200"
+                        methodColor[e.method] ?? "bg-white/10 text-slate-200"
                       }`}
                     >
                       {e.method}
@@ -285,11 +301,11 @@ export default function WebhookInbox() {
                 </li>
               ))}
               {canLoadMore && (
-                <li className="px-3 py-2 bg-slate-900/40">
+                <li className="px-3 py-2 bg-white/5/40">
                   <button
                     onClick={() => setPageCount((n) => n + 1)}
                     disabled={list.isFetching}
-                    className="w-full text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-600 disabled:opacity-50"
+                    className="w-full text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:border-sky-600 disabled:opacity-50"
                   >
                     {list.isFetching
                       ? "Loading…"
@@ -307,11 +323,11 @@ export default function WebhookInbox() {
           )}
         </div>
 
-        <div className="col-span-7 border border-slate-800 rounded-lg bg-slate-900/50 overflow-hidden flex flex-col min-h-0">
+        <div className="col-span-7 border border-slate-800 rounded-lg bg-white/5/50 overflow-hidden flex flex-col min-h-0">
           {detail.data ? (
             <EventDetail
               event={detail.data}
-              onDelete={() => del.mutate(detail.data.id)}
+              onDelete={() => setPendingDelete(detail.data.id)}
             />
           ) : (
             <div className="p-6 text-sm text-slate-500">
@@ -344,11 +360,11 @@ function WebhookEndpointBanner() {
   const mode = cfg.data.tunnel_mode;
   if (mode === "lan") {
     return (
-      <div className="bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-xs text-slate-400">
+      <div className="bg-white/5/50 border border-white/10 rounded-lg px-4 py-3 text-xs text-slate-400">
         Running in <span className="font-semibold text-slate-200">LAN-only</span> mode —
         webhooks from Verkada's cloud can't reach this server. To accept real webhooks,
-        bring up the stack with <code className="bg-slate-800 px-1 py-0.5 rounded text-slate-200">--profile quick</code> (ephemeral URL)
-        or <code className="bg-slate-800 px-1 py-0.5 rounded text-slate-200">--profile cloudflared</code> (stable URL on your domain).
+        bring up the stack with <code className="bg-white/10 px-1 py-0.5 rounded text-slate-200">--profile quick</code> (ephemeral URL)
+        or <code className="bg-white/10 px-1 py-0.5 rounded text-slate-200">--profile cloudflared</code> (stable URL on your domain).
       </div>
     );
   }
@@ -413,7 +429,7 @@ function EmptyState() {
       <p className="font-medium text-slate-200">Waiting for your first webhook…</p>
       <p>
         Point a Verkada webhook at{" "}
-        <code className="bg-slate-800 px-1 rounded text-slate-100">
+        <code className="bg-white/10 px-1 rounded text-slate-100">
           {API_BASE}/hooks/verkada
         </code>{" "}
         (or any slug you want). When the first one arrives, {brand} will auto-detect
@@ -473,7 +489,7 @@ function EventDetail({
           <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                methodColor[event.method] ?? "bg-slate-800 text-slate-200"
+                methodColor[event.method] ?? "bg-white/10 text-slate-200"
               }`}
             >
               {event.method}
@@ -529,7 +545,7 @@ function EventDetail({
           )}
           <button
             onClick={onDelete}
-            className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-rose-300 hover:border-rose-800"
+            className="text-xs px-2 py-1 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800"
           >
             Delete
           </button>
