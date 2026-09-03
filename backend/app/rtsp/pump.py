@@ -160,13 +160,25 @@ class Pump:
         self._aread_fd, self._awrite_fd = os.pipe()
 
         state = settings.get()
+        cmd = _encoder_cmd(
+            settings.publish_url(state),
+            settings.publish_url(state, settings.sub_stream(state)),
+            settings.is_onvif(state),
+            self._aread_fd,
+        )
+        # The command, once per encoder start. Reconstructing it from the
+        # source to work out what ffmpeg was actually given is a step that
+        # should not be necessary when the answer can just be recorded.
+        # Credentials are in the publish URL, so it is logged with them
+        # replaced rather than not logged.
+        #
+        # At warning level despite not being one: uvicorn leaves the root
+        # logger at WARNING, so info from here goes nowhere. A diagnostic
+        # that cannot be seen is the same as one that was not written --
+        # which is the mistake this line exists to stop repeating.
+        logger.warning("rtsp encoder: %s", " ".join(_redact(a) for a in cmd))
         self._encoder = await asyncio.create_subprocess_exec(
-            *_encoder_cmd(
-                settings.publish_url(state),
-                settings.publish_url(state, settings.sub_stream(state)),
-                settings.is_onvif(state),
-                self._aread_fd,
-            ),
+            *cmd,
             stdin=self._read_fd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
@@ -198,6 +210,10 @@ class Pump:
                 if line:
                     self.log.append(line)
                     self.last_error = line
+                    # To the container log as well. The page shows this,
+                    # but a stream that will not start is debugged with
+                    # logs open, not with a browser.
+                    logger.warning("ffmpeg: %s", line)
 
     async def _play_next(self) -> None:
         # Cleared before the check, not inside standby: an upload landing
@@ -210,8 +226,14 @@ class Pump:
             return
 
         self.now_playing = {k: item[k] for k in ("id", "name", "kind") if k in item}
+        # Silence is infinite, so a source that gets it substituted needs
+        # a length to stop at. Videos with their own audio end when the
+        # file does and need nothing.
+        limit = 0.0
+        if item.get("kind") == "video" and not item.get("has_audio"):
+            limit = await queue.ensure_duration(item)
         try:
-            await self._run_source(lambda afd: _clip_cmd(item, afd))
+            await self._run_source(lambda afd: _clip_cmd(item, afd, limit))
         finally:
             self.now_playing = None
         # Marked played even if ffmpeg failed. A clip that cannot be
@@ -320,6 +342,16 @@ def _normalise() -> str:
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
         f"fps={settings.FPS},format=yuv420p"
     )
+
+
+def _redact(arg: str) -> str:
+    """Blank the password inside an rtsp:// URL, keep everything else."""
+    if "://" not in arg or "@" not in arg:
+        return arg
+    scheme, _, rest = arg.partition("://")
+    creds, _, host = rest.rpartition("@")
+    user, _, _pw = creds.partition(":")
+    return f"{scheme}://{user}:***@{host}"
 
 
 def _silence() -> list[str]:
