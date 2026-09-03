@@ -41,17 +41,19 @@ const DEFAULT_TAG_STYLE =
   "bg-white/10 text-slate-300 border-white/15";
 
 
-export default function Templates() {
+export default function Templates({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Templates</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Starter flows you can use as-is. Each template ships pre-wired with
-          a trigger, AI analysis, and (where relevant) a Helix event type so
-          the result lands in Verkada Command without extra plumbing.
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Templates</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Starter flows you can use as-is. Each template ships pre-wired with
+            a trigger, AI analysis, and (where relevant) a Helix event type so
+            the result lands in Verkada Command without extra plumbing.
+          </p>
+        </div>
+      )}
       <FlowTemplatesPanel />
     </div>
   );

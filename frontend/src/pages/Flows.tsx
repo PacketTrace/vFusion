@@ -6,13 +6,14 @@ import { apiDelete, apiGet, apiPost, apiPut, Flow, FlowExportFormat } from "../l
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Templates from "./Templates";
 
 
 export default function Flows() {
   const notificationLabel = useNotificationLabel();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   // When the picked file embeds Helix event-type defs we pause the
@@ -89,6 +90,14 @@ export default function Flows() {
     mutationFn: (f: Flow) => apiPut(`/api/flows/${f.id}`, { enabled: !f.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["flows"] }),
   });
+  // Templates are flows you have not made yet, so they live here rather
+  // than in a separate destination.
+  const tab = searchParams.get("tab") === "templates" ? "templates" : "flows";
+  const setTab = (next: string) => {
+    const q = new URLSearchParams(searchParams);
+    q.set("tab", next);
+    setSearchParams(q, { replace: true });
+  };
   const [pendingDelete, setPendingDelete] = useState<Flow | null>(null);
   const del = useMutation({
     mutationFn: (id: string) => apiDelete(`/api/flows/${id}`),
@@ -112,12 +121,21 @@ export default function Flows() {
         <div>
           <h1 className="text-2xl font-semibold text-white">Flows</h1>
           <p className="text-slate-400 text-sm mt-1">
+            {tab === "templates" ? (
+              <>
+                Starter flows, pre-wired with a trigger, AI analysis and a Helix
+                event type. Install one and it becomes a flow you own.
+              </>
+            ) : (
+              <>
             Visual editor — wire a Verkada webhook trigger to one or more action
             steps. Watch executions on the{" "}
             <Link to="/runs" className="text-sky-400 hover:underline">
               Runs
             </Link>{" "}
             page.
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 whitespace-nowrap">
@@ -158,6 +176,29 @@ export default function Flows() {
         </div>
       )}
 
+      <div className="flex items-center gap-1 border-b border-white/10">
+        {[
+          { key: "flows", label: "Flows" },
+          { key: "templates", label: "Templates" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+              tab === t.key
+                ? "border-sky-500 text-white"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "templates" && <Templates embedded />}
+
+      {tab === "flows" && (
       <div className="border border-white/15 rounded-lg overflow-hidden bg-white/5">
         {flows.isLoading ? (
           <div className="p-6 text-sm text-slate-500">Loading…</div>
@@ -253,6 +294,7 @@ export default function Flows() {
           </table>
         )}
       </div>
+      )}
 
       {pendingImport && (
         <HelixBootstrapModal

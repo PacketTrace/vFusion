@@ -151,14 +151,6 @@ function AppShell() {
               Runs
             </NavLink>
             <NavLink
-              to="/templates"
-              className={({ isActive }) =>
-                `${navItem} ${isActive ? navActive : navInactive}`
-              }
-            >
-              Templates
-            </NavLink>
-            <NavLink
               to="/workbench"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
