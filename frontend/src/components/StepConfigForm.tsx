@@ -701,6 +701,13 @@ function CameraRefField({
   // keeps the dropdown short. Persists across re-renders within this
   // field instance.
   const [onlineOnly, setOnlineOnly] = useState(true);
+  // The paste box duplicates the dropdown for the common case, so it is
+  // hidden until asked for — except when it is holding the value, which
+  // it is whenever that value is a template ref the dropdown cannot
+  // represent.
+  const rawValue = (config[f.name] as string) ?? "";
+  const isRef = rawValue.includes("{{");
+  const [showRaw, setShowRaw] = useState(false);
 
   // Same heuristic the BYOA picker uses — treat anything not literally
   // "Offline" as online. Catches "Live" + any future status the API
@@ -753,12 +760,23 @@ function CameraRefField({
           </option>
         ))}
       </select>
-      <input
-        value={(config[f.name] as string) ?? ""}
-        onChange={(e) => setOne(f.name, e.target.value)}
-        className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
-        placeholder="or paste camera_id / template ref like {{ trigger.data.camera_id }}"
-      />
+      {showRaw || isRef ? (
+        <input
+          autoFocus={showRaw && !isRef}
+          value={rawValue}
+          onChange={(e) => setOne(f.name, e.target.value)}
+          className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
+          placeholder="camera_id UUID or {{ trigger.data.camera_id }}"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowRaw(true)}
+          className="mt-1 text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+        >
+          paste an ID or template ref instead
+        </button>
+      )}
       {(() => {
         // A trigger ref reads as unresolved — the dropdown sits on
         // "pick a camera" and the box shows a template. When the
