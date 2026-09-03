@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -373,6 +373,22 @@ export default function Byoa() {
   // so we can render the "Pairs with X" hint and react to changes in
   // the picked Verkada connection (re-resolve the matching Helix type).
   const [pickedTemplate, setPickedTemplate] = useState<BuiltinTemplate | null>(null);
+
+  // "Use it" fills the prompt and pairs Helix, both of which live well
+  // below the composer — so pressing it looked like nothing happened.
+  // Move the eye to the change and mark it briefly, rather than leaving
+  // the reader to discover it by scrolling.
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const [promptFlash, setPromptFlash] = useState(false);
+  const revealPrompt = () => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    promptRef.current?.scrollIntoView({
+      behavior: reduced ? "auto" : "smooth",
+      block: "center",
+    });
+    setPromptFlash(true);
+    window.setTimeout(() => setPromptFlash(false), 1400);
+  };
 
   // When a paired template is selected, auto-toggle "Post to Helix" and
   // try to select the matching event type by name on the current
@@ -869,6 +885,7 @@ export default function Byoa() {
               helix_attribute_mapping: a.helix_attribute_mapping,
             });
             setPostToHelix(true);
+            revealPrompt();
           }}
           onSaved={() => savedAnalytics.refetch()}
         />
@@ -973,12 +990,17 @@ export default function Byoa() {
             </div>
           )}
           <textarea
+            ref={promptRef}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={PROMPT_PLACEHOLDER}
             rows={6}
             spellCheck={false}
-            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm placeholder:text-slate-500 placeholder:italic"
+            className={`w-full px-2 py-1.5 rounded bg-white/5 border text-sm placeholder:text-slate-500 placeholder:italic transition-[border-color,box-shadow] duration-300 ease-out-strong ${
+              promptFlash
+                ? "border-sky-500/80 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]"
+                : "border-white/15"
+            }`}
           />
         </Field>
 
@@ -1542,6 +1564,7 @@ function AnalyticComposer({
 }) {
   const [intent, setIntent] = useState("");
   const [open, setOpen] = useState(false);
+  const [used, setUsed] = useState(false);
 
   const compose = useMutation({
     mutationFn: () =>
@@ -1648,10 +1671,14 @@ function AnalyticComposer({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onUse(a)}
-                  className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white"
+                  onClick={() => {
+                    onUse(a);
+                    setUsed(true);
+                    window.setTimeout(() => setUsed(false), 2000);
+                  }}
+                  className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white transition-colors duration-200 ease-out-strong"
                 >
-                  Use it
+                  {used ? "Loaded below ↓" : "Use it"}
                 </button>
                 <button
                   type="button"
