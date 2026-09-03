@@ -527,6 +527,25 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
     return () => cancelAnimationFrame(raf);
   }, [cameraId]);
 
+  // Capability checks lie: Chrome reports HEVC support via hardware and
+  // then renders nothing. Ask the element how many frames it actually
+  // decoded — bytes arriving with zero frames out is a decode failure,
+  // whatever the browser claimed beforehand.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !cameraId) return;
+    const t = setTimeout(() => {
+      const q = video.getVideoPlaybackQuality?.();
+      if (q && q.totalVideoFrames === 0 && video.readyState < 2) {
+        setError(
+          "Segments are downloading but no frames decoded — this camera streams " +
+            "H.265, which this browser will not render. Safari plays it.",
+        );
+      }
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [cameraId]);
+
   if (!cameraId) {
     return <div className="text-sm text-slate-500">Pick a camera to start.</div>;
   }
