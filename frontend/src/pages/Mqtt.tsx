@@ -151,6 +151,12 @@ export default function Mqtt() {
   // retype it per camera is inviting a mismatch.
   const knownBroker = status.data?.broker_host_port ?? null;
 
+  // The preflight already worked this out; the button should not
+  // present a re-push as the obvious next move when it is a no-op that
+  // drops the camera for 5-25 seconds.
+  const alreadyPushed =
+    preflight.data?.some((c) => c.id === "pushed" && c.state === "ok") ?? false;
+
   const live = useLiveTracks(cameraId);
 
   const online = useMemo(
@@ -305,9 +311,20 @@ export default function Mqtt() {
               <button
                 onClick={() => configure.mutate()}
                 disabled={!cameraId || !knownBroker || configure.isPending}
-                className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white disabled:opacity-40"
+                className={`text-sm px-3 py-1.5 rounded text-white disabled:opacity-40 ${
+                  alreadyPushed ? "bg-white/10 hover:bg-white/15" : "bg-sky-600"
+                }`}
+                title={
+                  alreadyPushed
+                    ? "This camera already has the current config — pushing again just churns its connection"
+                    : undefined
+                }
               >
-                {configure.isPending ? "Pushing…" : "Push config to camera"}
+                {configure.isPending
+                  ? "Pushing…"
+                  : alreadyPushed
+                    ? "Push again anyway"
+                    : "Push config to camera"}
               </button>
               <button
                 onClick={() => preview.mutate()}

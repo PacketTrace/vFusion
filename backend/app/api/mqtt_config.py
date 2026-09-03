@@ -185,7 +185,89 @@ async def preflight(
     # The occupancy-trends line. There is no API to draw one, so the most
     # this can do is tell the operator to go draw it.
     checks.append(await _occupancy_check(session, camera_id, connection_id))
+    checks.append(await _existing_config_check(session, camera_id, connection_id))
     return checks
+
+
+def _normalise_pem(text: str) -> str:
+    """Compare certificates by content, ignoring line-ending noise."""
+    return "".join(str(text or "").split())
+
+
+async def _existing_config_check(
+    session: AsyncSession, camera_id: str, connection_id: UUID | None
+) -> PreflightCheck:
+    """Whether this camera is already pointed here, with the current cert.
+
+    Without this the page looks identical for a camera that was
+    configured months ago and one that has never been touched, so the
+    only way to find out is to push again — and a push rotates nothing
+    but does churn the camera's connection for 5-25 seconds.
+
+    The certificate matters as much as the address: after regenerating,
+    every camera still holds the old CA and will fail the handshake
+    while looking perfectly configured.
+    """
+    unknown = PreflightCheck(
+        id="pushed",
+        label="Already pointed at this broker",
+        state="unknown",
+        detail="Could not read the camera's current config.",
+    )
+    client = await _client_for(session, connection_id)
+    if client is None:
+        unknown.detail = "No Verkada connection is set up."
+        return unknown
+    try:
+        config = await client.get_object_position_mqtt_config(camera_id)
+    except VerkadaApiError as e:
+        unknown.detail = _permission_hint(e)
+        return unknown
+
+    host_port = str(config.get("broker_host_port") or "")
+    if not host_port:
+        return PreflightCheck(
+            id="pushed",
+            label="Already pointed at this broker",
+            state="fail",
+            detail="Not configured yet — this camera has no broker set.",
+            fix="Push the config below.",
+        )
+
+    expected_host = provision.broker_host()
+    expected = f"{expected_host}:443" if expected_host else ""
+    if expected and host_port != expected:
+        return PreflightCheck(
+            id="pushed",
+            label="Already pointed at this broker",
+            state="fail",
+            detail=f"Pointed at {host_port} rather than {expected}.",
+            fix="Push the config below to move it here.",
+        )
+
+    ca = CA_PATH.read_text() if CA_PATH.is_file() else ""
+    if ca and _normalise_pem(config.get("broker_cert", "")) != _normalise_pem(ca):
+        return PreflightCheck(
+            id="pushed",
+            label="Already pointed at this broker",
+            state="fail",
+            detail=(
+                f"Set to {host_port}, but holding a different certificate than "
+                "the one generated here — the TLS handshake will fail."
+            ),
+            fix="Push the config below to send the current certificate.",
+        )
+
+    return PreflightCheck(
+        id="pushed",
+        label="Already pointed at this broker",
+        state="ok",
+        detail=(
+            f"Configured for {host_port} as "
+            f"{config.get('client_username') or 'unknown user'}, with the current "
+            "certificate. No need to push again."
+        ),
+    )
 
 
 async def _occupancy_check(
