@@ -236,124 +236,72 @@ button:not(:disabled):active {
 }
 
 /* ---- Brand mark -----------------------------------------------------
-   A tokamak: a thin containment ring hugging the wordmark, two particles
-   running it in opposite directions, and on ignition the ring pulses
-   outward while the text takes a brief flare.
+   Two particles circling the wordmark, close in.
 
-   Two things the previous attempt got wrong. It threw a radial gradient
-   over the word, which read as a glow blob and washed the letters out —
-   a ring that expands and thins reads as a release without covering
-   anything. And it orbited on a box taller than the header line, so the
-   dots travelled out through the bottom border; the track is now tight
-   enough to stay inside the mark.
+   offset-path is doing the important work. A rotating container moves a
+   dot in a *circle* whose radius is half the element's width — about
+   45px for this word — which is why previous attempts sent the dots
+   sailing out through the header border. An ellipse path sets the
+   vertical radius independently, so the track can hug the letters.
 
-   Decorative throughout: aria-hidden, pointer-events none, and stopped
-   under reduced motion with the ring left faintly lit. */
+   Nothing else: no containment ring, no flare on the type. Just the
+   orbit, gated behind @supports so browsers without motion paths get a
+   clean wordmark rather than two dots parked in a corner. */
 
 .brand-mark {
-  --spin: 2.6s;
-  --fuse: 5s;
-  padding: 0 3px;
-}
-
-/* Containment ring. Always present, brightening on ignition. */
-.brand-ring {
-  position: absolute;
-  inset: -2px -9px;
-  border: 1px solid rgb(56 189 248 / 0.22);
-  border-radius: 9999px;
-  pointer-events: none;
-  animation: brand-ring-heat var(--fuse) var(--ease-in-out) infinite;
-}
-
-/* The release: the ring itself expands and thins out. No fill, so the
-   letters stay readable through it. */
-.brand-pulse {
-  position: absolute;
-  inset: -2px -9px;
-  border: 1px solid rgb(186 230 253 / 0.9);
-  border-radius: 9999px;
-  opacity: 0;
-  pointer-events: none;
-  animation: brand-pulse var(--fuse) var(--ease-out) infinite;
-}
-
-/* Each particle rides the left edge of a rotating box, which traces an
-   ellipse. Kept deliberately shallow — 2px of vertical inset — so the
-   path hugs the cap height instead of leaving the header. */
-.brand-track {
-  position: absolute;
-  inset: -2px -9px;
-  pointer-events: none;
-}
-
-.brand-track-a {
-  animation: brand-spin var(--spin) linear infinite;
-}
-
-.brand-track-b {
-  animation: brand-spin calc(var(--spin) * 1.45) linear infinite reverse;
+  --spin: 3.4s;
+  padding: 0 2px;
 }
 
 .brand-dot {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 3px;
-  height: 3px;
-  margin: -1.5px 0 0 -1.5px;
-  border-radius: 9999px;
-  background: rgb(186 230 253);
-  box-shadow: 0 0 5px rgb(56 189 248 / 0.9);
+  display: none;
 }
 
-.brand-track-b .brand-dot {
-  background: rgb(251 207 232);
-  box-shadow: 0 0 5px rgb(244 114 182 / 0.9);
+@supports (offset-path: ellipse(50% 50% at 50% 50%)) {
+  .brand-dot {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+    pointer-events: none;
+    /* Vertical radius kept small so the path stays on the cap height
+       rather than orbiting the whole header. */
+    offset-path: ellipse(58% 66% at 50% 50%);
+    animation: brand-orbit var(--spin) linear infinite;
+  }
+
+  .brand-dot-a {
+    background: rgb(186 230 253);
+    box-shadow: 0 0 5px rgb(56 189 248 / 0.9);
+  }
+
+  .brand-dot-b {
+    background: rgb(251 207 232);
+    box-shadow: 0 0 5px rgb(244 114 182 / 0.9);
+    /* Opposite direction, and offset half a lap so they cross twice per
+       orbit instead of chasing each other. */
+    animation-direction: reverse;
+    animation-duration: calc(var(--spin) * 1.3);
+    offset-distance: 50%;
+  }
+
+  .brand-mark:hover .brand-dot {
+    animation-duration: 1.2s;
+  }
+
+  .brand-mark:hover .brand-dot-b {
+    animation-duration: 1.55s;
+  }
 }
 
-/* A flare on the letters, not a wash over them. */
-.brand-text {
-  animation: brand-heat var(--fuse) var(--ease-out) infinite;
-}
-
-/* Hover throttles up. */
-.brand-mark:hover {
-  --spin: 1.1s;
-}
-
-.brand-mark:hover .brand-ring {
-  border-color: rgb(56 189 248 / 0.45);
-}
-
-@keyframes brand-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes brand-ring-heat {
-  0%, 84%, 100% { border-color: rgb(56 189 248 / 0.22); }
-  88% { border-color: rgb(186 230 253 / 0.85); }
-}
-
-@keyframes brand-pulse {
-  0%, 86% { opacity: 0; transform: scale(1); }
-  89% { opacity: 0.9; }
-  100% { opacity: 0; transform: scale(1.35); border-color: rgb(186 230 253 / 0); }
-}
-
-@keyframes brand-heat {
-  0%, 85%, 100% { text-shadow: none; }
-  89% { text-shadow: 0 0 6px rgb(186 230 253 / 0.75); }
+@keyframes brand-orbit {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-track-a,
-  .brand-track-b,
-  .brand-ring,
-  .brand-pulse,
-  .brand-text {
-    animation: none;
-  }
-  .brand-pulse { opacity: 0; }
+  .brand-dot { animation: none; }
 }

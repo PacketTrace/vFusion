@@ -66,21 +66,16 @@ function AppShell() {
     <div className="h-full flex flex-col">
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
-          {/* Tokamak: a containment ring with two particles running it,
-              and a ring pulse on ignition rather than a glow. The last
-              version threw a radial flash over the word, which washed it
-              out, and orbited on a box tall enough to send the dots out
-              through the header border. This stays on its track. */}
+          {/* Two particles on a tight elliptical track around the
+              wordmark, and nothing else — no ring, no flare on the
+              letters. offset-path is what makes the track an ellipse:
+              rotating a box moves a dot in a circle whose radius is half
+              the word's width, which is why earlier versions flung them
+              out of the header. */}
           <div className="brand-mark font-semibold text-white tracking-tight relative select-none">
-            <span className="brand-ring" aria-hidden="true" />
-            <span className="brand-pulse" aria-hidden="true" />
-            <span className="brand-track brand-track-a" aria-hidden="true">
-              <i className="brand-dot" />
-            </span>
-            <span className="brand-track brand-track-b" aria-hidden="true">
-              <i className="brand-dot" />
-            </span>
-            <span className="brand-text relative">{brand}</span>
+            <i className="brand-dot brand-dot-a" aria-hidden="true" />
+            <i className="brand-dot brand-dot-b" aria-hidden="true" />
+            <span className="relative">{brand}</span>
           </div>
           <nav className="flex items-center gap-1">
             <NavLink
