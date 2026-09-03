@@ -14,11 +14,11 @@ import {
 import JsonView from "../components/JsonView";
 
 const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-slate-800 text-slate-300",
-  running: "bg-sky-900 text-sky-200",
-  success: "bg-emerald-900 text-emerald-200",
-  failed: "bg-rose-900 text-rose-200",
-  skipped: "bg-slate-800 text-slate-500",
+  pending: "bg-white/10 text-slate-300",
+  running: "bg-sky-500/15 text-sky-300 border border-sky-500/25",
+  success: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25",
+  failed: "bg-rose-500/15 text-rose-300 border border-rose-500/25",
+  skipped: "bg-white/10 text-slate-500",
 };
 
 export default function Runs() {
@@ -63,26 +63,26 @@ export default function Runs() {
       </div>
 
       <div className="grid grid-cols-12 gap-4 min-h-[60vh]">
-        <div className="col-span-5 border border-slate-800 rounded-lg overflow-hidden bg-slate-900/50">
+        <div className="col-span-5 border border-white/15 rounded-lg overflow-hidden bg-white/5">
           {items.length === 0 ? (
             <div className="p-6 text-sm text-slate-500">
               No runs yet. Once a webhook matches an enabled flow's trigger, it'll
               show up here.
             </div>
           ) : (
-            <ul className="divide-y divide-slate-800">
+            <ul className="divide-y divide-white/10">
               {items.map((r) => (
                 <li
                   key={r.id}
                   onClick={() => pick(r.id)}
                   className={`px-3 py-2 cursor-pointer text-sm transition-colors ${
-                    selected === r.id ? "bg-slate-800" : "hover:bg-slate-800/50"
+                    selected === r.id ? "bg-white/10" : "hover:bg-white/5"
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        STATUS_STYLE[r.status] ?? "bg-slate-800 text-slate-300"
+                        STATUS_STYLE[r.status] ?? "bg-white/10 text-slate-300"
                       }`}
                     >
                       {r.status}
@@ -110,7 +110,7 @@ export default function Runs() {
           )}
         </div>
 
-        <div className="col-span-7 border border-slate-800 rounded-lg bg-slate-900/50 overflow-hidden">
+        <div className="col-span-7 border border-white/15 rounded-lg bg-white/5 overflow-hidden">
           {detail.data ? (
             <RunDetailView run={detail.data} />
           ) : (
@@ -177,11 +177,11 @@ function RunDetailView({ run }: { run: RunDetail }) {
   }, [run.id]);
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-800">
+      <div className="px-4 py-3 border-b border-white/15">
         <div className="flex items-center gap-2">
           <span
             className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              STATUS_STYLE[run.status] ?? "bg-slate-800 text-slate-300"
+              STATUS_STYLE[run.status] ?? "bg-white/10 text-slate-300"
             }`}
           >
             {run.status}
@@ -294,7 +294,7 @@ function RunDetailView({ run }: { run: RunDetail }) {
         ) : (
           <div>
             <SectionTitle>Action output</SectionTitle>
-            <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+            <div className="bg-black/30 rounded p-3 overflow-x-auto">
               {run.output ? (
                 <JsonView value={run.output} />
               ) : (
@@ -310,7 +310,7 @@ function RunDetailView({ run }: { run: RunDetail }) {
 
         <div>
           <SectionTitle>Trigger payload</SectionTitle>
-          <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+          <div className="bg-black/30 rounded p-3 overflow-x-auto">
             {run.input ? (
               <JsonView value={run.input} />
             ) : (
@@ -434,12 +434,12 @@ function StepCard({
       } ${dim ? "opacity-50" : ""}`}
     >
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
           {index + 1}
         </span>
         <span
           className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-            STATUS_STYLE[step.status] ?? "bg-slate-800 text-slate-300"
+            STATUS_STYLE[step.status] ?? "bg-white/10 text-slate-300"
           }`}
         >
           {step.status}
@@ -665,14 +665,14 @@ function OutputSection({ output }: { output: unknown }) {
     return (
       <div>
         <SectionTitle>Output</SectionTitle>
-        <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+        <div className="bg-black/30 rounded p-3 overflow-x-auto">
           <JsonView value={parsedJson} />
         </div>
         <details className="mt-2">
           <summary className="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-300">
             Details
           </summary>
-          <div className="mt-2 bg-slate-950 rounded p-3 overflow-x-auto">
+          <div className="mt-2 bg-black/30 rounded p-3 overflow-x-auto">
             <JsonView value={output} />
           </div>
         </details>
@@ -684,14 +684,14 @@ function OutputSection({ output }: { output: unknown }) {
     return (
       <div>
         <SectionTitle>Output</SectionTitle>
-        <div className="bg-slate-950 rounded p-3 text-sm text-slate-100 whitespace-pre-wrap break-words">
+        <div className="bg-black/30 rounded p-3 text-sm text-slate-100 whitespace-pre-wrap break-words">
           {text}
         </div>
         <details className="mt-2">
           <summary className="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-300">
             Details
           </summary>
-          <div className="mt-2 bg-slate-950 rounded p-3 overflow-x-auto">
+          <div className="mt-2 bg-black/30 rounded p-3 overflow-x-auto">
             <JsonView value={output} />
           </div>
         </details>
@@ -701,7 +701,7 @@ function OutputSection({ output }: { output: unknown }) {
   return (
     <div>
       <SectionTitle>Output</SectionTitle>
-      <div className="bg-slate-950 rounded p-3 overflow-x-auto">
+      <div className="bg-black/30 rounded p-3 overflow-x-auto">
         <JsonView value={output} />
       </div>
     </div>
@@ -806,18 +806,18 @@ function StepBlock({
         ) / 100
       : null;
   return (
-    <div className="border border-slate-800 rounded-md bg-slate-950/50 overflow-hidden">
+    <div className="border border-white/15 rounded-md bg-black/30/50 overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-3 py-2 bg-slate-900/60 border-b border-slate-800 text-left flex items-center gap-2"
+        className="w-full px-3 py-2 bg-white/5/60 border-b border-white/15 text-left flex items-center gap-2"
       >
         <span className="text-slate-500 text-xs w-3">{open ? "▾" : "▸"}</span>
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
           {index + 1}
         </span>
         <span
           className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-            STATUS_STYLE[step.status] ?? "bg-slate-800 text-slate-300"
+            STATUS_STYLE[step.status] ?? "bg-white/10 text-slate-300"
           }`}
         >
           {step.status}
@@ -918,7 +918,7 @@ function StepBlock({
               <summary className="cursor-pointer text-xs uppercase tracking-wider text-slate-500 hover:text-slate-300">
                 Log ({logs.length})
               </summary>
-              <pre className="mt-2 bg-slate-950 rounded p-2 text-[11px] font-mono whitespace-pre-wrap break-words text-slate-300 max-h-64 overflow-y-auto">
+              <pre className="mt-2 bg-black/30 rounded p-2 text-[11px] font-mono whitespace-pre-wrap break-words text-slate-300 max-h-64 overflow-y-auto">
                 {logs
                   .map(
                     (l) =>

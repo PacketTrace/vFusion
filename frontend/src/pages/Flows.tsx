@@ -158,7 +158,7 @@ export default function Flows() {
         </div>
       )}
 
-      <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900/50">
+      <div className="border border-white/15 rounded-lg overflow-hidden bg-white/5">
         {flows.isLoading ? (
           <div className="p-6 text-sm text-slate-500">Loading…</div>
         ) : !flows.data || flows.data.length === 0 ? (
@@ -171,7 +171,7 @@ export default function Flows() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider">
+            <thead className="bg-white/5 text-slate-400 text-xs uppercase tracking-wider">
               <tr>
                 <th className="text-left px-3 py-2">Name</th>
                 <th className="text-left px-3 py-2">Trigger</th>
@@ -180,7 +180,7 @@ export default function Flows() {
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-white/10">
               {flows.data.map((f) => (
                 <tr key={f.id}>
                   <td className="px-3 py-2 font-medium">
@@ -223,10 +223,11 @@ export default function Flows() {
                   <td className="px-3 py-2">
                     <button
                       onClick={() => toggle.mutate(f)}
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      title={f.enabled ? "Disable this flow" : "Enable this flow"}
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded transition-colors duration-150 ease-out-strong ${
                         f.enabled
-                          ? "bg-emerald-900 text-emerald-200"
-                          : "bg-slate-800 text-slate-400"
+                          ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25"
+                          : "bg-white/5 text-slate-400 border border-white/15 hover:border-white/30 hover:text-slate-200"
                       }`}
                     >
                       {f.enabled ? "ON" : "OFF"}
@@ -235,13 +236,13 @@ export default function Flows() {
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <Link
                       to={`/flows/${f.id}/edit`}
-                      className="text-xs px-2 py-1 rounded border border-slate-700 hover:border-sky-600 mr-2 inline-block"
+                      className="text-xs px-2 py-1 rounded border border-white/15 hover:border-sky-600 mr-2 inline-block"
                     >
                       Edit
                     </Link>
                     <button
                       onClick={() => setPendingDelete(f)}
-                      className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-rose-300 hover:border-rose-800"
+                      className="text-xs px-2 py-1 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800"
                     >
                       Delete
                     </button>
