@@ -38,7 +38,10 @@ NS = (
 )
 
 MANUFACTURER = "vFusion"
-MODEL = "Virtual Camera"
+# What a client displays in its camera list. It also seeds the hostname
+# and the hardware scope, so it wants to be recognisable at a glance in
+# a list of real cameras rather than descriptive of what it is.
+MODEL = "vFusion Camera"
 FIRMWARE = "1.0"
 
 
