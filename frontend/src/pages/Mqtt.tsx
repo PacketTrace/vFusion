@@ -116,6 +116,7 @@ export default function Mqtt() {
   });
 
   const [setupHost, setSetupHost] = useState("");
+  const [setupHostTouched, setSetupHostTouched] = useState(false);
   const setup = useMutation({
     mutationFn: () =>
       apiPost<{
@@ -162,6 +163,13 @@ export default function Mqtt() {
   // routes fine and then fails the TLS handshake — so asking anyone to
   // retype it per camera is inviting a mismatch.
   const knownBroker = status.data?.broker_host_port ?? null;
+  const knownHost = knownBroker ? knownBroker.replace(/:\d+$/, "") : "";
+  // The certificate already names an address; showing an empty box, or
+  // whatever was typed last, invites generating a cert for somewhere
+  // else by accident.
+  useEffect(() => {
+    if (knownHost && !setupHostTouched) setSetupHost(knownHost);
+  }, [knownHost, setupHostTouched]);
 
   // The preflight already worked this out; the button should not
   // present a re-push as the obvious next move when it is a no-op that
@@ -198,7 +206,10 @@ export default function Mqtt() {
             <Labeled label="Address cameras will connect to">
               <input
                 value={setupHost}
-                onChange={(e) => setSetupHost(e.target.value)}
+                onChange={(e) => {
+                  setSetupHostTouched(true);
+                  setSetupHost(e.target.value);
+                }}
                 placeholder="192.168.1.10"
                 className="w-full px-2 py-1 rounded bg-black/30 border border-white/15 text-sm font-mono"
                 spellCheck={false}
@@ -210,7 +221,13 @@ export default function Mqtt() {
             disabled={!setupHost || setup.isPending}
             className="text-sm px-3 py-1.5 rounded border border-slate-600 text-slate-200 hover:border-sky-500 disabled:opacity-40"
           >
-            {setup.isPending ? "Generating…" : "Generate certificate + credentials"}
+            {setup.isPending
+              ? "Generating…"
+              : !status.data?.ca_present
+                ? "Generate certificate + credentials"
+                : setupHost !== knownHost
+                  ? "Generate for this address"
+                  : "Regenerate certificate"}
           </button>
           <button
             onClick={() => reset.mutate()}
