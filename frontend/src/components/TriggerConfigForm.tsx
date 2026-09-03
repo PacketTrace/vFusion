@@ -4,6 +4,7 @@ import {
   apiGet,
   FilterFieldProfile,
   Flow,
+  KnownDoor,
   Taxonomy,
   TriggerField,
 } from "../lib/api";
@@ -119,8 +120,14 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
   // Anything under 5% of events is almost certainly noise — a stray LPR
   // field on a Person of Interest webhook, say. Still offered, but parked
   // under a "rarely present" group so it doesn't sit next to the real ones.
+  // Three buckets, because "we have not seen this" and "we have seen this
+  // and it is usually noise" are different warnings. Unproven fields sort
+  // last but stay pickable -- the schema says the event carries them.
   const commonFields = profiled.filter((f) => f.present_pct >= 5);
-  const rareFields = profiled.filter((f) => f.present_pct < 5);
+  const rareFields = profiled.filter(
+    (f) => f.present_pct < 5 && f.present > 0,
+  );
+  const unseenFields = profiled.filter((f) => f.present === 0);
 
   const familyEntry = taxonomy.data?.[value.family];
   const filterFieldOptions = buildFilterFieldOptions(
@@ -266,6 +273,15 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                       ))}
                     </optgroup>
                   )}
+                  {unseenFields.length > 0 && (
+                    <optgroup label="Declared, no samples yet">
+                      {unseenFields.map((opt) => (
+                        <option key={opt.field} value={opt.field}>
+                          {opt.field}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                   {/* If the user already picked a field that no longer
                       appears (e.g. because the sample changed), keep it
                       selectable rather than silently dropping it. */}
@@ -296,6 +312,11 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                     value={f.value}
                     onChange={(v) => setFilter(i, { value: v })}
                   />
+                ) : f.field === "door_id" ? (
+                  <DoorFilterValue
+                    value={f.value}
+                    onChange={(v) => setFilter(i, { value: v })}
+                  />
                 ) : (
                   <ValuePicker
                     value={f.value}
@@ -309,8 +330,19 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
                 if (!prof) return null;
                 return (
                   <div className="text-[11px] text-slate-500">
-                    Seen on {prof.present} of {prof.sample_size} recent{" "}
-                    {value.notificationType || value.family} events
+                    {prof.present === 0 ? (
+                      <>
+                        No samples yet
+                        {prof.declared
+                          ? " — the payload schema says this event carries it, so the filter is valid but unproven."
+                          : "."}
+                      </>
+                    ) : (
+                      <>
+                        Seen on {prof.present} of {prof.sample_size} recent{" "}
+                        {value.notificationType || value.family} events
+                      </>
+                    )}
                     {prof.values.length === 0 && prof.distinct_count > 0
                       ? ` · ${prof.distinct_count} distinct values (too many to list — type one)`
                       : ""}
@@ -345,6 +377,54 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
  *  a UUID. Falls back to a free-text box for pasting an id that isn't
  *  in the synced list (offline, different org cache, etc.). Mirrors
  *  the camera picker in the step config form. */
+/** Doors are UUIDs on the wire and names in every other part of the
+ *  product. Pasting a UUID to filter "which door" was busywork when the
+ *  door list is already synced. */
+function DoorFilterValue({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const doors = useQuery({
+    queryKey: ["verkada-doors"],
+    queryFn: () => apiGet<KnownDoor[]>("/api/verkada/doors"),
+    staleTime: 60_000,
+  });
+  const list = [...(doors.data ?? [])].sort((a, b) =>
+    (a.name ?? "").localeCompare(b.name ?? ""),
+  );
+  return (
+    <div className="flex-1 space-y-1">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm"
+      >
+        <option value="">— pick a door —</option>
+        {list.map((d) => (
+          <option key={d.door_id} value={d.door_id}>
+            {d.name ?? "(unnamed)"}
+            {d.site_name ? ` — ${d.site_name}` : ""}
+          </option>
+        ))}
+        {value && !list.some((d) => d.door_id === value) && (
+          <option value={value}>{value}</option>
+        )}
+      </select>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-xs font-mono"
+        placeholder="or paste a door_id UUID"
+        spellCheck={false}
+      />
+    </div>
+  );
+}
+
+
 function CameraFilterValue({
   value,
   onChange,

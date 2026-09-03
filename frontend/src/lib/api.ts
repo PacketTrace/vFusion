@@ -414,6 +414,10 @@ export interface FilterFieldProfile {
   /** Values fixed by the API contract (e.g. the three object classes),
    *  offered whether or not we have recorded one. */
   known_values?: (string | number | boolean)[];
+  /** The payload model declares this path. Declared + present === 0 means
+   *  filterable but unproven; undeclared means Verkada sent something our
+   *  schema does not know about. */
+  declared?: boolean;
 }
 
 export interface NotificationTypeMeta {

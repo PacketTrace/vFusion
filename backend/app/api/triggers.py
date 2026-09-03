@@ -7,7 +7,7 @@ the shape templates expect: ``trigger.data.person_label``,
 ``trigger.org_id``, etc.
 """
 
-from typing import Any
+from typing import Any, get_args, get_origin
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -16,6 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.connectors.verkada import poi_store
+from app.connectors.verkada.schemas import (
+    AccessEventData,
+    AlarmSiteStateChangedData,
+    CameraEventData,
+    CredentialEventData,
+    IntercomEventData,
+    LPRData,
+    NewAlarmEventData,
+    SensorAlertData,
+)
 from app.models import WebhookEvent
 
 
@@ -173,6 +183,20 @@ _KNOWN_FIELD_VALUES: dict[str, list[str]] = {
 }
 
 
+# The payload model behind each family. Alarm has two shapes, so the
+# declared paths are the union -- a filter on a path the other shape
+# lacks simply never matches, which is the same outcome as today.
+_FAMILY_MODELS: dict[str, tuple[type[BaseModel], ...]] = {
+    "camera": (CameraEventData,),
+    "access": (AccessEventData,),
+    "intercom": (IntercomEventData,),
+    "lpr": (LPRData,),
+    "sensor": (SensorAlertData,),
+    "alarm": (AlarmSiteStateChangedData, NewAlarmEventData),
+    "credential": (CredentialEventData,),
+}
+
+
 class FilterFieldProfile(BaseModel):
     field: str
     present: int
@@ -192,6 +216,10 @@ class FilterFieldProfile(BaseModel):
     # object classes, so "animal" should be pickable before an animal has
     # walked past a camera.
     known_values: list[Any] = []
+    # True when the payload model declares this path. A declared path with
+    # present == 0 is filterable but unproven; an undeclared one is a field
+    # Verkada started sending that our schema has not caught up with.
+    declared: bool = False
 
 
 @router.get("/filter-fields", response_model=list[FilterFieldProfile])
@@ -201,12 +229,20 @@ async def filter_fields(
     limit: int = Query(default=400, le=2000),
     session: AsyncSession = Depends(get_session),
 ) -> list[FilterFieldProfile]:
-    """Which data.* fields are worth filtering on for this event type.
+    """Which data.* paths are worth filtering on for this event type.
 
-    Ranked by how often they're actually populated. Rare fields are still
-    returned — a Person of Interest event really can carry a stray LPR
-    field — so the UI can show them as rare rather than pretend they don't
-    exist.
+    Schema-first, observation-enriched. The candidate list comes from the
+    Pydantic model for the family -- that is the contract, and it holds
+    whether or not a matching webhook has arrived yet -- and the stored
+    samples supply the evidence: how often each path is really populated
+    and which values it takes.
+
+    Observation alone was the original design and it hid working
+    features. A field that is null in the last 400 samples is not a
+    field that cannot be filtered, and an event type nobody has sent yet
+    still has a known shape. Both used to come back as "no filters
+    available", which reads as a limitation of the product rather than a
+    gap in the data.
     """
     q = select(WebhookEvent).where(WebhookEvent.body_json.is_not(None))
     if family:
@@ -227,18 +263,11 @@ async def filter_fields(
         if data is None:
             continue
         total += 1
-        for key, raw in data.items():
-            if key in _NOT_FILTERABLE:
-                continue
-            # A key that's present but null tells us nothing to match on.
-            if raw is None or raw == "" or raw == []:
-                continue
-            # Objects arrive as a list; each entry is independently
-            # filterable, which is what makes objects=animal work.
+        for path, raw in _walk(data):
             if isinstance(raw, list):
-                types.setdefault(key, "array")
-                present[key] = present.get(key, 0) + 1
-                bucket = values.setdefault(key, {})
+                types.setdefault(path, "array")
+                present[path] = present.get(path, 0) + 1
+                bucket = values.setdefault(path, {})
                 for item in raw:
                     label = (
                         item.get("type") or item.get("label")
@@ -249,38 +278,138 @@ async def filter_fields(
                         continue
                     bucket[str(label)] = bucket.get(str(label), 0) + 1
                 continue
-            if isinstance(raw, dict):
-                # Nested objects (door_info, user_info) aren't matched
-                # whole; the engine compares scalars.
-                continue
-            types.setdefault(key, type(raw).__name__)
-            present[key] = present.get(key, 0) + 1
-            bucket = values.setdefault(key, {})
+            types.setdefault(path, type(raw).__name__)
+            present[path] = present.get(path, 0) + 1
+            bucket = values.setdefault(path, {})
             bucket[str(raw)] = bucket.get(str(raw), 0) + 1
 
+    declared = _declared_paths(family)
     out: list[FilterFieldProfile] = []
-    for key, count in present.items():
-        bucket = values.get(key, {})
+    for path, count in present.items():
+        bucket = values.get(path, {})
         distinct = len(bucket)
         top = [
-            v
-            for v, _n in sorted(bucket.items(), key=lambda kv: kv[1], reverse=True)
+            v for v, _n in sorted(bucket.items(), key=lambda kv: kv[1], reverse=True)
         ][:_MAX_DISTINCT_FOR_PICKER]
         out.append(
             FilterFieldProfile(
-                field=key,
+                field=path,
                 present=count,
                 sample_size=total,
                 present_pct=round(100.0 * count / total, 1) if total else 0.0,
                 values=top if distinct <= _MAX_DISTINCT_FOR_PICKER else [],
                 distinct_count=distinct,
-                type=types.get(key, "str"),
+                type=types.get(path, "str"),
+                declared=path in declared,
             )
         )
+
+    # Everything the model promises but these samples never populated.
+    # Offered anyway, flagged, so the UI can show it as unproven rather
+    # than pretend the event has no such field.
+    seen = {p.field for p in out}
+    for path, kind in sorted(declared.items()):
+        if path in seen:
+            continue
+        # user_info and friends are typed Any, so the schema knows the
+        # field exists but not what is inside. Offer the container as a
+        # placeholder only while we have no leaves for it -- once a
+        # sample arrives, user_info.name is the useful thing and the
+        # bare parent would never match a scalar anyway.
+        if kind == "unknown" and any(o.startswith(f"{path}.") for o in seen):
+            continue
+        out.append(
+            FilterFieldProfile(
+                field=path,
+                present=0,
+                sample_size=total,
+                present_pct=0.0,
+                values=[],
+                distinct_count=0,
+                type=kind,
+                declared=True,
+            )
+        )
+
     _merge_known_values(out)
     _merge_synced_people(out)
     out.sort(key=lambda f: (-f.present_pct, f.field))
     return out
+
+
+def _walk(data: dict[str, Any], prefix: str = "", depth: int = 0):
+    """Yield (dotted path, value) for every populated leaf in a payload.
+
+    Descends one level into nested objects so ``door_info.name`` and
+    ``user_info.email`` are offered as filters. The engine has always
+    resolved dotted paths -- see ``engine.triggers._get`` -- so this
+    exposes matching that already worked, it does not add it.
+
+    Keys that are present but empty are skipped: a null tells us the
+    field exists, which the schema already said, but gives the picker
+    nothing to suggest.
+    """
+    for key, raw in data.items():
+        if key in _NOT_FILTERABLE:
+            continue
+        path = f"{prefix}{key}"
+        if raw is None or raw == "" or raw == []:
+            continue
+        if isinstance(raw, dict):
+            if depth == 0:
+                yield from _walk(raw, prefix=f"{path}.", depth=1)
+            # A whole object is never compared as a unit; only its leaves.
+            continue
+        yield path, raw
+
+
+def _declared_paths(family: str | None) -> dict[str, str]:
+    """Path -> type name for everything the family's model declares.
+
+    Nested models contribute their own fields as dotted paths. Fields
+    typed ``Any`` (user_info, aux_info) are opaque here -- their inner
+    keys can only come from samples, which is the one job observation
+    still does better than the schema.
+    """
+    models = _FAMILY_MODELS.get(family or "", ())
+    paths: dict[str, str] = {}
+    for model in models:
+        for name, info in model.model_fields.items():
+            if name in _NOT_FILTERABLE:
+                continue
+            inner = _model_of(info.annotation)
+            if inner is not None:
+                for sub, sub_info in inner.model_fields.items():
+                    if sub in _NOT_FILTERABLE:
+                        continue
+                    if _model_of(sub_info.annotation) is not None:
+                        continue  # two levels deep is past useful
+                    paths[f"{name}.{sub}"] = _type_name(sub_info.annotation)
+                continue
+            paths[name] = _type_name(info.annotation)
+    return paths
+
+
+def _model_of(annotation: Any) -> type[BaseModel] | None:
+    """The BaseModel inside an annotation, seeing through ``X | None``."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    for arg in get_args(annotation):
+        if isinstance(arg, type) and issubclass(arg, BaseModel):
+            return arg
+    return None
+
+
+def _type_name(annotation: Any) -> str:
+    if get_origin(annotation) is list or annotation is list:
+        return "array"
+    args = [a for a in get_args(annotation) if a is not type(None)]
+    target = args[0] if args else annotation
+    if get_origin(target) is list or target is list:
+        return "array"
+    if target is Any:
+        return "unknown"
+    return getattr(target, "__name__", "str")
 
 
 def _merge_known_values(profiles: list[FilterFieldProfile]) -> None:
