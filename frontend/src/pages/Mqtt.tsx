@@ -389,18 +389,24 @@ function useLiveTracks(cameraId: string) {
 
 function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | null }) {
   const [frameKey, setFrameKey] = useState(0);
+  const [loadingFrame, setLoadingFrame] = useState(false);
+  const [frameError, setFrameError] = useState(false);
 
-  // A still on a slow cycle, not video. HLS put the picture 8-12 seconds
-  // behind detections that arrive in ~10ms, and reconciling the two meant
-  // delaying the boxes to match — which threw away the immediacy that
-  // makes this worth watching. A frame every 15s costs one ffmpeg grab
-  // and lets the boxes run live.
+  // Loaded once per camera and then left alone. The boxes are the live
+  // part; the picture behind them is context, and re-grabbing it on a
+  // timer spends an ffmpeg run every cycle to change almost nothing.
   useEffect(() => {
     if (!cameraId) return;
+    setFrameError(false);
+    setLoadingFrame(true);
     setFrameKey((k) => k + 1);
-    const t = setInterval(() => setFrameKey((k) => k + 1), 15000);
-    return () => clearInterval(t);
   }, [cameraId]);
+
+  const refreshFrame = () => {
+    setFrameError(false);
+    setLoadingFrame(true);
+    setFrameKey((k) => k + 1);
+  };
 
   if (!cameraId) {
     return <div className="text-sm text-slate-500">Pick a camera to start.</div>;
@@ -417,12 +423,40 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
           key={frameKey}
           src={`${API_BASE}/api/mqtt/frame/${cameraId}?k=${frameKey}`}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-70"
+          onLoad={() => setLoadingFrame(false)}
+          onError={() => {
+            setLoadingFrame(false);
+            setFrameError(true);
+          }}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out-strong"
+          style={{ opacity: loadingFrame ? 0 : 0.7 }}
         />
+        {loadingFrame && (
+          // The grab decodes a frame out of the live stream with ffmpeg,
+          // which takes a couple of seconds. Without saying so, the first
+          // read of a blank rectangle is "this is broken".
+          <div className="absolute inset-0 grid place-items-center gap-2 text-center px-4">
+            <div>
+              <div className="mx-auto mb-2 h-4 w-4 rounded-full border-2 border-slate-600 border-t-sky-400 animate-spin" />
+              <div className="text-xs text-slate-400">
+                Grabbing a live frame from the camera
+              </div>
+              <div className="text-[11px] text-slate-600 mt-0.5">
+                decoding one frame out of the stream — usually 2–3 seconds
+              </div>
+            </div>
+          </div>
+        )}
+        {frameError && !loadingFrame && (
+          <div className="absolute inset-0 grid place-items-center px-4 text-center text-xs text-amber-300">
+            Could not grab a frame. The camera may be offline, or ffmpeg could
+            not reach the stream.
+          </div>
+        )}
         {objects.map((o) => (
           <TrackedBox key={o.obj_id} object={o} />
         ))}
-        {objects.length === 0 && (
+        {objects.length === 0 && !loadingFrame && !frameError && (
           <div className="absolute inset-0 grid place-items-center text-xs text-slate-500">
             No objects in view
           </div>
@@ -448,10 +482,11 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
         )}
         <button
           type="button"
-          onClick={() => setFrameKey((k) => k + 1)}
-          className="text-slate-500 hover:text-slate-300 underline underline-offset-2"
+          onClick={refreshFrame}
+          disabled={loadingFrame}
+          className="text-slate-500 hover:text-slate-300 underline underline-offset-2 disabled:opacity-50"
         >
-          Refresh frame
+          {loadingFrame ? "Refreshing…" : "Refresh image"}
         </button>
       </div>
     </div>
