@@ -59,6 +59,7 @@ export default function Rtsp() {
   const qc = useQueryClient();
   const [host, setHost] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<QueueItem | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -84,9 +85,24 @@ export default function Rtsp() {
     onSuccess: () => invalidate(),
   });
   const toggle = useMutation({
-    mutationFn: (enabled: boolean) => apiPost<Status>("/api/rtsp/enable", { enabled }),
-    onSuccess: () => invalidate(),
-    onError: (e: Error) => setUploadError(e.message),
+    // Saves the address on the way through. It sits in local state until
+    // Save is pressed, so a typed-but-unsaved value looked committed and
+    // turning the stream on failed with "set the address first" while
+    // the address was plainly right there on screen.
+    mutationFn: async (enabled: boolean) => {
+      if (enabled) {
+        const typed = (host ?? "").trim();
+        if (typed && typed !== status.data?.advertise_host) {
+          await apiPut<Status>("/api/rtsp/settings", { advertise_host: typed });
+        }
+      }
+      return apiPost<Status>("/api/rtsp/enable", { enabled });
+    },
+    onSuccess: () => {
+      setToggleError(null);
+      invalidate();
+    },
+    onError: (e: Error) => setToggleError(e.message),
   });
   const rotate = useMutation({
     mutationFn: () => apiPost<Status>("/api/rtsp/rotate-password", {}),
@@ -220,11 +236,25 @@ export default function Rtsp() {
           )}
         </div>
 
-        {s?.enabled && s.url && (
+        {toggleError && (
+          <div className="mt-3 text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
+            {toggleError}
+          </div>
+        )}
+
+        {s?.url && s.read_password && (
           <div className="mt-4 space-y-2">
             <p className="text-[11px] text-slate-400">
               In Command: <strong className="text-slate-200">Add Cameras</strong> →{" "}
               <strong className="text-slate-200">RTSP</strong>, then paste these.
+              {!s.enabled && (
+                <span className="text-slate-500">
+                  {" "}
+                  They exist as soon as an address is saved, so you can test the
+                  stream yourself before pointing Verkada at it — but nothing
+                  answers on that URL until it is on.
+                </span>
+              )}
             </p>
             <CopyRow label="RTSP URL (HQ)" value={s.url} />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
