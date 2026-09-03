@@ -158,6 +158,18 @@ class Pump:
         self._close_pipe()
         self._read_fd, self._write_fd = os.pipe()
         self._aread_fd, self._awrite_fd = os.pipe()
+        # One process writes both pipes, and a pipe holds 64KB by default
+        # while a 1080p frame is 3.1MB -- so the source is blocked on the
+        # video pipe almost permanently, which is fine because the encoder
+        # is draining it. What is not fine is the source blocking on the
+        # *audio* pipe while the encoder is still draining video: then
+        # both sides wait and nothing is ever published.
+        #
+        # A megabyte of PCM is about five seconds, which is far more
+        # run-ahead than the interleave needs. Best effort: the cap is
+        # /proc/sys/fs/pipe-max-size and a refusal is not worth failing
+        # over.
+        _widen(self._awrite_fd)
 
         state = settings.get()
         cmd = _encoder_cmd(
@@ -287,9 +299,14 @@ class Pump:
         """
         if self._write_fd is None or self._awrite_fd is None:
             return None
+        cmd = build(self._awrite_fd)
+        # Same reasoning as the encoder's argv: a source that starts and
+        # produces nothing is indistinguishable from one that never
+        # started, unless one of them was written down.
+        logger.warning("rtsp source: %s", " ".join(cmd))
         try:
             proc = await asyncio.create_subprocess_exec(
-                *build(self._awrite_fd),
+                *cmd,
                 stdout=self._write_fd,
                 stdin=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
@@ -342,6 +359,16 @@ def _normalise() -> str:
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
         f"fps={settings.FPS},format=yuv420p"
     )
+
+
+def _widen(fd: int, size: int = 1024 * 1024) -> None:
+    """Ask the kernel for a bigger pipe buffer. Best effort."""
+    try:
+        import fcntl
+
+        fcntl.fcntl(fd, getattr(fcntl, "F_SETPIPE_SZ", 1031), size)
+    except (ImportError, OSError) as e:
+        logger.warning("could not widen pipe buffer: %s", e)
 
 
 def _redact(arg: str) -> str:
