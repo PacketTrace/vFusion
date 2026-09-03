@@ -143,14 +143,6 @@ function AppShell() {
               Flows
             </NavLink>
             <NavLink
-              to="/runs"
-              className={({ isActive }) =>
-                `${navItem} ${isActive ? navActive : navInactive}`
-              }
-            >
-              Runs
-            </NavLink>
-            <NavLink
               to="/workbench"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`

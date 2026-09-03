@@ -21,7 +21,7 @@ const STATUS_STYLE: Record<string, string> = {
   skipped: "bg-white/10 text-slate-500",
 };
 
-export default function Runs() {
+export default function Runs({ embedded = false }: { embedded?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(
     searchParams.get("selected"),
@@ -51,16 +51,18 @@ export default function Runs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Runs</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Every flow execution. Open one to see the trigger payload, the action
-          output, and any error.{" "}
-          <Link to="/flows" className="text-sky-400 hover:underline">
-            Configure flows →
-          </Link>
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Runs</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Every flow execution. Open one to see the trigger payload, the
+            action output, and any error.{" "}
+            <Link to="/flows" className="text-sky-400 hover:underline">
+              Configure flows →
+            </Link>
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-12 gap-4 min-h-[60vh]">
         <div className="col-span-5 border border-white/15 rounded-lg overflow-hidden bg-white/5">

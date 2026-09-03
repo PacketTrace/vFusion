@@ -7,6 +7,7 @@ import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Templates from "./Templates";
+import Runs from "./Runs";
 
 
 export default function Flows() {
@@ -92,7 +93,11 @@ export default function Flows() {
   });
   // Templates are flows you have not made yet, so they live here rather
   // than in a separate destination.
-  const tab = searchParams.get("tab") === "templates" ? "templates" : "flows";
+  const requestedTab = searchParams.get("tab");
+  const tab =
+    requestedTab === "templates" || requestedTab === "runs"
+      ? requestedTab
+      : "flows";
   const setTab = (next: string) => {
     const q = new URLSearchParams(searchParams);
     q.set("tab", next);
@@ -125,6 +130,11 @@ export default function Flows() {
               <>
                 Starter flows, pre-wired with a trigger, AI analysis and a Helix
                 event type. Install one and it becomes a flow you own.
+              </>
+            ) : tab === "runs" ? (
+              <>
+                Every execution. Open one to see the trigger payload, the action
+                output, and any error.
               </>
             ) : (
               <>
@@ -173,6 +183,7 @@ export default function Flows() {
         {[
           { key: "templates", label: "Templates" },
           { key: "flows", label: "Existing" },
+          { key: "runs", label: "Runs" },
         ].map((t) => (
           <button
             key={t.key}
@@ -190,6 +201,7 @@ export default function Flows() {
       </div>
 
       {tab === "templates" && <Templates embedded />}
+      {tab === "runs" && <Runs embedded />}
 
       {tab === "flows" && (
       <div className="border border-white/15 rounded-lg overflow-hidden bg-white/5">
