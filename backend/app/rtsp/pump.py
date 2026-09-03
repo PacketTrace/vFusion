@@ -89,6 +89,13 @@ class Pump:
         # most needed to be useful.
         self.log: deque[str] = deque(maxlen=40)
         self._log_task: asyncio.Task | None = None
+        # How long the pipe went unfed between one source exiting and the
+        # next producing. The encoder timestamps by frame count, so a gap
+        # is not dropped time -- it stalls and resumes, which downstream
+        # is indistinguishable from a burst of lost packets.
+        self._idle_since: float | None = None
+        self.last_gap_ms: int | None = None
+        self.worst_gap_ms: int | None = None
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -126,6 +133,8 @@ class Pump:
             "encoder_starts": self.encoder_starts,
             "last_error": self.last_error,
             "log": list(self.log),
+            "last_gap_ms": self.last_gap_ms,
+            "worst_gap_ms": self.worst_gap_ms,
         }
 
     # ---- the loop ------------------------------------------------------
@@ -289,6 +298,8 @@ class Pump:
             await proc.wait()
         finally:
             self._source = None
+            # From here until the next source produces, the pipe is dry.
+            self._idle_since = time.monotonic()
 
     async def _spawn(self, build: Any) -> asyncio.subprocess.Process | None:
         """Start a source. ``build`` takes the audio fd and returns argv.
@@ -300,6 +311,12 @@ class Pump:
         if self._write_fd is None or self._awrite_fd is None:
             return None
         cmd = build(self._awrite_fd)
+        if self._idle_since is not None:
+            gap = int((time.monotonic() - self._idle_since) * 1000)
+            self.last_gap_ms = gap
+            self.worst_gap_ms = max(gap, self.worst_gap_ms or 0)
+            self._idle_since = None
+            logger.warning("rtsp gap: %dms with nothing feeding the encoder", gap)
         # Same reasoning as the encoder's argv: a source that starts and
         # produces nothing is indistinguishable from one that never
         # started, unless one of them was written down.
