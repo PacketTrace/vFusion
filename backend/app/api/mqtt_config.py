@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import FileResponse, Response, StreamingResponse
 
 import re
 import tempfile
@@ -28,9 +28,11 @@ from pathlib import Path
 
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
 from app.connectors.verkada.footage import (
+    CLIP_ROOT,
     FootageError,
     get_stream_key,
     grab_still_frame,
+    grab_video_clip,
 )
 from app.crypto import decrypt_secret
 from app.db import get_session
@@ -807,6 +809,81 @@ async def stream_segment(
         media_type="video/mp4",
         headers=headers,
     )
+
+
+class ClipRequest(BaseModel):
+    camera_id: str
+    # Epoch seconds, from a recorded track's started_at.
+    start_epoch: int
+    duration_sec: float = 10.0
+    connection_id: UUID | None = None
+
+
+@router.post("/clip")
+async def make_clip(
+    body: ClipRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Cut the footage a recorded track happened in.
+
+    Same route the flow actions take: ffmpeg pulls the window out of the
+    HLS stream and writes H.264 to CLIP_ROOT, which plays in any browser
+    without a JS player. Clips are named from what they contain, so
+    replaying the same track twice reuses the file instead of paying for
+    another encode.
+    """
+    conn = await _connection_for(session, body.connection_id)
+    secret = decrypt_secret(conn.encrypted_secret)
+    org_id = conn.external_id
+    if not secret.get("api_key") or not org_id:
+        raise HTTPException(status_code=400, detail="connection is missing an API key or org id")
+
+    duration = max(1.0, min(float(body.duration_sec), 120.0))
+    # A little either side: tracks start when the camera first reports a
+    # box, which is usually already mid-approach.
+    pad = 2.0
+    start = int(body.start_epoch - pad)
+    total = duration + (pad * 2)
+
+    clip_id = f"{body.camera_id}_{start}_{int(total)}"
+    out_path = CLIP_ROOT / f"{clip_id}.mp4"
+    if not out_path.exists():
+        try:
+            await grab_video_clip(
+                api_key=secret["api_key"],
+                org_id=org_id,
+                camera_id=body.camera_id,
+                start_epoch=start,
+                duration_sec=total,
+                out_path=out_path,
+                base_url=(secret.get("region") or "https://api.verkada.com").rstrip("/"),
+            )
+        except FootageError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Could not cut the clip: {e}. Verkada backfills footage for "
+                    "a minute or so after an event, so very recent tracks may "
+                    "not be retrievable yet."
+                ),
+            ) from e
+
+    return {
+        "clip_id": clip_id,
+        "url": f"/api/mqtt/clip/{clip_id}.mp4",
+        "duration_sec": total,
+    }
+
+
+@router.get("/clip/{clip_name}")
+async def get_clip(clip_name: str) -> FileResponse:
+    """Serve a cut clip. FileResponse handles Range, which video needs."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.mp4", clip_name):
+        raise HTTPException(status_code=400, detail="bad clip name")
+    path = CLIP_ROOT / clip_name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="clip not found")
+    return FileResponse(path, media_type="video/mp4")
 
 
 @router.get("/history")

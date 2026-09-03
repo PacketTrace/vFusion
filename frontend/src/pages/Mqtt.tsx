@@ -636,6 +636,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
  *  live view covers the messages, and what is useful later is what came
  *  through, when, and for how long. */
 function TrackHistory({ cameraId }: { cameraId: string }) {
+  const [selected, setSelected] = useState<TrackRecord | null>(null);
   const history = useQuery({
     queryKey: ["mqtt-history", cameraId],
     queryFn: () =>
@@ -660,6 +661,13 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
 
   return (
     <div className="space-y-3">
+      {selected && (
+        <TrackReplay
+          key={`${selected.obj_id}-${selected.started_at}`}
+          track={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
       {summary && (
         <div className="text-xs text-slate-400 flex flex-wrap gap-4">
           <span>
@@ -697,7 +705,16 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
           </thead>
           <tbody>
             {tracks.slice(0, 50).map((t) => (
-              <tr key={`${t.obj_id}-${t.started_at}`} className="border-t border-slate-800/60">
+              <tr
+                key={`${t.obj_id}-${t.started_at}`}
+                onClick={() => setSelected(t)}
+                className={`border-t border-slate-800/60 cursor-pointer hover:bg-white/5 ${
+                  selected?.obj_id === t.obj_id && selected?.started_at === t.started_at
+                    ? "bg-white/5"
+                    : ""
+                }`}
+                title="Replay this track and pull the footage"
+              >
                 <td className="px-2 py-1 font-mono text-xs text-slate-300">
                   {new Date(t.started_at).toLocaleString()}
                 </td>
@@ -746,5 +763,150 @@ function PathSpark({
       <circle cx={sx * 96} cy={sy * 54} r="2" fill={color} opacity="0.5" />
       <circle cx={ex * 96} cy={ey * 54} r="2.5" fill={color} />
     </svg>
+  );
+}
+
+
+/** A recorded track, played back two ways at once: the path the camera
+ *  reported, and the footage it reported it from.
+ *
+ *  Side by side on purpose — the bounding boxes are the camera's own
+ *  interpretation, and the only way to judge them is against what was
+ *  actually in frame. */
+function TrackReplay({
+  track,
+  onClose,
+}: {
+  track: TrackRecord;
+  onClose: () => void;
+}) {
+  const [progress, setProgress] = useState(0);
+
+  const clip = useMutation({
+    mutationFn: () =>
+      apiPost<{ url: string; duration_sec: number }>("/api/mqtt/clip", {
+        camera_id: track.camera_id,
+        start_epoch: Math.floor(new Date(track.started_at).getTime() / 1000),
+        duration_sec: track.duration_sec,
+      }),
+  });
+
+  // Walk the path in the time the track actually took, so a slow amble
+  // and a sprint across the same ground do not look identical.
+  useEffect(() => {
+    const startedAt = performance.now();
+    const durationMs = Math.max(1000, track.duration_sec * 1000);
+    let raf = 0;
+    const tick = () => {
+      const elapsed = (performance.now() - startedAt) % durationMs;
+      setProgress(elapsed / durationMs);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [track]);
+
+  const idx = Math.min(
+    track.path.length - 1,
+    Math.floor(progress * track.path.length),
+  );
+  const [cx, cy, w, h] = track.path[idx] ?? [0.5, 0.5, 0.1, 0.2];
+  const color = TYPE_COLOR[track.type] ?? "#94a3b8";
+
+  return (
+    <div className="rounded-md border border-slate-700 bg-slate-950/60 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm text-slate-200">
+          {track.type} · {new Date(track.started_at).toLocaleString()} ·{" "}
+          <span className="font-mono">{track.duration_sec}s</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-xs text-slate-500 hover:text-slate-300"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+            What the camera reported
+          </div>
+          <div
+            className="relative w-full rounded overflow-hidden bg-slate-950 border border-slate-800"
+            style={{ aspectRatio: "16 / 9" }}
+          >
+            <svg viewBox="0 0 160 90" className="absolute inset-0 w-full h-full">
+              <polyline
+                points={track.path.map(([x, y]) => `${x * 160},${y * 90}`).join(" ")}
+                fill="none"
+                stroke={color}
+                strokeWidth="0.6"
+                opacity="0.35"
+              />
+            </svg>
+            <div
+              className="absolute border-2 rounded-sm"
+              style={{
+                left: `${(cx - w / 2) * 100}%`,
+                top: `${(cy - h / 2) * 100}%`,
+                width: `${w * 100}%`,
+                height: `${h * 100}%`,
+                borderColor: color,
+                boxShadow: `0 0 10px ${color}55`,
+              }}
+            >
+              <Figure type={track.type} color={color} />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+            The footage
+          </div>
+          <div
+            className="relative w-full rounded overflow-hidden bg-slate-950 border border-slate-800"
+            style={{ aspectRatio: "16 / 9" }}
+          >
+            {clip.data ? (
+              <video
+                src={`${API_BASE}${clip.data.url}`}
+                controls
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 grid place-items-center px-4 text-center">
+                {clip.isPending ? (
+                  <div>
+                    <div className="mx-auto mb-2 h-4 w-4 rounded-full border-2 border-slate-600 border-t-sky-400 animate-spin" />
+                    <div className="text-xs text-slate-400">Cutting the clip</div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      ffmpeg is pulling this window out of the footage
+                    </div>
+                  </div>
+                ) : clip.isError ? (
+                  <div className="text-xs text-amber-300">
+                    {(clip.error as Error).message}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => clip.mutate()}
+                    className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white"
+                  >
+                    Pull the footage
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
