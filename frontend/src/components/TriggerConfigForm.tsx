@@ -379,17 +379,6 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
               })()}
             </div>
           ))}
-          {suppressed.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAllFields((v) => !v)}
-              className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
-            >
-              {showAllFields
-                ? "Hide fields this event never populates"
-                : `+${suppressed.length} fields this event never populates`}
-            </button>
-          )}
           <button
             onClick={() =>
               onChange({
@@ -401,6 +390,19 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
           >
             + Add filter
           </button>
+          {suppressed.length > 0 && value.filters.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAllFields((v) => !v)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+              >
+                {showAllFields
+                  ? "Hide fields this event never populates"
+                  : `Show ${suppressed.length} fields this event never populates`}
+              </button>
+            </div>
+          )}
         </div>
       </Field>
     </div>
