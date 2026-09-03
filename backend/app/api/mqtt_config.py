@@ -51,12 +51,20 @@ class MqttStatus(BaseModel):
     cameras: list[str]
     track_timeout_sec: float
     ca_present: bool
+    credentials_present: bool
+    broker_username: str | None
 
 
 @router.get("/status", response_model=MqttStatus)
 async def status() -> MqttStatus:
     """Is the ingest loop up, and has anything ever arrived on it."""
-    return MqttStatus(**ingest.status(), ca_present=CA_PATH.is_file())
+    state = provision.state()
+    return MqttStatus(
+        **ingest.status(),
+        ca_present=bool(state["ca_present"]),
+        credentials_present=bool(state["credentials_present"]),
+        broker_username=state["username"],
+    )
 
 
 class PreflightCheck(BaseModel):
@@ -233,8 +241,6 @@ async def _client_for(
 
 class ConfigureRequest(BaseModel):
     broker_host_port: str
-    client_username: str
-    client_password: str
     connection_id: UUID | None = None
 
 
@@ -275,13 +281,13 @@ async def set_config(
                 "Verkada rejects everything else."
             ),
         )
-    if not body.client_username or not body.client_password:
+    creds = provision.load_credentials()
+    if creds is None:
+        # Both credentials are mandatory: the API accepts the request
+        # without them and then silently discards the whole config.
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Both a username and a password are required. The API accepts "
-                "the request without them and then discards the config."
-            ),
+            detail="Run setup first — no broker credentials have been generated.",
         )
     if not CA_PATH.is_file():
         raise HTTPException(
@@ -298,8 +304,8 @@ async def set_config(
         await client.set_object_position_mqtt_config(
             camera_id=camera_id,
             broker_host_port=body.broker_host_port,
-            client_username=body.client_username,
-            client_password=body.client_password,
+            client_username=creds["username"],
+            client_password=creds["password"],
             broker_cert=ca,
         )
         readback = await client.get_object_position_mqtt_config(camera_id)
@@ -362,24 +368,72 @@ async def setup(body: SetupRequest) -> dict[str, Any]:
     try:
         info = provision.generate_certs(host)
         provision.write_password_file(body.username, password)
+        provision.save_credentials(body.username, password)
     except OSError as e:
         raise HTTPException(
             status_code=500,
             detail=f"Could not write to {provision.MQTT_DIR}: {e}",
         ) from e
 
+    await ingest.restart()
     return {
         "broker_host_port": f"{host}:443",
         "username": body.username,
-        # Returned once. Mosquitto stores only the hash, and vFusion needs
-        # it in .env to subscribe, so there is nowhere to read it back from.
-        "password": password,
         "san": info["san"],
         "expires": info["expires"],
+        # Deliberately no password here. It is stored encrypted and used
+        # directly when configuring a camera, so there is nothing for the
+        # operator to write down and nothing to lose by closing the tab.
         "next_steps": [
-            f"Add to .env:  MQTT_INGEST_ENABLED=true  MQTT_USERNAME={body.username}  MQTT_PASSWORD={password}",
-            "docker compose --profile mqtt up -d",
+            "docker compose --profile mqtt up -d   (or: docker compose restart mqtt-broker mqtt-tls)",
         ],
+    }
+
+
+@router.delete("/config/{camera_id}")
+async def clear_config(
+    camera_id: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Unpoint a camera from its broker.
+
+    Also the documented way to force a reconnect: the camera only acts on
+    a config *change*, so re-pushing identical settings may do nothing
+    while clear-then-set reliably brings it back within ~5-25s.
+    """
+    client = await _client_for(session, connection_id)
+    if client is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+    try:
+        await client.set_object_position_mqtt_config(
+            camera_id=camera_id,
+            broker_host_port="",
+            client_username="",
+            client_password="",
+            broker_cert="",
+        )
+    except VerkadaApiError as e:
+        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+    return {"cleared": True}
+
+
+@router.post("/reset")
+async def reset() -> dict[str, Any]:
+    """Delete the generated certificate, password file and credentials.
+
+    For starting over after the broker address changes -- the address is
+    baked into the certificate SAN, so a move invalidates everything and
+    every camera has to be re-pushed anyway.
+    """
+    removed = provision.clear()
+    await ingest.restart()
+    return {
+        "removed": removed,
+        "note": (
+            "Cameras still point here until re-pushed. "
+            "Restart mqtt-broker and mqtt-tls after generating again."
+        ),
     }
 
 

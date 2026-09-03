@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { API_BASE, apiGet, apiPost } from "../lib/api";
+import { API_BASE, apiDelete, apiGet, apiPost } from "../lib/api";
 import { useCameras } from "../lib/cameras";
 
 interface MqttStatus {
@@ -16,6 +16,8 @@ interface MqttStatus {
   cameras: string[];
   track_timeout_sec: number;
   ca_present: boolean;
+  credentials_present: boolean;
+  broker_username: string | null;
 }
 
 interface PreflightCheck {
@@ -53,8 +55,6 @@ export default function Mqtt() {
   const cameras = useCameras();
   const [cameraId, setCameraId] = useState("");
   const [brokerHostPort, setBrokerHostPort] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
 
   const status = useQuery({
     queryKey: ["mqtt-status"],
@@ -79,8 +79,6 @@ export default function Mqtt() {
     mutationFn: () =>
       apiPost<{ persisted: boolean; note: string }>(`/api/mqtt/config/${cameraId}`, {
         broker_host_port: brokerHostPort,
-        client_username: username,
-        client_password: password,
       }),
     onSuccess: () => {
       preflight.refetch();
@@ -94,18 +92,31 @@ export default function Mqtt() {
       apiPost<{
         broker_host_port: string;
         username: string;
-        password: string;
         san: string;
         expires: string;
         next_steps: string[];
       }>("/api/mqtt/setup", { broker_host: setupHost }),
     onSuccess: (d) => {
-      // Carry straight into step 2 — these are exactly the values the
-      // camera needs, and retyping them is a chance to get them wrong.
+      // The address carries into step 2. The password deliberately does
+      // not exist here — it is stored server-side and used directly.
       setBrokerHostPort(d.broker_host_port);
-      setUsername(d.username);
-      setPassword(d.password);
       status.refetch();
+    },
+  });
+
+  const reset = useMutation({
+    mutationFn: () => apiPost<{ removed: string[]; note: string }>("/api/mqtt/reset", {}),
+    onSuccess: () => {
+      setBrokerHostPort("");
+      status.refetch();
+    },
+  });
+
+  const clearCamera = useMutation({
+    mutationFn: () => apiDelete(`/api/mqtt/config/${cameraId}`),
+    onSuccess: () => {
+      current.refetch();
+      preflight.refetch();
     },
   });
 
@@ -151,6 +162,14 @@ export default function Mqtt() {
             className="text-sm px-3 py-1.5 rounded border border-slate-600 text-slate-200 hover:border-sky-500 disabled:opacity-40"
           >
             {setup.isPending ? "Generating…" : "Generate certificate + credentials"}
+          </button>
+          <button
+            onClick={() => reset.mutate()}
+            disabled={reset.isPending}
+            className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+            title="Delete the generated certificate, password file and credentials"
+          >
+            {reset.isPending ? "Clearing…" : "Clear broker setup"}
           </button>
         </div>
         <p className="text-[11px] text-slate-500 mt-2 max-w-2xl">
@@ -244,31 +263,30 @@ export default function Mqtt() {
               Must be reachable from the camera's network, must be static, and the
               port must be 443, 123 or 53 — Verkada rejects everything else.
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Labeled label="Broker username">
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
-                  spellCheck={false}
-                />
-              </Labeled>
-              <Labeled label="Broker password">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-700 text-sm font-mono"
-                />
-              </Labeled>
+            <p className="text-[11px] text-slate-500">
+              Credentials come from step 0 and are sent straight to the camera —
+              nothing to copy.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => configure.mutate()}
+                disabled={!cameraId || !brokerHostPort || configure.isPending}
+                className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white disabled:opacity-40"
+              >
+                {configure.isPending ? "Pushing…" : "Push config to camera"}
+              </button>
+              <button
+                onClick={() => clearCamera.mutate()}
+                disabled={!cameraId || clearCamera.isPending}
+                className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+                title="Unpoint this camera. Also the documented way to force a reconnect."
+              >
+                {clearCamera.isPending ? "Clearing…" : "Clear"}
+              </button>
             </div>
-            <button
-              onClick={() => configure.mutate()}
-              disabled={!cameraId || !brokerHostPort || !username || !password || configure.isPending}
-              className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white disabled:opacity-40"
-            >
-              {configure.isPending ? "Pushing…" : "Push config to camera"}
-            </button>
+            {clearCamera.isError && (
+              <p className="text-xs text-rose-300">{(clearCamera.error as Error).message}</p>
+            )}
             {configure.isError && (
               <p className="text-xs text-rose-300">{(configure.error as Error).message}</p>
             )}
@@ -405,10 +423,15 @@ function StatusBar({ status }: { status?: MqttStatus }) {
     ["Ingest", status.enabled ? (status.connected ? "connected" : "down") : "disabled", status.connected],
     ["Broker", status.host, status.connected],
     ["Certificate", status.ca_present ? "generated" : "missing", status.ca_present],
+    [
+      "Credentials",
+      status.credentials_present ? (status.broker_username ?? "stored") : "not set up",
+      status.credentials_present,
+    ],
     ["Messages", status.total_messages.toLocaleString(), status.total_messages > 0],
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {items.map(([label, value, good]) => (
         <div
           key={label}
@@ -421,7 +444,7 @@ function StatusBar({ status }: { status?: MqttStatus }) {
         </div>
       ))}
       {status.last_error && (
-        <div className="col-span-2 sm:col-span-4 text-xs text-amber-300/90">
+        <div className="col-span-2 sm:col-span-5 text-xs text-amber-300/90">
           {status.last_error}
         </div>
       )}

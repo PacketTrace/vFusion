@@ -201,10 +201,16 @@ class Ingest:
         """Reconnecting subscribe loop. Never raises into the app."""
         import aiomqtt
 
+        from app.mqtt import provision
+
         host = os.environ.get("MQTT_HOST", "mqtt-broker")
         port = int(os.environ.get("MQTT_PORT", "1883"))
-        username = os.environ.get("MQTT_USERNAME") or None
-        password = os.environ.get("MQTT_PASSWORD") or None
+        # Stored credentials win over env: setup generates them, and an
+        # operator who never sees the password cannot paste a stale one
+        # into .env and wonder why auth fails.
+        stored = provision.load_credentials()
+        username = (stored or {}).get("username") or os.environ.get("MQTT_USERNAME") or None
+        password = (stored or {}).get("password") or os.environ.get("MQTT_PASSWORD") or None
         backoff = 1.0
         self.started_at = time.monotonic()
 
@@ -233,6 +239,11 @@ class Ingest:
     def start(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self.run())
+
+    async def restart(self) -> None:
+        """Pick up newly generated credentials without a container restart."""
+        await self.stop()
+        self.start()
 
     async def stop(self) -> None:
         if self._task is not None:

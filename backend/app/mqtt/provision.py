@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 MQTT_DIR = Path(os.environ.get("MQTT_DIR", "/app/mqtt-host"))
 CERT_DIR = MQTT_DIR / "certs"
 PASSWD_PATH = MQTT_DIR / "passwd"
+CREDS_PATH = MQTT_DIR / "credentials.enc"
 CA_PATH = CERT_DIR / "root_ca.pem"
 
 CERT_YEARS = 10
@@ -163,13 +164,71 @@ def write_password_file(username: str, password: str) -> None:
     os.chmod(PASSWD_PATH, 0o600)
 
 
+def save_credentials(username: str, password: str) -> None:
+    """Keep the broker credentials so nothing has to be retyped.
+
+    Mosquitto only ever stores a hash, but two other things need the
+    plaintext: the ingest subscriber, and the config we push to cameras.
+    Showing it once and asking the operator to paste it into .env made a
+    generated secret their problem to carry, and losing the tab lost the
+    broker. Encrypted with the same Fernet key as connection secrets, so
+    it is no more exposed than a Verkada API key already is.
+    """
+    from app.crypto import encrypt_secret
+
+    MQTT_DIR.mkdir(parents=True, exist_ok=True)
+    CREDS_PATH.write_text(
+        encrypt_secret({"username": username, "password": password})
+    )
+    os.chmod(CREDS_PATH, 0o600)
+
+
+def load_credentials() -> dict[str, str] | None:
+    """Stored broker credentials, or None if setup has not been run."""
+    from app.crypto import decrypt_secret
+
+    try:
+        data = decrypt_secret(CREDS_PATH.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        logger.warning("could not read stored broker credentials: %s", e)
+        return None
+    if not isinstance(data, dict):
+        return None
+    username = data.get("username")
+    password = data.get("password")
+    if not username or not password:
+        return None
+    return {"username": str(username), "password": str(password)}
+
+
+def clear() -> list[str]:
+    """Remove all generated broker material. Returns what was deleted."""
+    removed: list[str] = []
+    for path in (CREDS_PATH, PASSWD_PATH, CA_PATH,
+                 CERT_DIR / "server.pem", CERT_DIR / "server.key",
+                 CERT_DIR / "fullchain.pem"):
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            logger.warning("could not remove %s: %s", path, e)
+    return removed
+
+
 def generate_password(length: int = 24) -> str:
     return secrets.token_urlsafe(length)
 
 
 def state() -> dict[str, object]:
+    creds = load_credentials()
     return {
         "ca_present": CA_PATH.is_file(),
         "passwd_present": PASSWD_PATH.is_file(),
+        "credentials_present": creds is not None,
+        "username": creds["username"] if creds else None,
         "cert_dir": str(CERT_DIR),
     }
