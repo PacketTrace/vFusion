@@ -805,13 +805,14 @@ function TrackReplay({
   onClose: () => void;
 }) {
   const progressRef = useRef(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(true);
   const startEpoch = Math.floor(new Date(track.started_at).getTime() / 1000);
 
   const clip = useMutation({
     mutationFn: () =>
-      apiPost<{ url: string; duration_sec: number }>("/api/mqtt/clip", {
+      apiPost<{ url: string; duration_sec: number; pad_sec: number }>("/api/mqtt/clip", {
         camera_id: track.camera_id,
         start_epoch: Math.floor(new Date(track.started_at).getTime() / 1000),
         duration_sec: track.duration_sec,
@@ -822,20 +823,64 @@ function TrackReplay({
   // and a sprint across the same ground do not look identical. Scrubbing
   // rebases the clock to wherever the handle was dropped, so play
   // continues from there rather than snapping back.
+  const pad = clip.data?.pad_sec ?? 0;
+
+  // Two players drifting apart is worse than one: the whole point is
+  // comparing them frame for frame. Once the clip exists it owns the
+  // clock and the replay follows, so they cannot separate. Until then
+  // the replay runs on its own timer.
   useEffect(() => {
     if (!playing) return;
-    const durationMs = Math.max(1000, track.duration_sec * 1000);
-    const startedAt = performance.now() - progressRef.current * durationMs;
     let raf = 0;
+    const durationMs = Math.max(1000, track.duration_sec * 1000);
+    const standaloneStart = performance.now() - progressRef.current * durationMs;
+
     const tick = () => {
-      const elapsed = (performance.now() - startedAt) % durationMs;
-      progressRef.current = elapsed / durationMs;
+      const video = videoRef.current;
+      if (video && clip.data) {
+        // Video time pad_sec is track time zero.
+        const t = (video.currentTime - pad) / Math.max(0.1, track.duration_sec);
+        progressRef.current = Math.min(1, Math.max(0, t));
+      } else {
+        const elapsed = (performance.now() - standaloneStart) % durationMs;
+        progressRef.current = elapsed / durationMs;
+      }
       setProgress(progressRef.current);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [track, playing]);
+  }, [track, playing, clip.data, pad]);
+
+  // Start the clip at the moment the track did, not at the padding.
+  const onClipReady = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = pad;
+    video.play().catch(() => undefined);
+  };
+
+  const restartBoth = () => {
+    progressRef.current = 0;
+    setProgress(0);
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = pad;
+      video.play().catch(() => undefined);
+    }
+    setPlaying(true);
+  };
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    setPlaying((wasPlaying) => {
+      if (video) {
+        if (wasPlaying) video.pause();
+        else video.play().catch(() => undefined);
+      }
+      return !wasPlaying;
+    });
+  };
 
   const idx = Math.min(
     track.path.length - 1,
@@ -899,10 +944,18 @@ function TrackReplay({
           <div className="flex items-center gap-2 mt-2">
             <button
               type="button"
-              onClick={() => setPlaying((v) => !v)}
+              onClick={togglePlay}
               className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-500 w-14"
             >
               {playing ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              onClick={restartBoth}
+              className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-sky-500 whitespace-nowrap"
+              title="Restart the replay and the footage together"
+            >
+              Restart both
             </button>
             <input
               type="range"
@@ -913,8 +966,13 @@ function TrackReplay({
                 const v = Number(e.target.value) / 1000;
                 progressRef.current = v;
                 setProgress(v);
+                const video = videoRef.current;
+                if (video) video.currentTime = pad + v * track.duration_sec;
               }}
-              onMouseDown={() => setPlaying(false)}
+              onMouseDown={() => {
+                videoRef.current?.pause();
+                setPlaying(false);
+              }}
               className="flex-1 accent-sky-500"
               aria-label="Scrub the reported track"
             />
@@ -935,12 +993,15 @@ function TrackReplay({
           >
             {clip.data ? (
               <video
+                ref={videoRef}
                 src={`${API_BASE}${clip.data.url}`}
                 controls
-                autoPlay
-                loop
                 muted
                 playsInline
+                onLoadedMetadata={onClipReady}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={restartBoth}
                 className="absolute inset-0 w-full h-full object-cover"
               />
             ) : (

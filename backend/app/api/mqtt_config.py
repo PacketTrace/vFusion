@@ -875,6 +875,9 @@ async def make_clip(
         "clip_id": clip_id,
         "url": f"/api/mqtt/clip/{clip_id}.mp4",
         "duration_sec": total,
+        # The client needs this to line the two panels up: video time
+        # pad_sec corresponds to track time zero.
+        "pad_sec": pad,
     }
 
 
