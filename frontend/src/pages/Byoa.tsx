@@ -1253,6 +1253,7 @@ export default function Byoa() {
 
       {source === "camera" && (
         <MakeItRun
+          ranOnce={run.isSuccess || dryRun.isSuccess}
           analyticName={pickedTemplate?.name ?? "Analytic"}
           prompt={prompt}
           model={model}
@@ -1821,6 +1822,7 @@ function AnalyticComposer({
  *  and assembles the rest.
  */
 function MakeItRun({
+  ranOnce,
   analyticName,
   prompt,
   model,
@@ -1833,6 +1835,7 @@ function MakeItRun({
   helixMapping,
   durationSec,
 }: {
+  ranOnce: boolean;
   analyticName: string;
   prompt: string;
   model: string;
@@ -1945,12 +1948,30 @@ function MakeItRun({
   });
 
   return (
-    <div className="rounded-lg border border-white/15 bg-white/5 p-4">
-      <div className="text-sm text-slate-100">Make this run on its own</div>
-      <p className="text-[11px] text-slate-400 mt-0.5 mb-3">
-        Everything above carries over — camera, prompt, model and the Helix
-        mapping. The only open question is what starts it.
-      </p>
+    // Tied to the card above rather than floating under it: a short
+    // connector and an ordinal say this is the next step in the same
+    // task, which is what it is. Left on its own it read as a footnote
+    // that happened to land there.
+    <div className="relative pt-8">
+      <div
+        aria-hidden="true"
+        className="absolute left-1/2 top-0 h-8 w-px -translate-x-1/2 bg-gradient-to-b from-transparent to-white/15"
+      />
+      <div
+        className={`rounded-lg border p-4 transition-colors duration-300 ease-out-strong ${
+          ranOnce
+            ? "border-sky-500/30 bg-sky-500/[0.06]"
+            : "border-white/15 bg-white/5"
+        }`}
+      >
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+          {ranOnce ? "It works — now keep it running" : "Next"}
+        </div>
+        <div className="text-sm text-slate-100">Make this run on its own</div>
+        <p className="text-[11px] text-slate-400 mt-0.5 mb-3">
+          Everything above carries over — camera, prompt, model and the Helix
+          mapping. The only open question is what starts it.
+        </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <ModeBtn active={when === "camera"} onClick={() => setWhen("camera")}>
@@ -2011,11 +2032,12 @@ function MakeItRun({
           Still needs {missing.join(", ")}.
         </p>
       )}
-      {create.isError && (
-        <p className="text-xs text-rose-300 mt-2">
-          {(create.error as Error).message}
-        </p>
-      )}
+        {create.isError && (
+          <p className="text-xs text-rose-300 mt-2">
+            {(create.error as Error).message}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
