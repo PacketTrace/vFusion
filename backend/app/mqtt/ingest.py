@@ -231,7 +231,7 @@ class Ingest:
                 raise
             except Exception as e:
                 self.connected = False
-                self.last_error = f"{type(e).__name__}: {e}"
+                self.last_error = _explain(e, host)
                 logger.warning("mqtt ingest disconnected (%s); retry in %.0fs", e, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
@@ -243,7 +243,8 @@ class Ingest:
     async def restart(self) -> None:
         """Pick up newly generated credentials without a container restart."""
         await self.stop()
-        self.start()
+        if enabled():
+            self.start()
 
     async def stop(self) -> None:
         if self._task is not None:
@@ -255,8 +256,46 @@ class Ingest:
             self._task = None
 
 
+def _explain(e: Exception, host: str) -> str:
+    """Turn transport errors into the thing to actually go do.
+
+    "[Errno -2] Name or service not known" is a correct and useless
+    description of the broker container not being up yet -- the hostname
+    only resolves once it exists on the docker network.
+    """
+    text = str(e)
+    if "Name or service not known" in text or "Temporary failure in name resolution" in text:
+        return (
+            f"Broker {host!r} does not resolve yet — the container is not running. "
+            "Start it with: docker compose --profile mqtt up -d"
+        )
+    if "Connection refused" in text:
+        return f"Broker {host!r} is resolving but refusing connections — is mosquitto healthy?"
+    if "not authorised" in text.lower() or "not authorized" in text.lower():
+        return (
+            "Broker rejected the credentials. Restart it so it re-reads the "
+            "password file: docker compose restart mqtt-broker"
+        )
+    return f"{type(e).__name__}: {e}"
+
+
 def enabled() -> bool:
-    return os.environ.get("MQTT_INGEST_ENABLED", "").lower() in ("1", "true", "yes")
+    """Whether the ingest loop should be running.
+
+    Generating broker credentials is the opt-in. Requiring a separate
+    MQTT_INGEST_ENABLED on top of that meant setup could complete in the
+    UI and quietly do nothing, which is the sort of second switch that
+    only ever gets found by asking why nothing happened.
+    """
+    override = os.environ.get("MQTT_INGEST_ENABLED", "").strip().lower()
+    if override in ("0", "false", "no"):
+        return False
+    if override in ("1", "true", "yes"):
+        return True
+
+    from app.mqtt import provision
+
+    return provision.load_credentials() is not None
 
 
 ingest = Ingest()

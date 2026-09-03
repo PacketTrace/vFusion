@@ -445,7 +445,15 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
 function StatusBar({ status }: { status?: MqttStatus }) {
   if (!status) return null;
   const items: [string, string, boolean][] = [
-    ["Ingest", status.enabled ? (status.connected ? "connected" : "down") : "disabled", status.connected],
+    [
+      "Ingest",
+      status.enabled
+        ? status.connected
+          ? "connected"
+          : "waiting for broker"
+        : "not set up",
+      status.connected,
+    ],
     ["Broker", status.host, status.connected],
     ["Certificate", status.ca_present ? "generated" : "missing", status.ca_present],
     [

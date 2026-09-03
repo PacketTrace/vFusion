@@ -448,7 +448,8 @@ async def setup(body: SetupRequest) -> dict[str, Any]:
         # directly when configuring a camera, so there is nothing for the
         # operator to write down and nothing to lose by closing the tab.
         "next_steps": [
-            "docker compose --profile mqtt up -d   (or: docker compose restart mqtt-broker mqtt-tls)",
+            "Start the broker:  docker compose --profile mqtt up -d",
+            "Already running?  docker compose restart mqtt-broker mqtt-tls  (mosquitto only reads its password file at startup)",
         ],
     }
 
