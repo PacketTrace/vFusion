@@ -1147,6 +1147,7 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
 
   const [inspect, setInspect] = useState<TrackRecord | null>(null);
   const [showDropped, setShowDropped] = useState(false);
+  const [showKept, setShowKept] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const purge = useMutation({
     mutationFn: () =>
@@ -1240,18 +1241,48 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
         />
       )}
 
-      {preview.data && preview.data.closest_kept.length > 0 && (
-        <div>
-          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
-            Closest survivors — check these before applying
+      {/* Only worth showing when the threshold is actually cutting
+          something. With nothing to drop these are just the history
+          table below, repeated. */}
+      {preview.data &&
+        preview.data.closest_kept.length > 0 &&
+        (preview.data.dropped > 0 || showKept) && (
+          <div>
+            <div className="flex items-baseline justify-between gap-3 mb-1.5">
+              <div className="text-[11px] uppercase tracking-wider text-slate-400">
+                Closest survivors — check these before applying
+              </div>
+              {preview.data.dropped === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowKept(false)}
+                  className="text-[11px] text-slate-500 hover:text-slate-300"
+                >
+                  Hide
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2">
+              The kept tracks nearest the threshold. A count of what gets
+              removed says nothing about whether the setting is about to remove
+              something real; these are the rows that would go next.
+            </p>
+            <TrackRows rows={preview.data.closest_kept} onSelect={setInspect} />
           </div>
-          <p className="text-[11px] text-slate-500 mb-2">
-            The kept tracks nearest the threshold. A count of what gets removed
-            says nothing about whether the setting is about to remove something
-            real; these are the rows that would go next.
-          </p>
-          <TrackRows rows={preview.data.closest_kept} onSelect={setInspect} />
-        </div>
+        )}
+
+      {preview.data && preview.data.dropped === 0 && !showKept && (
+        <p className="text-[11px] text-slate-500">
+          Nothing on record falls below these thresholds.{" "}
+          <button
+            type="button"
+            onClick={() => setShowKept(true)}
+            className="underline underline-offset-2 hover:text-slate-300"
+          >
+            Show the closest survivors
+          </button>{" "}
+          to see how much headroom there is.
+        </p>
       )}
 
       {preview.data && preview.data.dropped > 0 && (
@@ -1300,7 +1331,7 @@ function NoiseFilter({ cameraId }: { cameraId: string }) {
           </p>
         </div>
 
-        <div>
+        <div className={preview.data?.dropped ? "" : "hidden sm:block sm:invisible"}>
           <button
             type="button"
             onClick={() => setConfirmPurge(true)}
