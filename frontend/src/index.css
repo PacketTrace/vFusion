@@ -195,17 +195,68 @@ button:not(:disabled):active {
   transform-origin: top center;
 }
 
-/* The figure inside a tracked box. Two joints moving in opposition reads
-   as walking; anything more detailed is mush at the size these render. */
-@keyframes walk-swing {
+/* The figure inside a tracked box.
+   Limbs swing independently and in antiphase. Rotating a pair together
+   gives a rigid V that reads as a ragdoll being shaken; a stride needs
+   the left and right of each pair half a cycle apart, and the arms
+   opposing the same-side leg.
+
+   Easing is ease-in-out on purpose: a limb is a pendulum, fastest
+   through the middle of its swing and slowest at the extremes. Linear
+   motion is most of what makes cheap walk cycles look wrong.
+
+   The body also rises twice per stride — once per step, at mid-stance,
+   when the supporting leg is straightest. It is half a unit in a 48-unit
+   figure, felt rather than seen. */
+
+.animate-walk .walk-leg,
+.animate-walk .walk-arm {
+  animation-duration: 900ms;
+  animation-timing-function: var(--ease-in-out);
+  animation-iteration-count: infinite;
+}
+
+.animate-walk .walk-leg {
+  transform-box: view-box;
+  /* hip: (12, 28) in a 24x48 viewBox */
+  transform-origin: 50% 58.33%;
+  animation-name: walk-leg;
+}
+
+.animate-walk .walk-arm {
+  transform-box: view-box;
+  /* shoulder: (12, 17) in a 24x48 viewBox */
+  transform-origin: 50% 35.42%;
+  animation-name: walk-arm;
+}
+
+/* Half a cycle apart. Negative delays start mid-animation rather than
+   pausing first, so the figure is already walking on the first frame. */
+.animate-walk .walk-leg-b,
+.animate-walk .walk-arm-a {
+  animation-delay: -450ms;
+}
+
+.animate-walk .walk-body {
+  transform-box: view-box;
+  transform-origin: 50% 100%;
+  animation: walk-bob 450ms var(--ease-in-out) infinite;
+}
+
+@keyframes walk-leg {
+  0%, 100% { transform: rotate(14deg); }
+  50% { transform: rotate(-14deg); }
+}
+
+/* Arms swing less than legs — roughly two thirds, as they do. */
+@keyframes walk-arm {
   0%, 100% { transform: rotate(-9deg); }
   50% { transform: rotate(9deg); }
 }
 
-.animate-walk .walk-legs,
-.animate-walk .walk-arms {
-  transform-origin: 12px 28px;
-  animation: walk-swing 700ms var(--ease-in-out) infinite;
+@keyframes walk-bob {
+  0%, 100% { transform: translateY(0.5px); }
+  50% { transform: translateY(-0.5px); }
 }
 
 .animate-walk .walk-arms {

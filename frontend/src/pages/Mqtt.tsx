@@ -674,17 +674,17 @@ function Figure({ type, color }: { type: string; color: string }) {
       className="absolute inset-0 w-full h-full opacity-90 animate-walk"
       aria-hidden="true"
     >
-      <g fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
+      {/* Each limb swings on its own, half a cycle apart, because a pair
+          rotating together is a rigid V rather than a stride. Arms
+          oppose the same-side leg, which is what makes a gait read as
+          balanced instead of hopping. */}
+      <g className="walk-body" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
         <circle cx="12" cy="7" r="5" fill={color} stroke="none" />
         <line x1="12" y1="13" x2="12" y2="28" />
-        <g className="walk-arms">
-          <line x1="12" y1="17" x2="5" y2="24" />
-          <line x1="12" y1="17" x2="19" y2="24" />
-        </g>
-        <g className="walk-legs">
-          <line x1="12" y1="28" x2="6" y2="42" />
-          <line x1="12" y1="28" x2="18" y2="42" />
-        </g>
+        <line className="walk-arm walk-arm-a" x1="12" y1="17" x2="5" y2="25" />
+        <line className="walk-arm walk-arm-b" x1="12" y1="17" x2="19" y2="25" />
+        <line className="walk-leg walk-leg-a" x1="12" y1="28" x2="6" y2="43" />
+        <line className="walk-leg walk-leg-b" x1="12" y1="28" x2="18" y2="43" />
       </g>
     </svg>
   );

@@ -37,7 +37,7 @@ from app.connectors.verkada.footage import (
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
-from app.mqtt import broker_mode, filters, history, provision
+from app.mqtt import broker_mode, filters, history, provision, requirements
 from app.mqtt.ingest import ingest
 
 
@@ -1005,6 +1005,18 @@ class BrokerModeRequest(BaseModel):
     # Blank means "leave as is" — the UI never receives these back.
     password: str = ""
     broker_cert: str = ""
+
+
+@router.get("/broker-requirements")
+async def broker_requirements() -> dict[str, Any]:
+    """What a broker must do before a camera will publish to it.
+
+    None of this is discoverable from the API — a camera accepts a
+    configuration it cannot use and then reports nothing — so it is
+    surfaced next to the form where someone is entering their own
+    broker details.
+    """
+    return requirements.describe()
 
 
 @router.get("/broker-mode")
