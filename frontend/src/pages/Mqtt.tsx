@@ -43,6 +43,19 @@ interface LiveCamera {
   counts: Record<string, number>;
   total: number;
   age_sec: number | null;
+  latency_ms: number | null;
+  latency_samples: number;
+}
+
+interface TrackRecord {
+  camera_id: string;
+  obj_id: string;
+  type: string;
+  started_at: string;
+  duration_sec: number;
+  points: number;
+  max_size: number;
+  path: [number, number, number, number][];
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -336,6 +349,10 @@ export default function Mqtt() {
       <Card title="3 · What the camera sees">
         <LiveView cameraId={cameraId} live={live} />
       </Card>
+
+      <Card title="4 · What it saw earlier">
+        <TrackHistory cameraId={cameraId} />
+      </Card>
     </div>
   );
 }
@@ -371,12 +388,12 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
   const [frameKey, setFrameKey] = useState(0);
   const box = useRef<HTMLDivElement>(null);
 
-  // Refresh the backdrop periodically. The boxes are live; the still behind
-  // them only needs to be roughly current, and each fetch is a real API call.
+  // The backdrop is a still, and it was refetching on a timer — which
+  // costs a real API call each time and makes the scene flicker under
+  // boxes that are genuinely live. Load it once per camera; refreshing
+  // is a button, because you only want it when the scene changed.
   useEffect(() => {
-    if (!cameraId) return;
-    const t = setInterval(() => setFrameKey((k) => k + 1), 10000);
-    return () => clearInterval(t);
+    setFrameKey((k) => k + 1);
   }, [cameraId]);
 
   if (!cameraId) {
@@ -388,7 +405,7 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
     <div className="space-y-2">
       <div
         ref={box}
-        className="relative w-full rounded-md overflow-hidden bg-slate-950 border border-slate-800"
+        className="relative w-full max-w-2xl rounded-md overflow-hidden bg-slate-950 border border-slate-800"
         style={{ aspectRatio: "16 / 9" }}
       >
         <img
@@ -430,7 +447,7 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
           </div>
         )}
       </div>
-      <div className="flex items-center gap-4 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 max-w-2xl">
         {["person", "vehicle", "animal"].map((t) => (
           <span key={t} className="flex items-center gap-1.5">
             <span
@@ -443,6 +460,23 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
         <span className="text-slate-500">
           {live?.age_sec != null ? `last message ${live.age_sec}s ago` : "nothing received yet"}
         </span>
+        {live?.latency_ms != null && (
+          <span
+            className="text-slate-500"
+            title="Camera detection timestamp to arrival here. The camera keeps its own clock, so treat this as an estimate — clock skew shows up as a constant offset."
+          >
+            latency ~
+            <span className="font-mono text-slate-200">{live.latency_ms}ms</span>
+            <span className="text-slate-600"> (est, n={live.latency_samples})</span>
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setFrameKey((k) => k + 1)}
+          className="text-slate-500 hover:text-slate-300 underline underline-offset-2"
+        >
+          Refresh frame
+        </button>
       </div>
     </div>
   );
@@ -512,5 +546,123 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
       <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3">{title}</h2>
       {children}
     </div>
+  );
+}
+
+
+/** Completed tracks. One row per object rather than per message — the
+ *  live view covers the messages, and what is useful later is what came
+ *  through, when, and for how long. */
+function TrackHistory({ cameraId }: { cameraId: string }) {
+  const history = useQuery({
+    queryKey: ["mqtt-history", cameraId],
+    queryFn: () =>
+      apiGet<{ tracks: TrackRecord[]; summary: Record<string, unknown> }>(
+        `/api/mqtt/history?limit=200${cameraId ? `&camera_id=${cameraId}` : ""}`,
+      ),
+    refetchInterval: 15000,
+  });
+
+  const tracks = history.data?.tracks ?? [];
+  const summary = history.data?.summary as
+    | { total: number; by_type: Record<string, number>; median_duration_sec: number | null }
+    | undefined;
+
+  if (tracks.length === 0) {
+    return (
+      <div className="text-sm text-slate-500">
+        No completed tracks yet. An object is recorded once it leaves view.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {summary && (
+        <div className="text-xs text-slate-400 flex flex-wrap gap-4">
+          <span>
+            <span className="font-mono text-slate-200">{summary.total}</span> tracks
+          </span>
+          {Object.entries(summary.by_type).map(([t, n]) => (
+            <span key={t} className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2 h-2 rounded-sm"
+                style={{ background: TYPE_COLOR[t] ?? "#94a3b8" }}
+              />
+              {t} <span className="font-mono text-slate-200">{n}</span>
+            </span>
+          ))}
+          {summary.median_duration_sec != null && (
+            <span>
+              median dwell{" "}
+              <span className="font-mono text-slate-200">
+                {summary.median_duration_sec}s
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-slate-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-2 py-1">When</th>
+              <th className="text-left px-2 py-1">Type</th>
+              <th className="text-left px-2 py-1">Dwell</th>
+              <th className="text-left px-2 py-1">Closest</th>
+              <th className="text-left px-2 py-1">Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tracks.slice(0, 50).map((t) => (
+              <tr key={`${t.obj_id}-${t.started_at}`} className="border-t border-slate-800/60">
+                <td className="px-2 py-1 font-mono text-xs text-slate-300">
+                  {new Date(t.started_at).toLocaleString()}
+                </td>
+                <td className="px-2 py-1">
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm mr-1.5"
+                    style={{ background: TYPE_COLOR[t.type] ?? "#94a3b8" }}
+                  />
+                  {t.type}
+                </td>
+                <td className="px-2 py-1 font-mono text-xs">{t.duration_sec}s</td>
+                <td
+                  className="px-2 py-1 font-mono text-xs text-slate-400"
+                  title="Largest box area seen — bigger means nearer the camera"
+                >
+                  {(t.max_size * 100).toFixed(1)}%
+                </td>
+                <td className="px-2 py-1">
+                  <PathSpark path={t.path} color={TYPE_COLOR[t.type] ?? "#94a3b8"} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** The track's route through the frame, drawn in the frame's own
+ *  proportions so left-to-right on screen means left-to-right in view. */
+function PathSpark({
+  path,
+  color,
+}: {
+  path: [number, number, number, number][];
+  color: string;
+}) {
+  if (path.length < 2) return <span className="text-slate-600 text-xs">—</span>;
+  const pts = path.map(([cx, cy]) => `${cx * 96},${cy * 54}`).join(" ");
+  const [sx, sy] = path[0];
+  const [ex, ey] = path[path.length - 1];
+  return (
+    <svg viewBox="0 0 96 54" className="w-24 h-[54px] rounded bg-slate-950/60">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.8" />
+      <circle cx={sx * 96} cy={sy * 54} r="2" fill={color} opacity="0.5" />
+      <circle cx={ex * 96} cy={ey * 54} r="2.5" fill={color} />
+    </svg>
   );
 }

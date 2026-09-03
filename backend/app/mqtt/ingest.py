@@ -23,7 +23,11 @@ import json
 import logging
 import os
 import time
+
+from app.mqtt import history
+from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -38,6 +42,11 @@ TRACK_TIMEOUT_SEC = float(os.environ.get("MQTT_TRACK_TIMEOUT_SEC", "3.0"))
 OBJECT_TYPES = ("person", "animal", "vehicle")
 
 
+# Points kept per track. A porch crossing is a few dozen; the cap only
+# matters for something that parks in frame for an hour.
+MAX_PATH_POINTS = 400
+
+
 @dataclass
 class Track:
     obj_id: str
@@ -48,6 +57,8 @@ class Track:
     h: float
     last_seen: float
     first_seen: float
+    first_wall: float = 0.0
+    path: list[tuple[float, float, float, float]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +77,10 @@ class CameraState:
     tracks: dict[str, Track] = field(default_factory=dict)
     last_message: float = 0.0
     message_count: int = 0
+    # Detection-to-delivery lag, from the camera's own timestamps. The
+    # camera's clock is its own, so this is an estimate -- a skewed clock
+    # shows up as a constant offset, not as jitter.
+    latencies_ms: deque = field(default_factory=lambda: deque(maxlen=120))
     # Bumped on every message so SSE clients can push immediately rather
     # than poll — latency here is the whole point of the feature.
     revision: int = 0
@@ -97,6 +112,7 @@ class Ingest:
                 if now - t.last_seen <= TRACK_TIMEOUT_SEC
             ]
             counts = {kind: sum(1 for t in live if t.type == kind) for kind in OBJECT_TYPES}
+            lat = sorted(state.latencies_ms)
             out[cid] = {
                 "objects": [t.as_dict() for t in live],
                 "counts": counts,
@@ -104,6 +120,10 @@ class Ingest:
                 "age_sec": round(now - state.last_message, 2) if state.last_message else None,
                 "message_count": state.message_count,
                 "revision": state.revision,
+                # Median rather than mean: one stalled message should not
+                # redefine what "typical" looks like.
+                "latency_ms": round(lat[len(lat) // 2]) if lat else None,
+                "latency_samples": len(lat),
             }
         return out
 
@@ -151,6 +171,7 @@ class Ingest:
             return
 
         now = time.monotonic()
+        wall_ms = time.time() * 1000.0
         state = self.cameras.setdefault(camera_id, CameraState())
         state.last_message = now
         state.message_count += 1
@@ -173,27 +194,60 @@ class Ingest:
                 x2 = float(last["x2"]); y2 = float(last["y2"])
             except (KeyError, TypeError, ValueError):
                 continue
+            ts = last.get("timestamp")
+            if isinstance(ts, (int, float)) and ts > 0:
+                state.latencies_ms.append(wall_ms - float(ts))
             obj_id = str(obj.get("obj_id", ""))
             if not obj_id:
                 continue
             existing = state.tracks.get(obj_id)
-            state.tracks[obj_id] = Track(
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            w, h = abs(x2 - x1), abs(y2 - y1)
+            track = Track(
                 obj_id=obj_id,
                 type=str(obj.get("type") or "unknown"),
-                cx=(x1 + x2) / 2,
-                cy=(y1 + y2) / 2,
-                w=abs(x2 - x1),
-                h=abs(y2 - y1),
+                cx=cx,
+                cy=cy,
+                w=w,
+                h=h,
                 last_seen=now,
                 first_seen=existing.first_seen if existing else now,
+                first_wall=existing.first_wall if existing else time.time(),
+                path=existing.path if existing else [],
             )
+            if len(track.path) < MAX_PATH_POINTS:
+                track.path.append((round(cx, 4), round(cy, 4), round(w, 4), round(h, 4)))
+            state.tracks[obj_id] = track
 
-        # Drop long-dead tracks so a busy camera's dict doesn't grow all day.
+        # Drop long-dead tracks so a busy camera's dict doesn't grow all
+        # day, recording each one on the way out. Expiry is the only
+        # signal we get that an object left -- the camera never says so.
         cutoff = now - (TRACK_TIMEOUT_SEC * 4)
         for obj_id in [k for k, t in state.tracks.items() if t.last_seen < cutoff]:
-            del state.tracks[obj_id]
+            self._retire(camera_id, state.tracks.pop(obj_id))
 
         self._event.set()
+
+    def _retire(self, camera_id: str, track: Track) -> None:
+        """Persist a finished track, if it was substantial enough to matter."""
+        duration = track.last_seen - track.first_seen
+        if duration < history.MIN_DURATION_SEC or not track.path:
+            return
+        started = datetime.fromtimestamp(track.first_wall, tz=timezone.utc)
+        history.record(
+            {
+                "camera_id": camera_id,
+                "obj_id": track.obj_id,
+                "type": track.type,
+                "started_at": started.isoformat(),
+                "duration_sec": round(duration, 2),
+                "points": len(track.path),
+                # Size is a usable proximity proxy: the box grows as the
+                # subject approaches the camera.
+                "max_size": round(max(w * h for _, _, w, h in track.path), 4),
+                "path": track.path,
+            }
+        )
 
     # ---- lifecycle -----------------------------------------------------
 

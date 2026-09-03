@@ -24,7 +24,7 @@ from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
-from app.mqtt import provision
+from app.mqtt import history, provision
 from app.mqtt.ingest import ingest
 
 
@@ -529,6 +529,24 @@ async def reset() -> dict[str, Any]:
             "Cameras still point here until re-pushed. "
             "Restart mqtt-broker and mqtt-tls after generating again."
         ),
+    }
+
+
+@router.get("/history")
+async def track_history(
+    camera_id: str | None = Query(default=None),
+    object_type: str | None = Query(default=None),
+    limit: int = Query(default=200, le=2000),
+) -> dict[str, Any]:
+    """Completed tracks, most recent first, with a summary.
+
+    One row per object rather than per message: the live view already
+    shows the messages, and what you want hours later is "what came
+    through, when, and for how long".
+    """
+    return {
+        "tracks": history.read(camera_id=camera_id, limit=limit, object_type=object_type),
+        "summary": history.summarize(camera_id=camera_id),
     }
 
 
