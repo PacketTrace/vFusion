@@ -3,13 +3,20 @@
 MediaMTX watches its own config file and reloads on change, which is the
 reason it is worth generating rather than hand-editing: turning the
 stream on in the UI can take effect without anyone restarting a
-container. If that reload ever fails to happen, ``docker compose restart
+container. If that reload is ever missed, ``docker compose restart
 rtsp-server`` is the fallback and costs the Connector one reconnect.
 
 Two users, deliberately. The read user is the one pasted into Verkada,
 and it can only read; a credential handed to a third-party appliance
 should not be able to publish over the stream that appliance is
 watching. The publish user never leaves this compose network.
+
+A malformed config does not fail visibly at this end. MediaMTX refuses
+to start, the container exits, its DNS name stops resolving, and what
+reaches the operator is the encoder reporting "Failed to resolve
+hostname rtsp-server" -- a networking error for what is really a syntax
+error, several layers away from the cause. ``validate()`` exists so that
+a config that would not parse is refused here instead.
 """
 
 from __future__ import annotations
@@ -21,6 +28,30 @@ from app.rtsp import settings
 
 
 logger = logging.getLogger(__name__)
+
+
+DENY_ALL = """# Placeholder written by vFusion. Replaced with a real config, including
+# credentials, the moment the virtual camera is turned on.
+#
+# It denies everything on purpose. The container has to be up before
+# vFusion can write credentials into it, and an RTSP server briefly wide
+# open on the LAN while that happens is not a reasonable default.
+logLevel: info
+logDestinations: [stdout]
+rtsp: yes
+rtspTransports: [tcp]
+rtspAddress: :8554
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+moq: no
+api: yes
+apiAddress: :9997
+authMethod: internal
+authInternalUsers: []
+paths: {}
+"""
 
 
 def render(state: dict[str, Any]) -> str:
@@ -40,7 +71,7 @@ logDestinations: [stdout]
 rtsp: yes
 # TCP only, and not as a preference -- only the TCP port is published to
 # the LAN. Advertising UDP would let a client negotiate a transport whose
-# RTP ports never left this container, which fails as a stream that
+# RTP ports never leave this container, which presents as a stream that
 # connects and then shows nothing.
 rtspTransports: [tcp]
 rtspAddress: :{settings.PORT}
@@ -48,28 +79,8 @@ rtmp: no
 hls: no
 webrtc: no
 srt: no
-# Off explicitly: MediaMTX starts MoQ by default and generates a
+# Off explicitly: MediaMTX starts MoQ by default and generates itself a
 # certificate for it on first boot. Nothing here speaks it.
-moq: no
-A
-($s =~ s/\Q$o\E/$n/) or die "render";
-
-$o = <<'A';
-rtsp: yes
-rtspAddress: :8554
-rtmp: no
-hls: no
-webrtc: no
-srt: no
-A
-$n = <<'B';
-rtsp: yes
-rtspTransports: [tcp]
-rtspAddress: :8554
-rtmp: no
-hls: no
-webrtc: no
-srt: no
 moq: no
 
 # The HTTP API is how vFusion answers "is the Connector actually pulling
@@ -101,26 +112,27 @@ paths:
 """
 
 
-DENY_ALL = """# Placeholder written by vFusion. Replaced with a real config, including
-# credentials, the moment the virtual camera is turned on.
-#
-# It denies everything on purpose. The container has to be up before
-# vFusion can write credentials into it, and an RTSP server briefly wide
-# open on the LAN while that happens is not a reasonable default.
-logLevel: info
-logDestinations: [stdout]
-rtsp: yes
-rtspAddress: :8554
-rtmp: no
-hls: no
-webrtc: no
-srt: no
-api: yes
-apiAddress: :9997
-authMethod: internal
-authInternalUsers: []
-paths: {}
-"""
+def validate(text: str) -> str | None:
+    """Why MediaMTX would reject this config, or None if it looks sound.
+
+    Cheap insurance. The cost of not checking is not a bad file on disk:
+    it is a container that exits, a hostname that stops resolving, and an
+    error about DNS at the far end of the system.
+    """
+    try:
+        import yaml
+    except ImportError:
+        return None
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        return f"not valid YAML: {e}"
+    if not isinstance(parsed, dict):
+        return "config is not a mapping"
+    for key in ("rtsp", "rtspAddress", "authInternalUsers", "paths"):
+        if key not in parsed:
+            return f"config is missing {key}"
+    return None
 
 
 def ensure(state: dict[str, Any]) -> bool:
@@ -129,28 +141,33 @@ def ensure(state: dict[str, Any]) -> bool:
     The sidecar mounts this file and will not start without it, so a
     fresh checkout has to produce one before MediaMTX's first restart
     attempt gives up. Off means deny-all rather than absent.
+
+    A config that fails to validate is replaced with the deny-all one:
+    a server that starts and refuses connections can be diagnosed from
+    the UI, and a server that will not start cannot.
     """
-    if state.get("enabled"):
-        return write(state)
-    try:
-        settings.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if settings.CONFIG_PATH.exists():
-            return True
-        tmp = settings.CONFIG_PATH.with_suffix(".tmp")
-        tmp.write_text(DENY_ALL)
-        tmp.replace(settings.CONFIG_PATH)
+    if state.get("enabled") and write(state):
         return True
-    except OSError as e:
-        logger.warning("could not write placeholder mediamtx config: %s", e)
-        return False
+    if settings.CONFIG_PATH.exists() and not state.get("enabled"):
+        return True
+    return _write_text(DENY_ALL)
 
 
 def write(state: dict[str, Any]) -> bool:
-    """Write the config out. False if the path is not mounted."""
+    """Write the config out. False if it would not parse, or cannot be saved."""
+    text = render(state)
+    problem = validate(text)
+    if problem:
+        logger.error("refusing to write mediamtx config: %s", problem)
+        return False
+    return _write_text(text)
+
+
+def _write_text(text: str) -> bool:
     try:
         settings.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = settings.CONFIG_PATH.with_suffix(".tmp")
-        tmp.write_text(render(state))
+        tmp.write_text(text)
         tmp.replace(settings.CONFIG_PATH)
         return True
     except OSError as e:
