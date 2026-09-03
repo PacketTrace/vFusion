@@ -227,6 +227,7 @@ button:not(:disabled):active {
 
 .animate-walk .walk-leg,
 .animate-walk .walk-shin,
+.animate-walk .walk-foot,
 .animate-walk .walk-arm,
 .animate-walk .walk-forearm {
   transform-box: view-box;
@@ -239,25 +240,36 @@ button:not(:disabled):active {
    here — without it the lengths resolve against CSS pixels and the
    joints drift apart at any zoom other than 100%. */
 .animate-walk .walk-leg {
-  transform-origin: 47.917% 56.25%; /* hip (11.5, 27) */
+  transform-origin: 47.917% 58.333%; /* hip (11.5, 28) */
   animation-name: walk-thigh;
   animation-timing-function: linear;
 }
 
 .animate-walk .walk-shin {
-  transform-origin: 47.917% 75%; /* knee (11.5, 36) */
+  transform-origin: 47.917% 78.125%; /* knee (11.5, 37.5) */
   animation-name: walk-knee;
   animation-timing-function: linear;
 }
 
+/* The ankle. Rotating rigidly with the shin is what makes a figure look
+   like it is walking on its ankles: the foot swings through like a
+   pointed stump and never meets the ground flat. A real one counter-
+   rotates against the shin — toe up to clear the swing and to land heel
+   first, flat through mid-stance, pointed at push-off. */
+.animate-walk .walk-foot {
+  transform-origin: 47.917% 95.833%; /* ankle (11.5, 46) */
+  animation-name: walk-ankle;
+  animation-timing-function: linear;
+}
+
 .animate-walk .walk-arm {
-  transform-origin: 51.667% 31.25%; /* shoulder (12.4, 15) */
+  transform-origin: 51.667% 32.292%; /* shoulder (12.4, 15.5) */
   animation-name: walk-shoulder;
   animation-timing-function: var(--ease-in-out);
 }
 
 .animate-walk .walk-forearm {
-  transform-origin: 51.667% 43.75%; /* elbow (12.4, 21) */
+  transform-origin: 51.667% 44.792%; /* elbow (12.4, 21.5) */
   animation-name: walk-elbow;
   animation-timing-function: var(--ease-in-out);
 }
@@ -314,6 +326,20 @@ button:not(:disabled):active {
   0%   { transform: rotate(-27deg); }
   50%  { transform: rotate(-11deg); }
   100% { transform: rotate(-27deg); }
+}
+
+/* Ankle, relative to the shin. The values are what is left after the
+   thigh and knee have had their say, so the foot lands close to flat
+   and pushes off pointed rather than tracking the shin all the way
+   round. */
+@keyframes walk-ankle {
+  0%   { transform: rotate(-22deg); }  /* heel strike, toe up */
+  14%  { transform: rotate(2deg); }    /* foot flat */
+  32%  { transform: rotate(4deg); }    /* mid-stance, weight over it */
+  48%  { transform: rotate(24deg); }   /* push-off, toe pointed */
+  62%  { transform: rotate(-2deg); }   /* toe lifts to clear */
+  80%  { transform: rotate(-16deg); }
+  100% { transform: rotate(-22deg); }
 }
 
 @keyframes walk-bob {

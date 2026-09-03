@@ -419,6 +419,19 @@ export default function Byoa() {
   const [editingAnalytic, setEditingAnalytic] = useState<SavedAnalytic | null>(
     null,
   );
+  // "Not on this org yet" is read off vFusion's synced copy, not off
+  // Verkada. Create the type anywhere else — Command, a script, the
+  // Helixr tab on another connection — and this page keeps saying it is
+  // missing, and keeps offering to make a second one. Re-checking is a
+  // click from where the claim is made rather than a trip to Connections.
+  const resyncHelix = useMutation({
+    mutationFn: () =>
+      apiPost<{ count: number }>(
+        `/api/connections/${verkadaConnId}/sync-helix`,
+        {},
+      ),
+    onSuccess: () => helixTypes.refetch(),
+  });
   const updateAnalytic = useMutation({
     mutationFn: () =>
       apiPost<SavedAnalytic>("/api/byoa/analytics", {
@@ -1246,8 +1259,18 @@ export default function Byoa() {
                         help={`This analytic writes ${Object.keys(paired.event_schema).length} attributes that only fit ${paired.name}. Create it to continue.`}
                       >
                         <div className="px-2 py-1.5 rounded bg-white/5 border border-dashed border-white/15 text-sm text-slate-400">
-                          {paired.name} — not on this org yet
+                          {paired.name} — not in the synced list
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => resyncHelix.mutate()}
+                          disabled={resyncHelix.isPending || !verkadaConnId}
+                          className="mt-1 text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2 disabled:opacity-50"
+                        >
+                          {resyncHelix.isPending
+                            ? "Re-checking Verkada…"
+                            : "Already made it? Re-check Verkada"}
+                        </button>
                       </Field>
                     );
                   }

@@ -701,16 +701,18 @@ function Figure({ type, color }: { type: string; color: string }) {
       >
         <g className="walk-far" opacity="0.45">
           <g className="walk-arm walk-phase-a">
-            <line x1="12.4" y1="15" x2="12.4" y2="21" />
+            <line x1="12.4" y1="15.5" x2="12.4" y2="21.5" />
             <g className="walk-forearm">
-              <line x1="12.4" y1="21" x2="12.4" y2="26.5" />
+              <line x1="12.4" y1="21.5" x2="12.4" y2="27.5" />
             </g>
           </g>
           <g className="walk-leg walk-phase-b">
-            <line x1="11.5" y1="27" x2="11.5" y2="36" />
+            <line x1="11.5" y1="28" x2="11.5" y2="37.5" />
             <g className="walk-shin">
-              <line x1="11.5" y1="36" x2="11.5" y2="44" />
-              <line x1="11.5" y1="44" x2="14.3" y2="44.6" />
+              <line x1="11.5" y1="37.5" x2="11.5" y2="46" />
+              <g className="walk-foot">
+                <line x1="10.4" y1="46.3" x2="14.6" y2="46.3" />
+              </g>
             </g>
           </g>
         </g>
@@ -718,19 +720,21 @@ function Figure({ type, color }: { type: string; color: string }) {
         {/* Torso and head sit between the two limb pairs, so the far
             arm passes behind the body and the near one in front. */}
         <circle cx="13" cy="7.5" r="4.6" fill={color} stroke="none" />
-        <line x1="12.6" y1="12" x2="11.5" y2="27" />
+        <line x1="12.6" y1="12" x2="11.5" y2="28" />
 
         <g className="walk-leg walk-phase-a">
-          <line x1="11.5" y1="27" x2="11.5" y2="36" />
+          <line x1="11.5" y1="28" x2="11.5" y2="37.5" />
           <g className="walk-shin">
-            <line x1="11.5" y1="36" x2="11.5" y2="44" />
-            <line x1="11.5" y1="44" x2="14.3" y2="44.6" />
+            <line x1="11.5" y1="37.5" x2="11.5" y2="46" />
+            <g className="walk-foot">
+              <line x1="10.4" y1="46.3" x2="14.6" y2="46.3" />
+            </g>
           </g>
         </g>
         <g className="walk-arm walk-phase-b">
-          <line x1="12.4" y1="15" x2="12.4" y2="21" />
+          <line x1="12.4" y1="15.5" x2="12.4" y2="21.5" />
           <g className="walk-forearm">
-            <line x1="12.4" y1="21" x2="12.4" y2="26.5" />
+            <line x1="12.4" y1="21.5" x2="12.4" y2="27.5" />
           </g>
         </g>
       </g>
