@@ -421,6 +421,10 @@ export interface FilterFieldProfile {
   /** A bundled sample of this exact event type carries this path —
    *  type-level fact, as opposed to family-level inference. */
   from_sample?: boolean;
+  /** Inherited from the family model and contradicted by the evidence:
+   *  enough events of this type exist and none populated it. Hidden by
+   *  default — it is bloat, not a filter. */
+  suppressed?: boolean;
 }
 
 export interface NotificationTypeMeta {

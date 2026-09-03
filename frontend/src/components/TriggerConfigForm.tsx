@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -117,21 +119,28 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
     staleTime: 60_000,
   });
   const profiled = profile.data ?? [];
+  const [showAllFields, setShowAllFields] = useState(false);
   // Anything under 5% of events is almost certainly noise — a stray LPR
   // field on a Person of Interest webhook, say. Still offered, but parked
   // under a "rarely present" group so it doesn't sit next to the real ones.
   // Three buckets, because "we have not seen this" and "we have seen this
   // and it is usually noise" are different warnings. Unproven fields sort
   // last but stay pickable -- the schema says the event carries them.
-  const commonFields = profiled.filter((f) => f.present_pct >= 5);
-  const rareFields = profiled.filter(
-    (f) => f.present_pct < 5 && f.present > 0,
-  );
+  // Fields the family model offers that this event type demonstrably
+  // never populates. Hidden rather than dropped server-side, so the
+  // count stays visible and the list is one click away.
+  const suppressed = profiled.filter((f) => f.suppressed);
+  const visible = showAllFields
+    ? profiled
+    : profiled.filter((f) => !f.suppressed);
+
+  const commonFields = visible.filter((f) => f.present_pct >= 5);
+  const rareFields = visible.filter((f) => f.present_pct < 5 && f.present > 0);
   // Two different claims, so two different groups. A bundled sample of
   // this exact type is evidence about this type; the family model only
   // says other events of the same family carry it.
-  const sampledFields = profiled.filter((f) => f.present === 0 && f.from_sample);
-  const inferredFields = profiled.filter(
+  const sampledFields = visible.filter((f) => f.present === 0 && f.from_sample);
+  const inferredFields = visible.filter(
     (f) => f.present === 0 && !f.from_sample,
   );
 
@@ -370,6 +379,17 @@ export default function TriggerConfigForm({ value, onChange }: Props) {
               })()}
             </div>
           ))}
+          {suppressed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllFields((v) => !v)}
+              className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+            >
+              {showAllFields
+                ? "Hide fields this event never populates"
+                : `+${suppressed.length} fields this event never populates`}
+            </button>
+          )}
           <button
             onClick={() =>
               onChange({

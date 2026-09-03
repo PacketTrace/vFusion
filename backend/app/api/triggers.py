@@ -143,6 +143,14 @@ async def sample_fields(
 # Fields that identify a specific event or moment rather than a class of
 # them — filtering on these matches exactly one webhook, which is never
 # what a trigger wants.
+# device_id is deliberately NOT excluded, though it was until now. The
+# old rationale was that it duplicates camera_id / door_id "in every
+# payload sampled" -- door_auxoutput_activated disproves it. Those
+# payloads null out door_id, door_info and user_info and carry only
+# device_id (the ACU), so excluding it left 57 real events in this org
+# with no filterable field at all. It names a device, not an event, and
+# is stable across everything that device sends. On camera events it
+# does duplicate camera_id, which is a smaller cost than the hole.
 _NOT_FILTERABLE = {
     # Secret. On door_mobile_nfc_scan_accepted this is 100% populated and
     # holds the raw card bits; on door_code_entered_accepted it's the
@@ -155,9 +163,6 @@ _NOT_FILTERABLE = {
     # the picker above it, and device_type never varies within a family.
     "notification_type",
     "device_type",
-    # Duplicate: device_id is camera_id on camera events and door_id on
-    # access events, in every payload sampled.
-    "device_id",
     "event_id",
     "created",
     "start_timestamp",
@@ -175,6 +180,14 @@ _NOT_FILTERABLE = {
 # Above this many distinct values, offering a dropdown is pointless — it's
 # an id or a timestamp, not a category.
 _MAX_DISTINCT_FOR_PICKER = 25
+
+# How many events of a type we need before "never populated" means
+# "this type does not carry it" rather than "we have not looked much".
+# Access and camera families share one model each, so every type inherits
+# every sibling's fields: motion events are offered license_plate_state,
+# crowd_threshold and location_lat, all of which are null in every motion
+# event ever received. Past this many samples, silence is evidence.
+_CONFIDENT_SAMPLE = 25
 
 # Fields whose complete value set is fixed by the API contract. Observation
 # can only ever confirm a subset of these — a quiet camera makes "animal"
@@ -225,6 +238,10 @@ class FilterFieldProfile(BaseModel):
     # stronger claim than "declared": the family model describes access
     # events in general, a fixture describes door_forced_open itself.
     from_sample: bool = False
+    # Inherited from the family model, and contradicted by the evidence:
+    # enough samples of this type exist and not one populated it. Kept in
+    # the response rather than dropped so the UI can say what it hid.
+    suppressed: bool = False
 
 
 @router.get("/filter-fields", response_model=list[FilterFieldProfile])
@@ -358,6 +375,7 @@ async def filter_fields(
                 values=[],
                 distinct_count=0,
                 type=kind,
+                suppressed=total >= _CONFIDENT_SAMPLE,
                 declared=True,
             )
         )
