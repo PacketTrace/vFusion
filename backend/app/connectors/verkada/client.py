@@ -381,6 +381,27 @@ class VerkadaClient:
             f"unexpected list_helix_event_types response shape: {type(data).__name__}"
         )
 
+    async def delete_helix_event_type(self, event_type_uid: str) -> dict[str, Any]:
+        """Remove a Helix event type from the org.
+
+        Endpoint: ``DELETE /cameras/v1/video_tagging/event_type`` with the
+        uid as a query parameter. Verkada does not document what becomes
+        of events already logged against the type, so treat this as
+        unrecoverable.
+        """
+        res = await self.request(
+            "DELETE",
+            "/cameras/v1/video_tagging/event_type",
+            query={"event_type_uid": event_type_uid},
+        )
+        if res["status_code"] >= 400:
+            raise VerkadaApiError(
+                f"delete_helix_event_type failed: HTTP {res['status_code']}",
+                status_code=res["status_code"],
+                body=res["body"],
+            )
+        return res["body"] if isinstance(res["body"], dict) else {}
+
     async def create_helix_event_type(
         self, name: str, event_schema: dict[str, Any]
     ) -> dict[str, Any]:

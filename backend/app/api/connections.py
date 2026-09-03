@@ -588,6 +588,31 @@ async def create_helix_event_type_endpoint(
     return HelixEventTypeOut.model_validate(new_row)
 
 
+@router.delete("/{conn_id}/helix-event-types/{event_type_uid}")
+async def delete_helix_event_type_endpoint(
+    conn_id: UUID,
+    event_type_uid: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Delete a Helix event type from the org, then re-sync the cache.
+
+    Verkada does not say what happens to events already logged against
+    the type, so this is treated as unrecoverable — the UI confirms
+    before calling it.
+    """
+    conn = await session.get(Connection, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="connection not found")
+    client = await _verkada_client_for(conn)
+    try:
+        await client.delete_helix_event_type(event_type_uid)
+    except VerkadaApiError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await sync_helix_event_types_for_connection(conn.id)
+    return {"deleted": True, "event_type_uid": event_type_uid}
+
+
 @router.patch("/{conn_id}/helix-event-types/{event_type_uid}", response_model=HelixEventTypeOut)
 async def update_helix_event_type_endpoint(
     conn_id: UUID,

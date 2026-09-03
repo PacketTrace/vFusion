@@ -1167,6 +1167,10 @@ function FlowEditorInner() {
                 lockedVerkadaConnectionId={lockedVerkadaConnectionId}
                 triggerFamily={trigger.family}
                 triggerNotificationType={trigger.notificationType}
+                triggerCameraId={
+                  trigger.filters?.find((f) => f.field === "camera_id")?.value ||
+                  undefined
+                }
                 flowId={isNew ? null : (flowId ?? null)}
                 onSaveBeforeRun={() => save.mutateAsync().then(() => undefined)}
                 sampleOutput={existing.data?.node_samples?.[selectedNode.id]}
@@ -1463,6 +1467,7 @@ function NodeEditor({
   allSpecs,
   triggerFamily,
   triggerNotificationType,
+  triggerCameraId,
   priorSteps,
   onChangeName,
   onChangeLabel,
@@ -1478,6 +1483,7 @@ function NodeEditor({
   allSpecs: Record<string, ActionSpec>;
   triggerFamily?: string;
   triggerNotificationType?: string;
+  triggerCameraId?: string;
   priorSteps: Array<{ name: string; output_sample: unknown }>;
   onChangeName: (n: string) => void;
   onChangeLabel: (l: string) => void;
@@ -1579,6 +1585,7 @@ function NodeEditor({
           onChange={onChangeConfig}
           triggerFamily={triggerFamily}
           triggerNotificationType={triggerNotificationType}
+          triggerCameraId={triggerCameraId}
           priorSteps={priorSteps}
           operators={spec.operators ?? []}
           currentStepName={node.name}

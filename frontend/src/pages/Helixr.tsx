@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  apiDelete,
   apiGet,
   apiPost,
   Connection,
@@ -129,6 +130,18 @@ function EventTypeList({
       apiPost(`/api/connections/${connId}/sync-helix`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helix-event-types", connId] }),
   });
+  // Two-step, and no browser confirm(): Verkada does not document what
+  // happens to events already logged against a type, so this is treated
+  // as unrecoverable and the name has to be read before it goes.
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const del = useMutation({
+    mutationFn: (uid: string) =>
+      apiDelete(`/api/connections/${connId}/helix-event-types/${uid}`),
+    onSuccess: () => {
+      setConfirming(null);
+      qc.invalidateQueries({ queryKey: ["helix-event-types", connId] });
+    },
+  });
   const list = types.data ?? [];
   return (
     <Card>
@@ -166,10 +179,61 @@ function EventTypeList({
                 <div className="font-medium text-slate-100">
                   {et.name ?? "(unnamed)"}
                 </div>
-                <code className="text-[10px] font-mono text-slate-500">
-                  {et.event_type_uid}
-                </code>
+                <div className="flex items-center gap-2 shrink-0">
+                  <code className="text-[10px] font-mono text-slate-500">
+                    {et.event_type_uid}
+                  </code>
+                  {confirming === et.event_type_uid ? (
+                    <span
+                      className="flex items-center gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => del.mutate(et.event_type_uid)}
+                        disabled={del.isPending}
+                        className="text-[11px] px-2 py-0.5 rounded border border-rose-700/70 bg-rose-900/40 text-rose-200 hover:bg-rose-800/60 disabled:opacity-40"
+                      >
+                        {del.isPending ? "Deleting…" : "Delete for good"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirming(null)}
+                        className="text-[11px] text-slate-400 hover:text-slate-200"
+                      >
+                        cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirming(et.event_type_uid);
+                      }}
+                      className="text-[11px] text-slate-500 hover:text-rose-300"
+                      title="Delete this event type from Verkada"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
+              {confirming === et.event_type_uid && (
+                <div
+                  className="text-[11px] text-amber-300/90 mt-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Deletes {et.name ?? "this type"} from Verkada. Any flow or
+                  analytic posting to it will start failing, and events already
+                  logged against it may go with it.
+                </div>
+              )}
+              {del.isError && confirming === et.event_type_uid && (
+                <div className="text-[11px] text-rose-300 mt-1">
+                  {(del.error as Error).message}
+                </div>
+              )}
               {attrs.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {attrs.map(([k, t]) => (

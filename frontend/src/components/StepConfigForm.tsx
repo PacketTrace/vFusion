@@ -30,6 +30,10 @@ interface Props {
   onChange: (config: Record<string, unknown>) => void;
   triggerFamily?: string;
   triggerNotificationType?: string;
+  /** camera_id the trigger is filtered to, when it is pinned to one.
+   *  Lets a {{ trigger.data.camera_id }} ref say which camera it will
+   *  actually resolve to. */
+  triggerCameraId?: string;
   priorSteps?: PriorStep[];
   /** For condition nodes — populates the operator dropdown. */
   operators?: string[];
@@ -77,6 +81,7 @@ export default function StepConfigForm({
   onChange,
   triggerFamily,
   triggerNotificationType,
+  triggerCameraId,
   priorSteps = [],
   operators = [],
   onAddPairedHelixStep,
@@ -282,6 +287,7 @@ export default function StepConfigForm({
           onAddPairedHelixStep,
           currentStepName,
           lockedVerkadaConnectionId,
+          triggerCameraId,
         )}
       </Field>
     );
@@ -321,6 +327,7 @@ function renderControl(
   onAddPairedHelixStep: Props["onAddPairedHelixStep"],
   currentStepName: Props["currentStepName"],
   lockedVerkadaConnectionId: Props["lockedVerkadaConnectionId"],
+  triggerCameraId: string | undefined,
 ): JSX.Element {
   if (f.type === "connection_ref") {
     // Lock verkada-type pickers to the flow's existing Verkada
@@ -396,6 +403,7 @@ function renderControl(
         config={config}
         setOne={setOne}
         camerasList={camerasList}
+        triggerCameraId={triggerCameraId}
       />
     );
   }
@@ -679,11 +687,13 @@ function CameraRefField({
   config,
   setOne,
   camerasList,
+  triggerCameraId,
 }: {
   f: ActionFieldSpec;
   config: Record<string, unknown>;
   setOne: (name: string, value: unknown) => void;
   camerasList: VerkadaCamera[];
+  triggerCameraId?: string;
 }) {
   const connId =
     typeof config.connection_id === "string" ? config.connection_id : "";
@@ -749,6 +759,27 @@ function CameraRefField({
         className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
         placeholder="or paste camera_id / template ref like {{ trigger.data.camera_id }}"
       />
+      {(() => {
+        // A trigger ref reads as unresolved — the dropdown sits on
+        // "pick a camera" and the box shows a template. When the
+        // trigger is pinned to one camera we already know the answer,
+        // so say it rather than leaving it looking unconfigured.
+        const value = (config[f.name] as string) ?? "";
+        if (!value.includes("trigger.data.camera_id") || !triggerCameraId) {
+          return null;
+        }
+        const cam = camerasList.find((c) => c.camera_id === triggerCameraId);
+        return (
+          <div className="text-[11px] text-slate-400 mt-1">
+            Resolves to{" "}
+            <span className="text-slate-200">
+              {cam?.name ?? `${triggerCameraId.slice(0, 8)}…`}
+              {cam?.site ? ` — ${cam.site}` : ""}
+            </span>{" "}
+            — the camera this flow's trigger is filtered to.
+          </div>
+        );
+      })()}
       {visible.length === 0 && (
         <div className="text-[11px] text-amber-300/80 mt-1">
           {!connId
