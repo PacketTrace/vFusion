@@ -57,7 +57,7 @@ export default function Connections() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Connections</h1>
-        <p className="text-slate-300 text-sm mt-1">
+        <p className="text-slate-400 text-sm mt-1">
           Store API keys and webhook signing secrets. Secrets are encrypted at rest with
           your <code className="bg-white/10 px-1 rounded">FERNET_KEY</code> and never
           returned through the API after creation.

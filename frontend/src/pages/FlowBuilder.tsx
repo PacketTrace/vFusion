@@ -182,7 +182,7 @@ export default function FlowBuilder() {
   const nodes = flow?.nodes ?? [];
 
   return (
-    <div className="max-w-[1100px] mx-auto px-4 py-6">
+    <div className="max-w-[1100px]">
       <h1 className="text-2xl font-semibold text-white">Build a flow</h1>
       <p className="text-slate-400 text-sm mt-1 max-w-3xl">
         Describe what you want to happen and this drafts a flow for it —

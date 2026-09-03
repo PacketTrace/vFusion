@@ -46,7 +46,7 @@ export default function Templates() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Templates</h1>
-        <p className="text-slate-300 text-sm mt-1">
+        <p className="text-slate-400 text-sm mt-1">
           Starter flows you can use as-is. Each template ships pre-wired with
           a trigger, AI analysis, and (where relevant) a Helix event type so
           the result lands in Verkada Command without extra plumbing.

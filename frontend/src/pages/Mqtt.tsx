@@ -173,7 +173,7 @@ export default function Mqtt() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Object position</h1>
-        <p className="text-slate-300 text-sm mt-1 max-w-3xl">
+        <p className="text-slate-400 text-sm mt-1 max-w-3xl">
           Point a camera at vFusion's MQTT broker and watch what it reports.
           Cameras publish bounding boxes for people, vehicles and animals about
           eight times a second — this is that stream, unedited.

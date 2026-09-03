@@ -201,7 +201,7 @@ export default function Mcp() {
   const data = catalog.data;
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-6">
+    <div className="max-w-[1400px]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-white">MCP</h1>
