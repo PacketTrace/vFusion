@@ -1490,8 +1490,17 @@ function Field({
   help?: string;
   children: React.ReactNode;
 }) {
+  // A <label> with no `for` labels its first labelable descendant, and
+  // clicking anywhere inside it that is not itself a control forwards
+  // the activation there. Around one input that is the point. Around
+  // the template picker — six buttons, a textarea and 200 lines of
+  // markup under an empty label — it meant clicking the sixth card
+  // fired the first one, which is why the wrong card kept lighting up
+  // and pressing. No label text, no association worth having: use a
+  // plain box and let each control own its own clicks.
+  const Wrapper = (label ? "label" : "div") as "label" | "div";
   return (
-    <label className="block">
+    <Wrapper className="block">
       {label && (
         <div className="text-xs font-medium text-slate-300 mb-1">
           {label}
@@ -1500,7 +1509,7 @@ function Field({
       )}
       {children}
       {help && <div className="text-xs text-slate-500 mt-1">{help}</div>}
-    </label>
+    </Wrapper>
   );
 }
 
