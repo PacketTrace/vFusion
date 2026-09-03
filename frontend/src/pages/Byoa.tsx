@@ -373,6 +373,7 @@ export default function Byoa() {
   // so we can render the "Pairs with X" hint and react to changes in
   // the picked Verkada connection (re-resolve the matching Helix type).
   const [pickedTemplate, setPickedTemplate] = useState<BuiltinTemplate | null>(null);
+  const [pasteId, setPasteId] = useState(false);
 
   // "Use it" fills the prompt and pairs Helix, both of which live well
   // below the composer — so pressing it looked like nothing happened.
@@ -727,12 +728,23 @@ export default function Byoa() {
                     );
                   })}
                 </select>
-                <input
-                  value={cameraId}
-                  onChange={(e) => setCameraId(e.target.value)}
-                  placeholder="or paste a camera_id UUID"
-                  className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
-                />
+                {pasteId ? (
+                  <input
+                    autoFocus
+                    value={cameraId}
+                    onChange={(e) => setCameraId(e.target.value)}
+                    placeholder="camera_id UUID"
+                    className="w-full px-2 py-1.5 mt-1.5 rounded bg-white/5 border border-white/15 text-xs font-mono"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPasteId(true)}
+                    className="mt-1.5 text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+                  >
+                    paste an ID instead
+                  </button>
+                )}
               </>
             );
           })()}
@@ -740,7 +752,7 @@ export default function Byoa() {
 
         <Row>
           <Field label="Footage" required>
-            <div className="flex gap-2 text-sm">
+            <div className="flex gap-2 text-sm [&>button]:py-1.5">
               <ModeBtn
                 active={mode === "live"}
                 onClick={() => setMode("live")}
@@ -875,6 +887,7 @@ export default function Byoa() {
         )}
 
         <AnalyticComposer
+          defaultOpen={!prompt.trim()}
           geminiConnectionId={geminiConnId}
           onUse={(a) => {
             setPrompt(a.prompt);
@@ -1557,13 +1570,17 @@ function AnalyticComposer({
   geminiConnectionId,
   onUse,
   onSaved,
+  defaultOpen = false,
 }: {
   geminiConnectionId: string | null;
   onUse: (a: ComposedAnalytic) => void;
   onSaved: () => void;
+  defaultOpen?: boolean;
 }) {
   const [intent, setIntent] = useState("");
-  const [open, setOpen] = useState(false);
+  // Open when there is no prompt yet — that is the moment this is the
+  // obvious next move rather than one option among several.
+  const [open, setOpen] = useState(defaultOpen);
   const [used, setUsed] = useState(false);
 
   const compose = useMutation({
@@ -1589,16 +1606,32 @@ function AnalyticComposer({
   const a = compose.data;
 
   return (
-    <div className="mb-4 rounded-lg border border-white/15 bg-white/5 p-3">
+    <div className="mb-4 rounded-lg border border-sky-500/25 bg-gradient-to-br from-sky-500/10 to-transparent p-3">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-left"
+        className="flex w-full items-start justify-between gap-3 text-left"
       >
-        <span className="text-sm text-slate-200">
-          Describe an analytic and have it built
+        <span className="flex items-start gap-2.5">
+          <span
+            aria-hidden="true"
+            className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md bg-sky-500/20 text-sky-300 text-xs"
+          >
+            ✦
+          </span>
+          <span>
+            <span className="block text-sm text-slate-100">
+              Describe an analytic and have it built
+            </span>
+            <span className="block text-[11px] text-slate-400 mt-0.5">
+              Say what the camera should watch for — vFusion writes the prompt,
+              the Helix event type and the mapping between them.
+            </span>
+          </span>
         </span>
-        <span className="text-xs text-slate-500">{open ? "Hide" : "Open"}</span>
+        <span className="text-xs text-slate-400 shrink-0 mt-0.5">
+          {open ? "Hide" : "Open"}
+        </span>
       </button>
 
       {open && (
@@ -1620,8 +1653,8 @@ function AnalyticComposer({
               {compose.isPending ? "Building…" : "Build it"}
             </button>
             <span className="text-[11px] text-slate-500">
-              Writes the prompt, the Helix event type and the mapping between
-              them.
+              Two or three fields, worked examples, and a cap on free text —
+              the things that make these reliable.
             </span>
           </div>
 
