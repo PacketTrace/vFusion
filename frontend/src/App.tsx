@@ -85,21 +85,45 @@ function AppShell() {
     <div className="h-full flex flex-col">
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
-          {/* Two particles on a tight elliptical track around the
-              wordmark, and nothing else — no ring, no flare on the
-              letters. offset-path is what makes the track an ellipse:
-              rotating a box moves a dot in a circle whose radius is half
-              the word's width, which is why earlier versions flung them
-              out of the header. */}
+          {/* An atom rather than something orbiting the word: rings at
+              three tilts turning at different rates, a particle riding
+              each, and a lit core. Compact and self-contained, which is
+              what every previous attempt was missing — a track drawn
+              around the letters is either too big for the header or too
+              tight to read. */}
           <div
             ref={markRef}
-            onMouseEnter={() => setOrbitRate(3)}
+            onMouseEnter={() => setOrbitRate(2.6)}
             onMouseLeave={() => setOrbitRate(1)}
-            className="brand-mark font-semibold text-white tracking-tight relative select-none"
+            className="brand-mark flex items-center gap-2 font-semibold text-white tracking-tight select-none"
           >
-            <i className="brand-dot brand-dot-a" aria-hidden="true" />
-            <i className="brand-dot brand-dot-b" aria-hidden="true" />
-            <span className="relative">{brand}</span>
+            <svg
+              viewBox="0 0 40 40"
+              className="brand-atom"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <g transform="rotate(0 20 20)">
+                <g className="atom-ring atom-ring-a">
+                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
+                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                </g>
+              </g>
+              <g transform="rotate(60 20 20)">
+                <g className="atom-ring atom-ring-b">
+                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
+                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                </g>
+              </g>
+              <g transform="rotate(120 20 20)">
+                <g className="atom-ring atom-ring-c">
+                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
+                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                </g>
+              </g>
+              <circle className="atom-core" cx="20" cy="20" r="2.4" />
+            </svg>
+            <span>{brand}</span>
           </div>
           <nav className="flex items-center gap-1">
             <NavLink
