@@ -72,7 +72,6 @@ const TYPE_COLOR: Record<string, string> = {
 export default function Mqtt() {
   const cameras = useCameras();
   const [cameraId, setCameraId] = useState("");
-  const [brokerHostPort, setBrokerHostPort] = useState("");
 
   const status = useQuery({
     queryKey: ["mqtt-status"],
@@ -96,7 +95,7 @@ export default function Mqtt() {
   const configure = useMutation({
     mutationFn: () =>
       apiPost<{ persisted: boolean; note: string }>(`/api/mqtt/config/${cameraId}`, {
-        broker_host_port: brokerHostPort,
+        broker_host_port: knownBroker,
       }),
     onSuccess: () => {
       preflight.refetch();
@@ -115,10 +114,9 @@ export default function Mqtt() {
         expires: string;
         next_steps: string[];
       }>("/api/mqtt/setup", { broker_host: setupHost }),
-    onSuccess: (d) => {
-      // The address carries into step 2. The password deliberately does
-      // not exist here — it is stored server-side and used directly.
-      setBrokerHostPort(d.broker_host_port);
+    onSuccess: () => {
+      // Nothing to carry into step 2 any more: it reads the address off
+      // the certificate this just generated.
       status.refetch();
     },
   });
@@ -128,14 +126,13 @@ export default function Mqtt() {
     mutationFn: () =>
       apiPost<{ dry_run: boolean; request: unknown }>(
         `/api/mqtt/config/${cameraId}?dry_run=true`,
-        { broker_host_port: brokerHostPort },
+        { broker_host_port: knownBroker },
       ),
   });
 
   const reset = useMutation({
     mutationFn: () => apiPost<{ removed: string[]; note: string }>("/api/mqtt/reset", {}),
     onSuccess: () => {
-      setBrokerHostPort("");
       status.refetch();
     },
   });
@@ -153,12 +150,6 @@ export default function Mqtt() {
   // routes fine and then fails the TLS handshake — so asking anyone to
   // retype it per camera is inviting a mismatch.
   const knownBroker = status.data?.broker_host_port ?? null;
-  const [brokerTouched, setBrokerTouched] = useState(false);
-  useEffect(() => {
-    // Fill until someone edits it themselves. Before, an address typed
-    // once blocked the known-good one from ever appearing.
-    if (knownBroker && !brokerTouched) setBrokerHostPort(knownBroker);
-  }, [knownBroker, brokerTouched]);
 
   const live = useLiveTracks(cameraId);
 
@@ -315,31 +306,17 @@ export default function Mqtt() {
               Credentials come from step 0 and are sent straight to the camera —
               nothing to copy.
             </p>
-            {knownBroker && brokerHostPort !== knownBroker && (
-              <p className="text-[11px] text-amber-400/90">
-                The certificate was generated for{" "}
-                <span className="font-mono">{knownBroker}</span>. A different
-                address will fail the camera's TLS check.{" "}
-                <button
-                  type="button"
-                  onClick={() => setBrokerHostPort(knownBroker)}
-                  className="underline underline-offset-2 hover:text-amber-200"
-                >
-                  Use it
-                </button>
-              </p>
-            )}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => configure.mutate()}
-                disabled={!cameraId || !brokerHostPort || configure.isPending}
+                disabled={!cameraId || !knownBroker || configure.isPending}
                 className="text-sm px-3 py-1.5 rounded bg-sky-600 text-white disabled:opacity-40"
               >
                 {configure.isPending ? "Pushing…" : "Push config to camera"}
               </button>
               <button
                 onClick={() => preview.mutate()}
-                disabled={!cameraId || !brokerHostPort || preview.isPending}
+                disabled={!cameraId || !knownBroker || preview.isPending}
                 className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
                 title="Build the request and show it without sending"
               >
