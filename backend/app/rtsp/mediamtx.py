@@ -38,12 +38,39 @@ logDestinations: [stdout]
 # Only RTSP. The Command Connector speaks it, and every other protocol
 # this server can offer is another way in that nothing here needs.
 rtsp: yes
-rtspTransports: [tcp, udp]
+# TCP only, and not as a preference -- only the TCP port is published to
+# the LAN. Advertising UDP would let a client negotiate a transport whose
+# RTP ports never left this container, which fails as a stream that
+# connects and then shows nothing.
+rtspTransports: [tcp]
 rtspAddress: :{settings.PORT}
 rtmp: no
 hls: no
 webrtc: no
 srt: no
+# Off explicitly: MediaMTX starts MoQ by default and generates a
+# certificate for it on first boot. Nothing here speaks it.
+moq: no
+A
+($s =~ s/\Q$o\E/$n/) or die "render";
+
+$o = <<'A';
+rtsp: yes
+rtspAddress: :8554
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+A
+$n = <<'B';
+rtsp: yes
+rtspTransports: [tcp]
+rtspAddress: :8554
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+moq: no
 
 # The HTTP API is how vFusion answers "is the Connector actually pulling
 # this?" -- it reports readers per path, which is the difference between
