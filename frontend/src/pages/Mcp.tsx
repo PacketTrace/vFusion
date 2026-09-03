@@ -312,6 +312,23 @@ export default function Mcp() {
                     {counts.destructive} destructive
                   </span>
                 </Fact>
+                {/* Zero destructive is not a finding about the tools, it
+                    is a finding about the annotations — and read as
+                    reassurance it is exactly backwards. A server that
+                    stops sending destructiveHint moves every one of
+                    those tools into "write" without anything about what
+                    they do having changed. */}
+                {counts.destructive === 0 && tools.length > 0 && (
+                  <Fact label="">
+                    <span className="text-slate-500">
+                      None of these tools claims to be destructive. That is
+                      the server's own annotation, not an audit — anything
+                      unlabelled is counted as a write, and a server that
+                      drops the hint looks identical to one that never
+                      needed it.
+                    </span>
+                  </Fact>
+                )}
                 <Fact
                   label="Catalog weight"
                   hint="what it costs per turn to hand every tool to a model"
