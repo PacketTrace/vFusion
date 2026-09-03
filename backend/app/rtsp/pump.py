@@ -65,6 +65,19 @@ class Pump:
         self._source: asyncio.subprocess.Process | None = None
         self._write_fd: int | None = None
         self._read_fd: int | None = None
+        # A second pipe, for audio.
+        #
+        # The tempting alternative is one pipe carrying a container -- nut
+        # or matroska -- with both streams in it. That breaks the thing
+        # this whole design rests on: raw formats have no header, so one
+        # source's output concatenates onto the previous one's and the
+        # encoder never notices the join. A container writes a header per
+        # source, and the second one arrives mid-stream as garbage.
+        #
+        # So: two headerless pipes, raw frames and raw PCM, both spliced
+        # the same way.
+        self._awrite_fd: int | None = None
+        self._aread_fd: int | None = None
         self.running = False
         self.started_at: float | None = None
         self.now_playing: dict[str, Any] | None = None
@@ -144,6 +157,7 @@ class Pump:
         self._source = None
         self._close_pipe()
         self._read_fd, self._write_fd = os.pipe()
+        self._aread_fd, self._awrite_fd = os.pipe()
 
         state = settings.get()
         self._encoder = await asyncio.create_subprocess_exec(
@@ -151,10 +165,14 @@ class Pump:
                 settings.publish_url(state),
                 settings.publish_url(state, settings.sub_stream(state)),
                 settings.is_onvif(state),
+                self._aread_fd,
             ),
             stdin=self._read_fd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
+            # ffmpeg addresses the audio pipe as pipe:<fd>, so the number
+            # has to survive into the child unchanged.
+            pass_fds=(self._aread_fd,),
         )
         self.encoder_starts += 1
         # Drained, not just captured: an undrained stderr pipe fills at
@@ -193,7 +211,7 @@ class Pump:
 
         self.now_playing = {k: item[k] for k in ("id", "name", "kind") if k in item}
         try:
-            await self._run_source(_clip_cmd(item))
+            await self._run_source(lambda afd: _clip_cmd(item, afd))
         finally:
             self.now_playing = None
         # Marked played even if ffmpeg failed. A clip that cannot be
@@ -211,7 +229,7 @@ class Pump:
         black; a second hand is the difference, and it is small enough
         not to be what a motion detector notices.
         """
-        proc = await self._spawn(_standby_cmd())
+        proc = await self._spawn(_standby_cmd)
         if proc is None:
             await asyncio.sleep(1.0)
             return
@@ -228,8 +246,8 @@ class Pump:
                 await _kill(proc)
             self._source = None
 
-    async def _run_source(self, cmd: list[str]) -> None:
-        proc = await self._spawn(cmd)
+    async def _run_source(self, build: Any) -> None:
+        proc = await self._spawn(build)
         if proc is None:
             await asyncio.sleep(1.0)
             return
@@ -238,15 +256,22 @@ class Pump:
         finally:
             self._source = None
 
-    async def _spawn(self, cmd: list[str]) -> asyncio.subprocess.Process | None:
-        if self._write_fd is None:
+    async def _spawn(self, build: Any) -> asyncio.subprocess.Process | None:
+        """Start a source. ``build`` takes the audio fd and returns argv.
+
+        The command cannot be formed until the fd is known, and the fd
+        belongs to the encoder currently running, so it is handed in here
+        rather than captured earlier.
+        """
+        if self._write_fd is None or self._awrite_fd is None:
             return None
         try:
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
+                *build(self._awrite_fd),
                 stdout=self._write_fd,
                 stdin=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
+                pass_fds=(self._awrite_fd,),
             )
         except OSError as e:
             self.last_error = f"could not start source: {e}"
@@ -256,7 +281,7 @@ class Pump:
         return proc
 
     def _close_pipe(self) -> None:
-        for attr in ("_write_fd", "_read_fd"):
+        for attr in ("_write_fd", "_read_fd", "_awrite_fd", "_aread_fd"):
             fd = getattr(self, attr)
             if fd is not None:
                 with contextlib.suppress(OSError):
@@ -297,17 +322,53 @@ def _normalise() -> str:
     )
 
 
-def _clip_cmd(item: dict[str, Any]) -> list[str]:
+def _silence() -> list[str]:
+    return [
+        "-re", "-f", "lavfi", "-i",
+        f"anullsrc=r={settings.AUDIO_RATE}:cl="
+        f"{'stereo' if settings.AUDIO_CHANNELS == 2 else 'mono'}",
+    ]
+
+
+def _pcm_out(afd: int, seconds: str | None = None) -> list[str]:
+    out = ["-ar", str(settings.AUDIO_RATE), "-ac", str(settings.AUDIO_CHANNELS)]
+    if seconds:
+        out += ["-t", seconds]
+    return out + ["-f", "s16le", f"pipe:{afd}"]
+
+
+def _clip_cmd(item: dict[str, Any], afd: int) -> list[str]:
+    """Video to stdout, audio to the audio pipe, always both.
+
+    A source with no audio track gets silence from lavfi rather than no
+    audio output at all. The encoder's audio input has to keep receiving
+    samples: starve it and it stalls waiting, which stalls the muxer, and
+    a silent clip takes the video down with it.
+    """
     # -re paces the read at wall clock. Without it ffmpeg decodes as fast
     # as it can and a 30-second clip flashes past in two.
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re"]
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-re"]
+    seconds = None
     if item.get("kind") == "image":
-        cmd += ["-loop", "1", "-t", str(item.get("seconds") or queue.DEFAULT_IMAGE_SECONDS)]
-    cmd += ["-i", item["path"], "-an", "-vf", _normalise()]
-    return cmd + _raw_out()
+        seconds = str(item.get("seconds") or queue.DEFAULT_IMAGE_SECONDS)
+        cmd += ["-loop", "1", "-t", seconds]
+    cmd += ["-i", item["path"]]
+
+    if item.get("has_audio"):
+        audio_map = "0:a"
+    else:
+        cmd += _silence()
+        audio_map = "1:a"
+        # The silence generator is infinite, so a still needs the same
+        # limit applied to its audio output or the clip never ends.
+        seconds = seconds or None
+
+    cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
+    cmd += ["-map", audio_map] + _pcm_out(afd, seconds)
+    return cmd
 
 
-def _standby_cmd() -> list[str]:
+def _standby_cmd(afd: int) -> list[str]:
     w, h, fps = settings.WIDTH, settings.HEIGHT, settings.FPS
     # Escaping matters here: the colons in the time format are argument
     # separators to drawtext unless the whole expansion is left to
@@ -317,12 +378,17 @@ def _standby_cmd() -> list[str]:
         f"drawtext=fontfile={FONT}:text='%{{localtime}}':"
         f"fontcolor=white@0.55:fontsize={max(18, h // 40)}:x=w-tw-24:y=h-th-24"
     )
-    return [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-re",
-        "-f", "lavfi", "-i", f"color=c=black:s={w}x{h}:r={fps}",
-        "-vf", f"{text},format=yuv420p",
-    ] + _raw_out()
+    return (
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-re", "-f", "lavfi", "-i", f"color=c=black:s={w}x{h}:r={fps}",
+        ]
+        + _silence()
+        + ["-map", "0:v", "-vf", f"{text},format=yuv420p"]
+        + _raw_out()
+        + ["-map", "1:a"]
+        + _pcm_out(afd)
+    )
 
 
 def _h264(bitrate: str) -> list[str]:
@@ -337,7 +403,14 @@ def _h264(bitrate: str) -> list[str]:
     ]
 
 
-def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
+def _aac() -> list[str]:
+    return [
+        "-c:a", "aac", "-b:a", settings.AUDIO_BITRATE,
+        "-ar", str(settings.AUDIO_RATE), "-ac", str(settings.AUDIO_CHANNELS),
+    ]
+
+
+def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
     """One process. Three outputs for ONVIF, one for plain RTSP.
 
     ONVIF advertises a sub-stream and a snapshot, so in that mode the
@@ -351,16 +424,9 @@ def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
     share a lifetime and the sub-stream cannot quietly die while the
     device still claims to offer it.
     """
-    if not onvif:
-        return [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "rawvideo", "-pix_fmt", "yuv420p",
-            "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
-            "-i", "pipe:0",
-            *_h264(settings.BITRATE),
-            "-f", "rtsp", "-rtsp_transport", "tcp", main,
-        ]
-    return [
+    # Two inputs, both raw and headerless: frames on stdin, PCM on the
+    # audio pipe. Input 1 is the audio for every output that has any.
+    inputs = [
         # -y is load-bearing, not boilerplate. The snapshot output writes
         # to a fixed path, and without it ffmpeg refuses the second run
         # with "already exists. Exiting." -- which takes down the two RTSP
@@ -369,6 +435,16 @@ def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
         "-f", "rawvideo", "-pix_fmt", "yuv420p",
         "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
         "-i", "pipe:0",
+        "-f", "s16le", "-ar", str(settings.AUDIO_RATE),
+        "-ac", str(settings.AUDIO_CHANNELS), "-i", f"pipe:{afd}",
+    ]
+    if not onvif:
+        return inputs + [
+            "-map", "0:v", *_h264(settings.BITRATE),
+            "-map", "1:a", *_aac(),
+            "-f", "rtsp", "-rtsp_transport", "tcp", main,
+        ]
+    return inputs + [
         "-filter_complex",
         (
             f"[0:v]split=3[main][s][j];"
@@ -376,11 +452,14 @@ def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
             f"[j]fps=1[snap]"
         ),
         "-map", "[main]", *_h264(settings.BITRATE),
+        "-map", "1:a", *_aac(),
         "-f", "rtsp", "-rtsp_transport", "tcp", main,
         "-map", "[sub]", *_h264(settings.SUB_BITRATE),
+        "-map", "1:a", *_aac(),
         "-f", "rtsp", "-rtsp_transport", "tcp", sub,
         # Overwritten in place rather than accumulating files. ONVIF's
-        # GetSnapshotUri points at whatever this last wrote.
+        # GetSnapshotUri points at whatever this last wrote. No audio
+        # mapped: a JPEG has nowhere to put it.
         "-map", "[snap]", "-c:v", "mjpeg", "-q:v", "6",
         "-update", "1", "-f", "image2", str(settings.SNAPSHOT_PATH),
     ]
@@ -389,5 +468,7 @@ def _encoder_cmd(main: str, sub: str, onvif: bool) -> list[str]:
 pump = Pump()
 
 
-async def readers() -> int | None:
-    return await mediamtx.readers(settings.get().get("stream") or settings.DEFAULT_STREAM)
+async def readers() -> tuple[int | None, str]:
+    return await mediamtx.readers(
+        settings.get().get("stream") or settings.DEFAULT_STREAM
+    )

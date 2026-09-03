@@ -47,7 +47,7 @@ async def status() -> dict:
         # None means the RTSP server did not answer; 0 means it did and
         # nobody is watching. Collapsing those into one number is how you
         # end up debugging the wrong end.
-        "readers": await pump_mod.readers(),
+        **dict(zip(("readers", "readers_error"), await pump_mod.readers())),
         "queued": sum(1 for i in items if not i.get("played_at")),
         "played": sum(1 for i in items if i.get("played_at")),
         # What ONVIF clients have tried lately. "Invalid credentials"

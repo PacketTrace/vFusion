@@ -74,6 +74,36 @@ def next_pending() -> dict[str, Any] | None:
     return None
 
 
+async def has_audio(path: Path) -> bool:
+    """Whether a file carries an audio track.
+
+    Asked once, when the item is added, and remembered. The pump needs
+    the answer to decide whether to map the file's audio or substitute
+    silence, and probing at play time would put a subprocess between one
+    clip finishing and the next starting -- in the one place where the
+    gap is visible.
+
+    Unreadable or unprobeable counts as no audio: silence plays, which
+    is wrong quietly, where mapping a track that is not there fails the
+    whole source.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except (OSError, asyncio.TimeoutError) as e:
+        logger.warning("could not probe %s for audio: %s", path, e)
+        return False
+    return b"audio" in out
+
+
 def kind_for(filename: str) -> str | None:
     suffix = Path(filename).suffix.lower()
     if suffix in VIDEO_SUFFIXES:
@@ -103,6 +133,7 @@ async def add(filename: str, data: bytes, seconds: int | None = None) -> dict[st
             "name": Path(filename).name,
             "path": str(stored),
             "kind": kind,
+            "has_audio": kind == "video" and await has_audio(stored),
             "seconds": int(seconds or DEFAULT_IMAGE_SECONDS) if kind == "image" else None,
             "bytes": len(data),
             "added_at": datetime.now(timezone.utc).isoformat(),
@@ -128,6 +159,7 @@ async def adopt(path: Path, display_name: str) -> dict[str, Any]:
         "name": Path(display_name).name,
         "path": str(path),
         "kind": "video",
+        "has_audio": await has_audio(path),
         "seconds": None,
         "bytes": path.stat().st_size if path.is_file() else 0,
         "added_at": datetime.now(timezone.utc).isoformat(),

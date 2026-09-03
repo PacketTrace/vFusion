@@ -57,6 +57,18 @@ SUB_WIDTH = int(os.environ.get("RTSP_SUB_WIDTH", "640"))
 SUB_HEIGHT = int(os.environ.get("RTSP_SUB_HEIGHT", "360"))
 SUB_BITRATE = os.environ.get("RTSP_SUB_BITRATE", "400k")
 
+# Audio. Fixed for the life of the stream for exactly the same reason the
+# geometry is: it is negotiated once and a client will not renegotiate.
+#
+# There is always an audio track, whether or not a source has one. A
+# stream whose audio track appears and disappears between clips is a
+# stream whose format changed, and a client that negotiated the earlier
+# one either drops the track for good or drops the session. Silence is
+# cheap; an inconsistent track is not.
+AUDIO_RATE = int(os.environ.get("RTSP_AUDIO_RATE", "48000"))
+AUDIO_CHANNELS = int(os.environ.get("RTSP_AUDIO_CHANNELS", "2"))
+AUDIO_BITRATE = os.environ.get("RTSP_AUDIO_BITRATE", "128k")
+
 # ONVIF clients ask for a JPEG. One frame a second, overwritten in place,
 # written by the same encoder as a third output.
 SNAPSHOT_PATH = Path(os.environ.get("RTSP_SNAPSHOT_FILE", "/app/data/rtsp/snapshot.jpg"))

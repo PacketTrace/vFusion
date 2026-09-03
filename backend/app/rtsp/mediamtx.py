@@ -198,11 +198,14 @@ def _write_text(text: str) -> bool:
         return False
 
 
-async def readers(stream: str) -> int | None:
-    """How many clients are pulling the path. None if the API is unreachable.
+async def readers(stream: str) -> tuple[int | None, str]:
+    """(count, why not) for clients pulling the path.
 
-    None and 0 are different answers and the UI says so: one means the
-    server is not talking to us, the other means nobody is watching.
+    None and 0 are different answers: one means the server is not talking
+    to us, the other means nobody is watching. Returning only None for
+    both meant the page said "unknown" and nothing else, which is the
+    same mistake as discarding ffmpeg's stderr — the reason was known at
+    the point it was thrown away.
     """
     import httpx
 
@@ -210,12 +213,19 @@ async def readers(stream: str) -> int | None:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             resp = await client.get(url)
-        if resp.status_code != 200:
-            return None
+    except Exception as e:
+        return None, f"cannot reach the RTSP server's API: {e}"
+    if resp.status_code == 404:
+        # The path exists in the config but has never been published to,
+        # so the server has no record of it yet.
+        return None, f"the server has no path named {stream} yet"
+    if resp.status_code != 200:
+        return None, f"the server's API answered {resp.status_code}"
+    try:
         data = resp.json()
-    except Exception:
-        return None
+    except ValueError:
+        return None, "the server's API returned something that is not JSON"
     value = data.get("readers")
     if isinstance(value, list):
-        return len(value)
-    return None
+        return len(value), ""
+    return None, f"no reader list in the API response (keys: {sorted(data)[:6]})"

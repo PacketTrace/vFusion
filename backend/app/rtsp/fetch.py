@@ -46,17 +46,22 @@ jobs: dict[str, dict[str, Any]] = {}
 
 
 def _fmt() -> str:
-    """Prefer H.264 at or below the stream's own height.
+    """H.264 at or below the stream's own height, with its audio.
 
-    Downloading 4K to scale it to 1080 costs bandwidth and decode time
-    for detail that is discarded on the way through. Falling back to
-    "best" keeps a source with no matching format usable rather than
-    failing outright.
+    Video-only was right when the pump discarded audio; it does not any
+    more, so a video fetched without a track would play as silence and
+    look like a bug in the audio path rather than a decision made during
+    the download.
+
+    Height is still capped: fetching 4K to scale it to 1080 spends
+    bandwidth and decode time on detail discarded on the way through.
+    Falling back to "best" keeps a source with no matching format usable
+    rather than failing outright.
     """
     h = settings.HEIGHT
     return (
-        f"bv*[height<={h}][vcodec^=avc1]/bv*[height<={h}]/"
-        f"b[height<={h}]/bv*/b"
+        f"bv*[height<={h}][vcodec^=avc1]+ba/bv*[height<={h}]+ba/"
+        f"b[height<={h}]/b"
     )
 
 
