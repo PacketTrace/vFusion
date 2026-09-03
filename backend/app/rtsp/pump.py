@@ -350,7 +350,11 @@ def _encoder_cmd(main: str, sub: str) -> list[str]:
     while the device still claims to offer it is worse than a restart.
     """
     return [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        # -y is load-bearing, not boilerplate. The snapshot output writes
+        # to a fixed path, and without it ffmpeg refuses the second run
+        # with "already exists. Exiting." -- which takes down the two RTSP
+        # outputs sharing the process, for a JPEG neither depends on.
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "rawvideo", "-pix_fmt", "yuv420p",
         "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
         "-i", "pipe:0",
