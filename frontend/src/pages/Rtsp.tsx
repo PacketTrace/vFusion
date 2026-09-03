@@ -275,14 +275,14 @@ export default function Rtsp() {
               <ModeCard
                 active={s.mode === "onvif"}
                 title="ONVIF"
-                blurb="Two profiles, a snapshot, and the encoder settings. Added under the IP tab."
+                blurb="Two profiles, a snapshot, and the encoder settings. Added under the IP tab, and the only mode Verkada's Advanced Analytics will run on."
                 onClick={() => setMode.mutate("onvif")}
                 busy={setMode.isPending}
               />
               <ModeCard
                 active={s.mode === "rtsp"}
                 title="Plain RTSP"
-                blurb="One stream and a URL. Half the encoding, for anything that cannot speak ONVIF."
+                blurb="One stream and a URL. Half the encoding, but no Advanced Analytics — for anything that cannot speak ONVIF."
                 onClick={() => setMode.mutate("rtsp")}
                 busy={setMode.isPending}
               />
@@ -303,6 +303,14 @@ export default function Rtsp() {
                     JPEG snapshot
                   </div>
                 </div>
+                <p className="text-[11px] text-slate-500">
+                  Added this way the channel supports Verkada's{" "}
+                  <strong className="text-slate-400">Advanced Analytics</strong>{" "}
+                  — line crossing, loitering, occupancy trends. Those are
+                  Verkada features running on their Command Connector, not
+                  something vFusion does; ONVIF is only what makes the channel
+                  eligible for them.
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -311,6 +319,19 @@ export default function Rtsp() {
                   → <strong className="text-slate-200">RTSP</strong>.
                 </p>
                 <CopyRow label="RTSP URL (HQ)" value={s.url} />
+                {/* Verkada's own restriction, not ours. Worth stating
+                    plainly here rather than leaving someone to find it
+                    as a greyed-out toggle in Command reading "RTSP
+                    channels are not supported" — by which point the
+                    camera is added and the mode is the thing they would
+                    have to change. */}
+                <p className="text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-900/40 rounded px-2 py-1.5">
+                  A camera added this way cannot use Verkada's{" "}
+                  <strong>Advanced Analytics</strong> — line crossing,
+                  loitering and occupancy trends. Command disables that toggle
+                  on RTSP channels. Switch to ONVIF and re-add the camera if
+                  you want them.
+                </p>
                 <p className="text-[10px] text-slate-500">
                   The ONVIF services return 404 in this mode — not hidden,
                   actually not there.
