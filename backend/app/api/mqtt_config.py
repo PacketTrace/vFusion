@@ -313,7 +313,6 @@ async def set_config(
             client_password=creds["password"],
             broker_cert=ca,
         )
-        readback = await client.get_object_position_mqtt_config(camera_id)
     except VerkadaApiError as e:
         # Hand back the request alongside the error: "insufficient
         # permissions" on an endpoint the operator has rights to is
@@ -324,6 +323,16 @@ async def set_config(
             detail={"error": _permission_hint(e), "request": preview},
         ) from e
 
+    # Read back separately: the write is what matters, and a failure to
+    # confirm it is not a failure to do it. Conflating the two reported
+    # a successful push as a permissions error.
+    readback: dict[str, Any] = {}
+    readback_error: str | None = None
+    try:
+        readback = await client.get_object_position_mqtt_config(camera_id)
+    except VerkadaApiError as e:
+        readback_error = f"Config was sent, but reading it back failed: {e}"
+
     persisted = bool(readback.get("broker_host_port")) and bool(
         readback.get("client_username")
     )
@@ -331,10 +340,12 @@ async def set_config(
         "persisted": persisted,
         "config": readback,
         "request": preview,
+        "readback_error": readback_error,
         "note": (
             "Camera reconnects within ~5–25s of a config change."
             if persisted
-            else "Verkada accepted the call but stored nothing — re-send with both credentials."
+            else readback_error
+            or "Verkada accepted the call but stored nothing — re-send with both credentials."
         ),
     }
 
@@ -378,10 +389,12 @@ def _request_preview(
 
 def _permission_hint(e: VerkadaApiError) -> str:
     if e.status_code == 403:
+        # Verkada returns this for an unknown path as well as a genuine
+        # scope problem, so do not assert which one it is.
         return (
-            "Verkada refused the request (403). Object-position MQTT config needs "
-            "an API key with read/write access to Cameras; a read-only key returns "
-            "this even though it can list cameras."
+            "Verkada returned 403. That usually means the API key lacks read/write "
+            "access to Cameras, but Verkada also answers unknown paths with 403, "
+            "so check the request above before changing key permissions."
         )
     if e.status_code == 401:
         return "Verkada rejected the API key (401)."

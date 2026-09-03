@@ -294,11 +294,17 @@ class VerkadaClient:
         )
 
     async def get_object_position_mqtt_config(self, camera_id: str) -> dict[str, Any]:
-        """The broker a camera is currently pointed at (password never returned)."""
-        data = await self._get(
-            "/cameras/v1/analytics/object_position_mqtt",
-            params={"camera_id": camera_id},
-        )
+        """The broker a camera is currently pointed at (password never returned).
+
+        Note the asymmetry with the setter: reading is
+        ``GET /v2/analytics/cameras/{camera_id}/mqtt_configs`` while
+        writing is ``POST /cameras/v1/analytics/object_position_mqtt``.
+        Guessing the read path from the write path produces a 403
+        "Insufficient permissions" rather than a 404, so a wrong path is
+        indistinguishable from a key that lacks a scope -- which cost an
+        afternoon of debugging a working API key.
+        """
+        data = await self._get(f"/v2/analytics/cameras/{camera_id}/mqtt_configs")
         return data if isinstance(data, dict) else {}
 
     async def set_object_position_mqtt_config(
