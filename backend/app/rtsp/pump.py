@@ -488,15 +488,34 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
     """
     # Two inputs, both raw and headerless: frames on stdin, PCM on the
     # audio pipe. Input 1 is the audio for every output that has any.
+    #
+    # -probesize/-analyzeduration are the load-bearing part, and their
+    # absence deadlocked this outright.
+    #
+    # ffmpeg probes its inputs in order, before opening any output. On
+    # the audio input it waits for analyzeduration -- five seconds of
+    # audio by default -- and while it waits it is not reading the video
+    # pipe. That pipe holds 64KB and one 1080p frame is 3.1MB, so the
+    # source blocks on its very first frame and therefore stops producing
+    # audio as well. The encoder then waits forever for audio the source
+    # cannot send, because the encoder is not draining video.
+    #
+    # Neither input needs probing: every parameter of a raw format is
+    # already on this command line. 32 bytes is the documented minimum.
+    # With one raw input there was no second input to go and wait on,
+    # which is why this only appeared when audio did.
+    probe = ["-probesize", "32", "-analyzeduration", "0"]
     inputs = [
         # -y is load-bearing, not boilerplate. The snapshot output writes
         # to a fixed path, and without it ffmpeg refuses the second run
         # with "already exists. Exiting." -- which takes down the two RTSP
         # outputs sharing the process, for a JPEG neither depends on.
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        *probe,
         "-f", "rawvideo", "-pix_fmt", "yuv420p",
         "-s", f"{settings.WIDTH}x{settings.HEIGHT}", "-r", str(settings.FPS),
         "-i", "pipe:0",
+        *probe,
         "-f", "s16le", "-ar", str(settings.AUDIO_RATE),
         "-ac", str(settings.AUDIO_CHANNELS), "-i", f"pipe:{afd}",
     ]
