@@ -322,6 +322,73 @@ def users(state: dict[str, Any]) -> str:
 # Media
 # ---------------------------------------------------------------------------
 
+def _audio_configs() -> str:
+    """The audio half of a profile.
+
+    Without these a client is told the device has no audio, and a client
+    told that has no reason to set an audio track up -- however good the
+    AAC in the RTSP stream is. The description is what decides whether
+    the stream's audio is ever asked for.
+
+    Bitrate is kbit/s and SampleRate is kHz here, which is not the unit
+    either is stored in anywhere else in this file.
+    """
+    kbps = "".join(c for c in settings.AUDIO_BITRATE if c.isdigit()) or "128"
+    return (
+        '<tt:AudioSourceConfiguration token="asc">'
+        "<tt:Name>AudioSource</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:SourceToken>as0</tt:SourceToken>"
+        "</tt:AudioSourceConfiguration>"
+        '<tt:AudioEncoderConfiguration token="aec">'
+        "<tt:Name>AudioEncoder</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:Encoding>AAC</tt:Encoding>"
+        f"<tt:Bitrate>{kbps}</tt:Bitrate>"
+        f"<tt:SampleRate>{settings.AUDIO_RATE // 1000}</tt:SampleRate>"
+        "<tt:Multicast><tt:Address><tt:Type>IPv4</tt:Type>"
+        "<tt:IPv4Address>0.0.0.0</tt:IPv4Address></tt:Address>"
+        "<tt:Port>0</tt:Port><tt:TTL>1</tt:TTL>"
+        "<tt:AutoStart>false</tt:AutoStart></tt:Multicast>"
+        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
+        "</tt:AudioEncoderConfiguration>"
+    )
+
+
+def audio_sources() -> str:
+    return (
+        "<trt:GetAudioSourcesResponse>"
+        '<trt:AudioSources token="as0">'
+        f"<tt:Channels>{settings.AUDIO_CHANNELS}</tt:Channels>"
+        "</trt:AudioSources>"
+        "</trt:GetAudioSourcesResponse>"
+    )
+
+
+def audio_source_configurations() -> str:
+    return (
+        "<trt:GetAudioSourceConfigurationsResponse>"
+        '<trt:Configurations token="asc">'
+        "<tt:Name>AudioSource</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:SourceToken>as0</tt:SourceToken>"
+        "</trt:Configurations>"
+        "</trt:GetAudioSourceConfigurationsResponse>"
+    )
+
+
+def audio_encoder_configurations() -> str:
+    kbps = "".join(c for c in settings.AUDIO_BITRATE if c.isdigit()) or "128"
+    return (
+        "<trt:GetAudioEncoderConfigurationsResponse>"
+        '<trt:Configurations token="aec">'
+        "<tt:Name>AudioEncoder</tt:Name><tt:UseCount>2</tt:UseCount>"
+        "<tt:Encoding>AAC</tt:Encoding>"
+        f"<tt:Bitrate>{kbps}</tt:Bitrate>"
+        f"<tt:SampleRate>{settings.AUDIO_RATE // 1000}</tt:SampleRate>"
+        "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
+        "</trt:Configurations>"
+        "</trt:GetAudioEncoderConfigurationsResponse>"
+    )
+
+
 def _profile(token: str, name: str, width: int, height: int, bitrate: str) -> str:
     # RateControl wants kbit/s as a number; the setting is an ffmpeg
     # string like "3000k".
@@ -351,7 +418,8 @@ def _profile(token: str, name: str, width: int, height: int, bitrate: str) -> st
         "<tt:H264Profile>Main</tt:H264Profile></tt:H264>"
         "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
         "</tt:VideoEncoderConfiguration>"
-        "</tt:Profiles>"
+        + _audio_configs()
+        + "</tt:Profiles>"
     )
 
 

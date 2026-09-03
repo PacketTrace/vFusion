@@ -196,15 +196,19 @@ def _respond(op: str, ns: str, root, state: dict, base: str) -> str | None:
     if op == "GetSnapshotUri":
         return service.snapshot_uri(state)
 
+    # Audio is real now, so these stop answering "none". A device that
+    # says it has no audio sources will not be asked for an audio track,
+    # whatever is actually in the stream.
+    if op == "GetAudioSources":
+        return service.audio_sources()
+    if op == "GetAudioSourceConfigurations":
+        return service.audio_source_configurations()
+    if op == "GetAudioEncoderConfigurations":
+        return service.audio_encoder_configurations()
+
     # Things this device genuinely has none of. "None" is the honest
     # answer and a fault is not — the client asked something reasonable.
-    if op in (
-        "GetAudioSources",
-        "GetAudioSourceConfigurations",
-        "GetAudioEncoderConfigurations",
-        "GetMetadataConfigurations",
-        "GetOSDs",
-    ):
+    if op in ("GetMetadataConfigurations", "GetOSDs"):
         return service.empty(op)
     return None
 
