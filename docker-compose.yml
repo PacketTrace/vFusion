@@ -75,6 +75,9 @@ services:
       # Read-write: vFusion generates the broker certs and password file
       # itself, then hands root_ca.pem to cameras when it pushes config.
       - ./mqtt:/app/mqtt-host
+      # Read-write: vFusion generates the RTSP server's config, including
+      # the credentials it hands to the Command Connector.
+      - ./rtsp:/app/rtsp-host
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -193,6 +196,33 @@ services:
       - ./mqtt/certs:/etc/nginx/certs:ro
     depends_on:
       - mqtt-broker
+    networks: [default]
+
+  # The RTSP server the Verkada Command Connector connects to. vFusion
+  # publishes one continuous stream into it and the Connector pulls that
+  # stream as a third-party camera.
+  #
+  # MediaMTX watches its own config file and reloads on change, so
+  # turning the camera on in the UI takes effect without restarting this.
+  # If a reload is ever missed, `docker compose restart rtsp-server` costs
+  # the Connector one reconnect.
+  rtsp-server:
+    # Pin this in a deployment you care about. `latest` is here so a
+    # fresh clone works; a version bump that changes the config schema
+    # would otherwise arrive unannounced.
+    image: bluenviron/mediamtx:latest
+    profiles: ["rtsp"]
+    restart: unless-stopped
+    ports:
+      # The Connector reaches this from the LAN, so it is published on
+      # the host rather than kept on the compose network.
+      - "8554:8554"
+    volumes:
+      # The directory, not the file. vFusion writes the config at boot,
+      # and bind-mounting a path that does not exist yet makes Docker
+      # helpfully create a directory with that name instead.
+      - ./rtsp:/rtsp
+    command: ["/rtsp/mediamtx.yml"]
     networks: [default]
 
   frontend:

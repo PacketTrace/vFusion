@@ -17,6 +17,7 @@ import Mqtt from "./pages/Mqtt";
 import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
+import Rtsp from "./pages/Rtsp";
 import Workbench from "./pages/Workbench";
 
 // Header + nav use a glass aesthetic so the animated Vanta NET
@@ -152,6 +153,15 @@ function AppShell() {
               Workbench
             </NavLink>
             <NavLink
+              to="/virtual-camera"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+              title="Serve your own clips to Verkada's Command Connector as a third-party camera"
+            >
+              Virtual camera
+            </NavLink>
+            <NavLink
               to="/mqtt"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -197,6 +207,7 @@ function AppShell() {
           <Route path="/templates" element={<Templates />} />
           {/* Keep /byoa as an alias so existing "Run it back" URLs work. */}
           <Route path="/workbench" element={<Workbench />} />
+          <Route path="/virtual-camera" element={<Rtsp />} />
           <Route path="/byoa" element={<Workbench />} />
           <Route path="/stats" element={<Stats />} />
           <Route path="/mqtt" element={<Mqtt />} />

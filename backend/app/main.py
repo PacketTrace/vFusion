@@ -5,7 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import mqtt_config as mqtt_api
+from app.api import rtsp as rtsp_api
 from app.mqtt import ingest as mqtt_ingest
+from app.rtsp import pump as rtsp_pump
+from app.rtsp import settings as rtsp_settings
 from app.api import (
     auth as auth_api,
     byoa,
@@ -57,9 +60,18 @@ async def lifespan(app: FastAPI):
     # loop retries in the background and reports itself via /api/mqtt/status.
     if mqtt_ingest.enabled():
         mqtt_ingest.ingest.start()
+    # The virtual camera, if it was left on. A Command Connector that was
+    # watching before a restart is still watching after one, and the whole
+    # point of the feature is that it does not have to notice.
+    from app.rtsp import mediamtx as rtsp_mediamtx
+
+    rtsp_mediamtx.ensure(rtsp_settings.get())
+    if rtsp_settings.get().get("enabled"):
+        rtsp_pump.pump.start()
     try:
         yield
     finally:
+        await rtsp_pump.pump.stop()
         await mqtt_ingest.ingest.stop()
         await app.state.arq_pool.close()
 
@@ -134,6 +146,7 @@ app.include_router(byoa.router)
 app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(mqtt_api.router)
+app.include_router(rtsp_api.router)
 app.include_router(settings_api.router)
 
 
