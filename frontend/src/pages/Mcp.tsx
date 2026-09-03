@@ -38,6 +38,8 @@ type Catalog = {
   tools: McpTool[];
   connection_name: string;
   cached: boolean;
+  /** Served from the on-disk copy while a fresh fetch runs behind it. */
+  stale?: boolean;
   // Tool history, derived from our own observations over time.
   history_since: string | null;
   last_changed_at: string | null;

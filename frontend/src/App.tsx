@@ -166,7 +166,7 @@ function AppShell() {
               }
               title="Configure cameras to publish object positions, and watch the stream"
             >
-              Object position
+              MQTT
             </NavLink>
             <NavLink
               to="/mcp"

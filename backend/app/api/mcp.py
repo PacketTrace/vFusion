@@ -12,9 +12,12 @@ install needs no new credential to use this.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -42,6 +45,82 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 # Keyed by (connection_id, url). Cleared by ?refresh=true.
 _CATALOG_TTL_SEC = 900
 _catalog_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+
+# The in-process cache dies with the process, so the first visit after a
+# redeploy pays for a full round trip — initialize, then tools/list
+# paginated over 135 tools — while the page sits empty for a few seconds.
+# A copy on disk survives restarts, so that visit renders immediately
+# from the last known catalog and the refresh happens behind it.
+_SNAPSHOT_PATH = Path(
+    os.environ.get("MCP_CATALOG_FILE", "/app/data/mcp/catalog.json")
+)
+_refreshing: set[tuple[str, str]] = set()
+
+
+def _snapshot_load(key: tuple[str, str]) -> dict[str, Any] | None:
+    try:
+        data = json.loads(_SNAPSHOT_PATH.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("mcp catalog snapshot unreadable: %s", e)
+        return None
+    entry = data.get("|".join(key)) if isinstance(data, dict) else None
+    return entry if isinstance(entry, dict) else None
+
+
+def _snapshot_save(key: tuple[str, str], payload: dict[str, Any]) -> None:
+    try:
+        _SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            data = json.loads(_SNAPSHOT_PATH.read_text())
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        data["|".join(key)] = payload
+        tmp = _SNAPSHOT_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data))
+        tmp.replace(_SNAPSHOT_PATH)
+    except OSError as e:
+        logger.warning("could not persist mcp catalog: %s", e)
+
+
+async def _fetch_catalog(
+    conn_id: str, conn_name: str, url: str, token: str
+) -> dict[str, Any]:
+    """Live fetch + history annotation. No DB session needed, so this can
+    run detached from the request that triggered it."""
+    described = await describe_server(url, token)
+    history = await record_history(url, described.get("tools") or [])
+    catalog_bytes = len(json.dumps(described.get("tools") or []))
+    payload = {
+        **described,
+        **history,
+        "catalog_bytes": catalog_bytes,
+        "catalog_tokens_estimate": catalog_bytes // 4,
+        "connection_id": conn_id,
+        "connection_name": conn_name,
+        "fetched_at": time.time(),
+    }
+    key = (conn_id, url)
+    _catalog_cache[key] = (time.monotonic(), payload)
+    _snapshot_save(key, payload)
+    return payload
+
+
+async def _refresh_in_background(
+    key: tuple[str, str], conn_id: str, conn_name: str, url: str, token: str
+) -> None:
+    if key in _refreshing:
+        return
+    _refreshing.add(key)
+    try:
+        await _fetch_catalog(conn_id, conn_name, url, token)
+    except Exception as e:  # noqa: BLE001 — nobody is waiting on this
+        logger.info("background mcp refresh failed: %s", e)
+    finally:
+        _refreshing.discard(key)
 
 
 def _mcp_url_for(secret: dict[str, Any]) -> str:
@@ -102,29 +181,20 @@ async def _catalog(
         hit = _catalog_cache.get(key)
         if hit and now - hit[0] < _CATALOG_TTL_SEC:
             return {**hit[1], "cached": True}
+        # Nothing in memory — most likely a restart. Render what we had
+        # last time and go get a fresh copy without making anyone wait.
+        stale = _snapshot_load(key)
+        if stale:
+            asyncio.create_task(
+                _refresh_in_background(key, str(conn.id), conn.name, url, token)
+            )
+            return {**stale, "cached": True, "stale": True}
     try:
-        described = await describe_server(url, token)
+        payload = await _fetch_catalog(str(conn.id), conn.name, url, token)
     except MCPError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:  # noqa: BLE001 — network/DNS/TLS
         raise HTTPException(status_code=502, detail=f"could not reach {url}: {e}")
-    # Annotates each tool with when we first saw it, and returns the
-    # server-level "last changed" summary.
-    history = await record_history(url, described.get("tools") or [])
-    # Roughly what this catalog costs to put in front of a model. ~4 chars
-    # per token is the usual English/JSON approximation; it is an estimate,
-    # labelled as one in the UI.
-    catalog_bytes = len(json.dumps(described.get("tools") or []))
-    payload = {
-        **described,
-        **history,
-        "catalog_bytes": catalog_bytes,
-        "catalog_tokens_estimate": catalog_bytes // 4,
-        "connection_id": str(conn.id),
-        "connection_name": conn.name,
-        "fetched_at": time.time(),
-    }
-    _catalog_cache[key] = (now, payload)
     return {**payload, "cached": False}
 
 
