@@ -265,7 +265,13 @@ button:not(:disabled):active {
 /* Each ring keeps its tilt from the wrapping <g> and spins about the
    centre, so the trio reads as a sphere rather than three flat loops. */
 .atom-ring {
-  transform-origin: 20px 20px;
+  /* transform-box: view-box is load-bearing. transform-origin lengths are
+     CSS pixels, but 20 is a viewBox user unit — they coincide only at
+     100% zoom. At any other zoom each ring rotated about a point drifted
+     off centre and the three flew apart. Anchoring percentages to the
+     viewBox makes the origin the real centre at every scale. */
+  transform-box: view-box;
+  transform-origin: 50% 50%;
   animation: atom-spin 6s linear infinite;
 }
 
