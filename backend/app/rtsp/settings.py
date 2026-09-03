@@ -64,7 +64,7 @@ SNAPSHOT_PATH = Path(os.environ.get("RTSP_SNAPSHOT_FILE", "/app/data/rtsp/snapsh
 # The port the ONVIF client is told to reach. The device services live in
 # the backend app, so this is a second published mapping onto the same
 # container port rather than a separate server.
-ONVIF_PUBLIC_PORT = int(os.environ.get("ONVIF_PUBLIC_PORT", "8000"))
+ONVIF_PUBLIC_PORT = int(os.environ.get("ONVIF_PUBLIC_PORT", "8090"))
 
 # Where the publisher connects. Inside the compose network the sidecar
 # answers to its service name; what we hand Verkada is a LAN address,

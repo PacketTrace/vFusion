@@ -66,14 +66,14 @@ services:
       # The port an ONVIF client is told to reach, which has to match the
       # published mapping below — it goes inside the URLs the device
       # hands out for itself, its snapshot and its streams.
-      ONVIF_PUBLIC_PORT: ${ONVIF_PUBLIC_PORT:-8000}
+      ONVIF_PUBLIC_PORT: ${ONVIF_PUBLIC_PORT:-8090}
     ports:
       - "18080:8000"
       # A second mapping onto the same app, so the ONVIF client can be
       # given a port of its own. Verkada's Add Cameras dialog defaults to
       # 80 but lets you type one, so this does not have to fight anything
       # already on the host for it.
-      - "${ONVIF_PUBLIC_PORT:-8000}:8000"
+      - "${ONVIF_PUBLIC_PORT:-8090}:8000"
     depends_on:
       postgres:
         condition: service_healthy
