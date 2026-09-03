@@ -25,6 +25,7 @@ type Status = {
   width: number;
   height: number;
   fps: number;
+  port: number;
   readers: number | null;
   queued: number;
   played: number;
@@ -186,7 +187,8 @@ export default function Rtsp() {
           </button>
         </div>
         <p className="text-[11px] text-slate-500 mt-1.5">
-          Host or IP only — the port is always 8554. The Connector reaches this
+          Host or IP only — the port is {s?.port ?? 8554}, set by
+          RTSP_PUBLIC_PORT. The Connector reaches this
           across your network, and a container cannot work out its own LAN
           address, so this is the one thing that has to be typed. Use something
           that will not move: a static IP, a DHCP reservation or a DNS name.

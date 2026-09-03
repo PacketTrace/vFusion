@@ -59,6 +59,10 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       MQTT_BROKER_HOST_PORT: ${MQTT_BROKER_HOST_PORT:-}
+      # The port the Command Connector dials. Only differs from 8554 when
+      # something else on this host already holds it, in which case remap
+      # the published port below to match.
+      RTSP_PUBLIC_PORT: ${RTSP_PUBLIC_PORT:-8554}
     ports:
       - "18080:8000"
     depends_on:
@@ -215,8 +219,11 @@ services:
     restart: unless-stopped
     ports:
       # The Connector reaches this from the LAN, so it is published on
-      # the host rather than kept on the compose network.
-      - "8554:8554"
+      # the host rather than kept on the compose network. 8554 is the
+      # standard RTSP port and hosts running another MediaMTX already
+      # have it; set RTSP_PUBLIC_PORT to move both this and the URL
+      # vFusion hands out.
+      - "${RTSP_PUBLIC_PORT:-8554}:8554"
     volumes:
       # The directory, not the file. vFusion writes the config at boot,
       # and bind-mounting a path that does not exist yet makes Docker

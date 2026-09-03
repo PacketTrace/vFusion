@@ -53,6 +53,13 @@ BITRATE = os.environ.get("RTSP_BITRATE", "3000k")
 INTERNAL_HOST = os.environ.get("RTSP_INTERNAL_HOST", "rtsp-server")
 PORT = int(os.environ.get("RTSP_PORT", "8554"))
 
+# What the Connector dials, which is not always what the server listens
+# on. 8554 is the standard RTSP port and therefore the one already taken
+# on any host running another MediaMTX — an Echo relay, a NVR bridge,
+# anything. Remap the published port and set this to match, and the URL
+# handed to Verkada follows.
+PUBLIC_PORT = int(os.environ.get("RTSP_PUBLIC_PORT", str(PORT)))
+
 # One camera today. The store is keyed by stream name so adding a second
 # is a row here and another pump, not a redesign.
 DEFAULT_STREAM = "cam1"
@@ -109,6 +116,7 @@ def public() -> dict[str, Any]:
         "width": WIDTH,
         "height": HEIGHT,
         "fps": FPS,
+        "port": PUBLIC_PORT,
     }
 
 
@@ -118,7 +126,7 @@ def url_for(state: dict[str, Any] | None = None) -> str:
     host = str(current.get("advertise_host") or "").strip()
     if not host:
         return ""
-    return f"rtsp://{host}:{PORT}/{current.get('stream') or DEFAULT_STREAM}"
+    return f"rtsp://{host}:{PUBLIC_PORT}/{current.get('stream') or DEFAULT_STREAM}"
 
 
 def publish_url(state: dict[str, Any] | None = None) -> str:
