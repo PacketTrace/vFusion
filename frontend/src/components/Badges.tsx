@@ -1,21 +1,23 @@
 import { Family, SignatureStatus } from "../lib/api";
 
 const FAMILY_STYLE: Record<Family, string> = {
-  camera: "bg-sky-900 text-sky-200",
-  access: "bg-violet-900 text-violet-200",
-  lpr: "bg-emerald-900 text-emerald-200",
-  sensor: "bg-amber-900 text-amber-200",
-  intercom: "bg-pink-900 text-pink-200",
-  credential: "bg-indigo-900 text-indigo-200",
-  alarm: "bg-red-900 text-red-200",
-  unknown: "bg-rose-900 text-rose-200",
+  camera: "bg-sky-500/15 text-sky-300 border border-sky-500/25",
+  access: "bg-violet-500/15 text-violet-300 border border-violet-500/25",
+  lpr: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25",
+  sensor: "bg-amber-500/15 text-amber-300 border border-amber-500/25",
+  intercom: "bg-pink-500/15 text-pink-300 border border-pink-500/25",
+  credential: "bg-indigo-500/15 text-indigo-300 border border-indigo-500/25",
+  alarm: "bg-red-500/15 text-red-300 border border-red-500/25",
+  // Unknown is the one that should catch the eye — it is a prompt to go
+  // add the variant to the taxonomy.
+  unknown: "bg-rose-500/20 text-rose-300 border border-rose-500/40",
 };
 
 export function FamilyBadge({ family }: { family: Family | null }) {
   const f = family ?? "unknown";
   return (
     <span
-      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${FAMILY_STYLE[f]}`}
+      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${FAMILY_STYLE[f]}`}
       title={f === "unknown" ? "Not recognized — review in Unrecognized tab" : f}
     >
       {f}
@@ -30,9 +32,9 @@ export function FamilyBadge({ family }: { family: Family | null }) {
 // at all so an operator can still distinguish "no secret configured"
 // from "we have a secret but couldn't match").
 const SIG_STYLE: Record<SignatureStatus, string> = {
-  verified: "bg-emerald-900 text-emerald-200",
-  unverified: "bg-slate-800 text-slate-400",
-  missing_header: "bg-slate-800 text-slate-400",
+  verified: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25",
+  unverified: "bg-white/5 text-slate-400 border border-white/10",
+  missing_header: "bg-white/5 text-slate-400 border border-white/10",
 };
 
 const SIG_LABEL: Record<SignatureStatus, string> = {

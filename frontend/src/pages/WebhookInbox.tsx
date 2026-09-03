@@ -22,11 +22,11 @@ import { useCameraLookup } from "../lib/cameras";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 const methodColor: Record<string, string> = {
-  GET: "bg-sky-900 text-sky-200",
-  POST: "bg-emerald-900 text-emerald-200",
-  PUT: "bg-amber-900 text-amber-200",
-  PATCH: "bg-violet-900 text-violet-200",
-  DELETE: "bg-rose-900 text-rose-200",
+  GET: "bg-sky-500/15 text-sky-300 border border-sky-500/25",
+  POST: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25",
+  PUT: "bg-amber-500/15 text-amber-300 border border-amber-500/25",
+  PATCH: "bg-violet-500/15 text-violet-300 border border-violet-500/25",
+  DELETE: "bg-rose-500/15 text-rose-300 border border-rose-500/25",
 };
 
 const FAMILIES: Family[] = [
@@ -284,7 +284,7 @@ export default function WebhookInbox() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        methodColor[e.method] ?? "bg-white/10 text-slate-200"
+                        methodColor[e.method] ?? "bg-white/5 text-slate-300 border border-white/10"
                       }`}
                     >
                       {e.method}
@@ -489,7 +489,7 @@ function EventDetail({
           <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                methodColor[event.method] ?? "bg-white/10 text-slate-200"
+                methodColor[event.method] ?? "bg-white/5 text-slate-300 border border-white/10"
               }`}
             >
               {event.method}
