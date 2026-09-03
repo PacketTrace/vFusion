@@ -22,10 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
 
 import re
+import tempfile
 from collections import OrderedDict, deque
+from pathlib import Path
 
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
-from app.connectors.verkada.footage import FootageError, get_stream_key
+from app.connectors.verkada.footage import (
+    FootageError,
+    get_stream_key,
+    grab_still_frame,
+)
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
@@ -557,6 +563,18 @@ _WINDOW: "dict[str, deque]" = {}
 _WINDOW_SEGMENTS = 6
 
 
+async def _connection_for(
+    session: AsyncSession, connection_id: UUID | None
+) -> Connection:
+    q = select(Connection).where(Connection.type == "verkada")
+    if connection_id:
+        q = q.where(Connection.id == connection_id)
+    conn = (await session.execute(q)).scalars().first()
+    if conn is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+    return conn
+
+
 async def _stream_context(
     session: AsyncSession, connection_id: UUID | None
 ) -> tuple[str, str, str]:
@@ -815,19 +833,33 @@ async def frame(
     connection_id: UUID | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """Latest still from the camera, to draw boxes on top of.
+    """A single live frame, pulled from the HLS stream with ffmpeg.
 
-    Proxied rather than linked so the signed footage URL never reaches the
-    browser. Deliberately uncached — a stale backdrop under live boxes is
-    worse than no backdrop.
+    The thumbnail endpoint is cheaper but lags — it serves the camera's
+    last stored still, which can be a minute old and makes the boxes look
+    wrong against it. This decodes one frame from the live stream, which
+    is what the rest of the codebase already does for the same reason.
+
+    Proxied as bytes so the signed stream URL never reaches the browser.
     """
-    client = await _client_for(session, connection_id)
-    if client is None:
-        raise HTTPException(status_code=400, detail="no Verkada connection configured")
-    try:
-        image = await client.get_latest_thumbnail(camera_id)
-    except VerkadaApiError as e:
-        raise HTTPException(status_code=400, detail=_permission_hint(e)) from e
+    base, org_id, jwt = await _stream_context(session, connection_id)
+    conn = await _connection_for(session, connection_id)
+    secret = decrypt_secret(conn.encrypted_secret)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "frame.jpg"
+        try:
+            await grab_still_frame(
+                api_key=secret["api_key"],
+                org_id=org_id,
+                camera_id=camera_id,
+                out_path=out,
+                base_url=base,
+            )
+            image = out.read_bytes()
+        except FootageError as e:
+            raise HTTPException(status_code=502, detail=f"frame grab failed: {e}") from e
+
     return Response(
         content=image,
         media_type="image/jpeg",

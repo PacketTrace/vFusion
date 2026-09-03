@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-
-import Hls from "hls.js";
+import { useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -390,228 +388,43 @@ function useLiveTracks(cameraId: string) {
 }
 
 function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | null }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState(false);
-  // Boxes keyed by camera timestamp, so a frame can be reconstructed for
-  // any moment the video might be showing.
-  const buffer = useRef<{ ts: number; objects: LiveObject[] }[]>([]);
-  const [drawn, setDrawn] = useState<LiveObject[]>([]);
-  const [offset, setOffset] = useState<number | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const [frameKey, setFrameKey] = useState(0);
 
+  // A still on a slow cycle, not video. HLS put the picture 8-12 seconds
+  // behind detections that arrive in ~10ms, and reconciling the two meant
+  // delaying the boxes to match — which threw away the immediacy that
+  // makes this worth watching. A frame every 15s costs one ffmpeg grab
+  // and lets the boxes run live.
   useEffect(() => {
-    const video = videoRef.current;
-    if (!cameraId || !video) return;
-    setError(null);
-    setPlaying(false);
-    const src = `${API_BASE}/api/mqtt/stream/${cameraId}/index.m3u8`;
-    let cancelled = false;
-
-    // Fetch the playlist ourselves first. A <video> that cannot load its
-    // source reports nothing useful — it just stays black — so this turns
-    // an auth failure or an upstream error into a message instead of a
-    // blank rectangle.
-    fetch(src, { credentials: "include" })
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          setError(
-            `Stream unavailable (HTTP ${res.status}). ${body.slice(0, 200)}`,
-          );
-          return;
-        }
-        // The camera sends HEVC. Where MSE cannot decode it, hls.js will
-        // attach and play silently to a black frame, so check up front.
-        const hevcOk =
-          typeof MediaSource !== "undefined" &&
-          MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"');
-        if (!video.canPlayType("application/vnd.apple.mpegurl") && !hevcOk) {
-          setError(
-            "This browser cannot decode HEVC, which is the only codec this " +
-              "camera streams. Safari plays it; Chrome only does with hardware support.",
-          );
-        }
-      })
-      .catch((e) => !cancelled && setError(`Stream request failed: ${e}`));
-
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      // Safari plays HLS natively. The playlist is on the API origin, so
-      // it needs credentials — without this the request goes out without
-      // the session cookie and 401s invisibly.
-      // Only ask for credentialed CORS when the stream really is on
-      // another origin. Setting it same-origin makes Safari apply CORS
-      // rules to its own media requests for no benefit, and a failure
-      // there is silent — no frames, no error.
-      if (new URL(src, window.location.href).origin !== window.location.origin) {
-        video.crossOrigin = "use-credentials";
-      } else {
-        video.removeAttribute("crossorigin");
-      }
-      video.src = src;
-      video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-      return () => {
-        cancelled = true;
-        video.removeAttribute("src");
-        video.load();
-      };
-    }
-
-    if (!Hls.isSupported()) {
-      setError("This browser cannot play HLS.");
-      return;
-    }
-    const hls = new Hls({ lowLatencyMode: true, backBufferLength: 30, xhrSetup: (xhr) => {
-      xhr.withCredentials = true;
-    } });
-    hlsRef.current = hls;
-    hls.loadSource(src);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-    });
-    hls.on(Hls.Events.ERROR, (_e, data) => {
-      if (!data.fatal) return;
-      // The camera streams HEVC and only some browsers decode it.
-      setError(
-        data.type === Hls.ErrorTypes.MEDIA_ERROR
-          ? "Could not decode the stream. This camera sends HEVC, which Safari plays and most Chrome builds do not."
-          : `Stream error: ${data.details}`,
-      );
-    });
-    return () => {
-      cancelled = true;
-      hls.destroy();
-      hlsRef.current = null;
-    };
-  }, [cameraId]);
-
-  // Collect every frame of boxes with its camera timestamp.
-  useEffect(() => {
-    if (!live?.objects?.length) return;
-    const ts = live.objects.find((o) => o.ts)?.ts;
-    if (!ts) return;
-    const buf = buffer.current;
-    buf.push({ ts, objects: live.objects });
-    const cutoff = ts - 60_000;
-    while (buf.length && buf[0].ts < cutoff) buf.shift();
-  }, [live]);
-
-  // Draw the boxes belonging to the frame actually on screen. HLS runs
-  // roughly 8-12s behind real time; without this the boxes lead the
-  // subject by an entire segment or three and look plain wrong.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    let raf = 0;
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      const hls = hlsRef.current;
-      // hls.js exposes the EXT-X-PROGRAM-DATE-TIME of the current frame
-      // directly. Safari plays HLS natively instead, where the same
-      // information comes from the WebKit-only getStartDate().
-      const native = video as HTMLVideoElement & { getStartDate?: () => Date };
-      let playingDate: Date | null = hls?.playingDate ?? null;
-      if (!playingDate && typeof native.getStartDate === "function") {
-        const start = native.getStartDate();
-        // Safari returns an epoch-0 date when the stream carries no
-        // usable program date, and NaN is not the only bad value: a
-        // 1970 start makes the "behind by" figure the entire Unix epoch.
-        const ms = start ? start.getTime() : NaN;
-        if (Number.isFinite(ms) && ms > 946_684_800_000) {
-          playingDate = new Date(ms + video.currentTime * 1000);
-        }
-      }
-      if (!playingDate) return;
-      const target = playingDate.getTime();
-      const behind = (Date.now() - target) / 1000;
-      // A plausible HLS delay is seconds, not decades. Anything wilder
-      // means the timeline is not telling us the truth, and showing it
-      // is worse than showing nothing.
-      setOffset(behind >= 0 && behind < 300 ? Math.round(behind * 10) / 10 : null);
-      const buf = buffer.current;
-      if (!buf.length) return;
-      // Nearest frame within half a second; otherwise nothing was moving.
-      let best = buf[0];
-      for (const f of buf) {
-        if (Math.abs(f.ts - target) < Math.abs(best.ts - target)) best = f;
-      }
-      setDrawn(Math.abs(best.ts - target) < 500 ? best.objects : []);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [cameraId]);
-
-  // Capability checks lie: Chrome reports HEVC support via hardware and
-  // then renders nothing. Ask the element how many frames it actually
-  // decoded — bytes arriving with zero frames out is a decode failure,
-  // whatever the browser claimed beforehand.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !cameraId) return;
-    const t = setTimeout(() => {
-      const q = video.getVideoPlaybackQuality?.();
-      if (q && q.totalVideoFrames === 0 && video.readyState < 2) {
-        setError(
-          "Segments are downloading but no frames decoded — this camera streams " +
-            "H.265, which this browser will not render. Safari plays it.",
-        );
-      }
-    }, 8000);
-    return () => clearTimeout(t);
+    if (!cameraId) return;
+    setFrameKey((k) => k + 1);
+    const t = setInterval(() => setFrameKey((k) => k + 1), 15000);
+    return () => clearInterval(t);
   }, [cameraId]);
 
   if (!cameraId) {
     return <div className="text-sm text-slate-500">Pick a camera to start.</div>;
   }
 
+  const objects = live?.objects ?? [];
   return (
     <div className="space-y-2">
       <div
         className="relative w-full max-w-2xl rounded-md overflow-hidden bg-slate-950 border border-slate-800"
         style={{ aspectRatio: "16 / 9" }}
       >
-        <video
-          ref={videoRef}
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
+        <img
+          key={frameKey}
+          src={`${API_BASE}/api/mqtt/frame/${cameraId}?k=${frameKey}`}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-70"
         />
-        {drawn.map((o) => {
-          const color = TYPE_COLOR[o.type] ?? "#94a3b8";
-          return (
-            <div
-              key={o.obj_id}
-              className="absolute border-2 rounded-sm"
-              style={{
-                left: `${(o.cx - o.w / 2) * 100}%`,
-                top: `${(o.cy - o.h / 2) * 100}%`,
-                width: `${o.w * 100}%`,
-                height: `${o.h * 100}%`,
-                borderColor: color,
-                boxShadow: `0 0 12px ${color}55`,
-                transition:
-                  "left 120ms linear, top 120ms linear, width 120ms linear, height 120ms linear",
-              }}
-            >
-              <span
-                className="absolute -top-5 left-0 text-[10px] px-1 rounded font-mono whitespace-nowrap"
-                style={{ background: color, color: "#0f172a" }}
-              >
-                {o.type} · {o.age.toFixed(1)}s
-              </span>
-            </div>
-          );
-        })}
-        {error && (
-          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs text-amber-300 bg-slate-950/80">
-            {error}
-          </div>
-        )}
-        {!playing && !error && (
+        {objects.map((o) => (
+          <TrackedBox key={o.obj_id} object={o} />
+        ))}
+        {objects.length === 0 && (
           <div className="absolute inset-0 grid place-items-center text-xs text-slate-500">
-            Connecting to the stream…
+            No objects in view
           </div>
         )}
       </div>
@@ -628,23 +441,91 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
         {live?.latency_ms != null && (
           <span
             className="text-slate-500"
-            title="Camera detection timestamp to arrival here. The camera keeps its own clock, so treat this as an estimate — skew shows up as a constant offset."
+            title="Camera detection timestamp to arrival here. The camera keeps its own clock, so treat this as an estimate."
           >
-            box latency ~
-            <span className="font-mono text-slate-200">{live.latency_ms}ms</span>
+            latency ~<span className="font-mono text-slate-200">{live.latency_ms}ms</span>
           </span>
         )}
-        {offset != null && (
-          <span
-            className="text-slate-500"
-            title="How far behind real time the video is. Boxes are delayed to match it, so what you see lines up."
-          >
-            video behind{" "}
-            <span className="font-mono text-slate-200">{offset.toFixed(1)}s</span>
-          </span>
-        )}
+        <button
+          type="button"
+          onClick={() => setFrameKey((k) => k + 1)}
+          className="text-slate-500 hover:text-slate-300 underline underline-offset-2"
+        >
+          Refresh frame
+        </button>
       </div>
     </div>
+  );
+}
+
+/** One tracked object: the box, and a figure walking inside it.
+ *
+ *  The box alone shows position. The figure shows that something is
+ *  *there* — and because the still behind it is up to 15 seconds old,
+ *  it also makes clear which part of the picture is live. */
+function TrackedBox({ object: o }: { object: LiveObject }) {
+  const color = TYPE_COLOR[o.type] ?? "#94a3b8";
+  return (
+    <div
+      className="absolute border-2 rounded-sm"
+      style={{
+        left: `${(o.cx - o.w / 2) * 100}%`,
+        top: `${(o.cy - o.h / 2) * 100}%`,
+        width: `${o.w * 100}%`,
+        height: `${o.h * 100}%`,
+        borderColor: color,
+        boxShadow: `0 0 12px ${color}55`,
+        // Detections land ~125ms apart; a matching transition turns a
+        // sequence of jumps into movement without inventing positions
+        // between them.
+        transition:
+          "left 120ms linear, top 120ms linear, width 120ms linear, height 120ms linear",
+      }}
+    >
+      <Figure type={o.type} color={color} />
+      <span
+        className="absolute -top-5 left-0 text-[10px] px-1 rounded font-mono whitespace-nowrap"
+        style={{ background: color, color: "#0f172a" }}
+      >
+        {o.type} · {o.age.toFixed(1)}s
+      </span>
+    </div>
+  );
+}
+
+/** A walking figure sized to its box. Deliberately simple — a silhouette
+ *  reads at 30px where detail turns to mush. */
+function Figure({ type, color }: { type: string; color: string }) {
+  if (type !== "person") {
+    return (
+      <span
+        className="absolute inset-0 grid place-items-center text-[10px] font-mono opacity-70"
+        style={{ color }}
+      >
+        {type === "vehicle" ? "▭" : "◆"}
+      </span>
+    );
+  }
+  return (
+    <svg
+      viewBox="0 0 24 48"
+      preserveAspectRatio="xMidYMid meet"
+      className="absolute inset-0 w-full h-full opacity-90 animate-walk"
+      aria-hidden="true"
+    >
+      <g fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
+        <circle cx="12" cy="7" r="5" fill={color} stroke="none" />
+        <line x1="12" y1="13" x2="12" y2="28" />
+        <g className="walk-arms">
+          <line x1="12" y1="17" x2="5" y2="24" />
+          <line x1="12" y1="17" x2="19" y2="24" />
+        </g>
+        <g className="walk-legs">
+          <line x1="12" y1="28" x2="6" y2="42" />
+          <line x1="12" y1="28" x2="18" y2="42" />
+        </g>
+      </g>
+    </svg>
   );
 }
 

@@ -194,3 +194,22 @@ button:not(:disabled):active {
   animation: value-picker-in 150ms var(--ease-out);
   transform-origin: top center;
 }
+
+/* The figure inside a tracked box. Two joints moving in opposition reads
+   as walking; anything more detailed is mush at the size these render. */
+@keyframes walk-swing {
+  0%, 100% { transform: rotate(-9deg); }
+  50% { transform: rotate(9deg); }
+}
+
+.animate-walk .walk-legs,
+.animate-walk .walk-arms {
+  transform-origin: 12px 28px;
+  animation: walk-swing 700ms var(--ease-in-out) infinite;
+}
+
+.animate-walk .walk-arms {
+  transform-origin: 12px 17px;
+  animation-direction: reverse;
+  animation-duration: 900ms;
+}
