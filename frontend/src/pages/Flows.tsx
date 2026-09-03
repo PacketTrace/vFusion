@@ -146,13 +146,6 @@ export default function Flows() {
             onChange={handleFileChange}
             className="hidden"
           />
-          <Link
-            to="/templates"
-            className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-200 hover:bg-white/10"
-            title="Start from a built-in or saved template"
-          >
-            Browse templates
-          </Link>
           <button
             onClick={handleImportClick}
             disabled={importMut.isPending}
@@ -178,8 +171,8 @@ export default function Flows() {
 
       <div className="flex items-center gap-1 border-b border-white/10">
         {[
-          { key: "flows", label: "Existing" },
           { key: "templates", label: "Templates" },
+          { key: "flows", label: "Existing" },
         ].map((t) => (
           <button
             key={t.key}
