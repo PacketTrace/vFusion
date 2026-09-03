@@ -293,10 +293,24 @@ def hostname() -> str:
 
 
 def users(state: dict[str, Any]) -> str:
+    """The one account, reported as Administrator.
+
+    ONVIF grades accounts Administrator / Operator / User / Anonymous,
+    and "User" means read-only. A client that intends to configure a
+    device checks the level of the account it authenticated as and
+    refuses to continue if it is too low -- which is what "insufficient
+    credential permission" means, and it is a statement about this field
+    rather than about anything the client was actually refused.
+
+    There is only one account here and it can do everything this device
+    supports, which is what Administrator says. It grants nothing: the
+    device has no configuration to change, so every write operation is
+    unimplemented regardless of who asks.
+    """
     return (
         "<tds:GetUsersResponse><tds:User>"
         f"<tt:Username>{state.get('read_username', '')}</tt:Username>"
-        "<tt:UserLevel>User</tt:UserLevel>"
+        "<tt:UserLevel>Administrator</tt:UserLevel>"
         "</tds:User></tds:GetUsersResponse>"
     )
 
