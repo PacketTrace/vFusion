@@ -369,7 +369,7 @@ def _pcm_out(afd: int, seconds: str | None = None) -> list[str]:
     return out + ["-f", "s16le", f"pipe:{afd}"]
 
 
-def _clip_cmd(item: dict[str, Any], afd: int) -> list[str]:
+def _clip_cmd(item: dict[str, Any], afd: int, limit: float = 0.0) -> list[str]:
     """Video to stdout, audio to the audio pipe, always both.
 
     A source with no audio track gets silence from lavfi rather than no
@@ -391,9 +391,12 @@ def _clip_cmd(item: dict[str, Any], afd: int) -> list[str]:
     else:
         cmd += _silence()
         audio_map = "1:a"
-        # The silence generator is infinite, so a still needs the same
-        # limit applied to its audio output or the clip never ends.
-        seconds = seconds or None
+        # The silence generator is infinite. Whatever bounds the video --
+        # a still's display time, or a video's probed duration -- has to
+        # bound the audio too, or the source never exits, the clip never
+        # advances, and the stream freezes on its last frame.
+        if seconds is None and limit > 0:
+            seconds = f"{limit:.3f}"
 
     cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
     cmd += ["-map", audio_map] + _pcm_out(afd, seconds)
