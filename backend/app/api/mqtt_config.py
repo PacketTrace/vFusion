@@ -14,13 +14,17 @@ import logging
 from typing import Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response, StreamingResponse
 
+import re
+
 from app.connectors.verkada.client import VerkadaApiError, VerkadaClient
+from app.connectors.verkada.footage import FootageError, get_stream_key
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.models import Connection, VerkadaCamera
@@ -530,6 +534,124 @@ async def reset() -> dict[str, Any]:
             "Restart mqtt-broker and mqtt-tls after generating again."
         ),
     }
+
+
+# Segment names in the upstream playlist. Anchored so the proxy can only
+# ever be pointed at Verkada's own stream files, never an arbitrary URL.
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+\.(m4s|mp4|ts)$")
+
+STREAM_BASE = "/stream/cameras/v1/footage/stream"
+
+
+async def _stream_context(
+    session: AsyncSession, connection_id: UUID | None
+) -> tuple[str, str, str]:
+    """(base_url, org_id, jwt) for the live HLS stream."""
+    q = select(Connection).where(Connection.type == "verkada")
+    if connection_id:
+        q = q.where(Connection.id == connection_id)
+    conn = (await session.execute(q)).scalars().first()
+    if conn is None:
+        raise HTTPException(status_code=400, detail="no Verkada connection configured")
+    try:
+        secret = decrypt_secret(conn.encrypted_secret)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="could not decrypt connection") from e
+    api_key = secret.get("api_key")
+    org_id = conn.external_id
+    if not api_key or not org_id:
+        raise HTTPException(
+            status_code=400, detail="connection is missing an API key or org id"
+        )
+    base = (secret.get("region") or "https://api.verkada.com").rstrip("/")
+    try:
+        jwt = await get_stream_key(api_key, org_id, base_url=base)
+    except FootageError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return base, org_id, jwt
+
+
+def _stream_query(org_id: str, camera_id: str, jwt: str) -> dict[str, str]:
+    return {
+        "org_id": org_id,
+        "camera_id": camera_id,
+        "resolution": "high_res",
+        "type": "stream",
+        "codec": "hevc",
+        "transcode": "false",
+        "start_time": "0",
+        "end_time": "0",
+        "jwt": jwt,
+    }
+
+
+@router.get("/stream/{camera_id}/index.m3u8")
+async def stream_playlist(
+    camera_id: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Live HLS playlist with the credentials stripped out.
+
+    Every segment URI upstream carries a signed JWT, so handing the
+    playlist straight to a browser would publish a working stream
+    credential into the DOM and the network log. This rewrites each URI
+    to a path on this server and keeps the token here; the proxy rebuilds
+    the real query when fetching a segment.
+    """
+    base, org_id, jwt = await _stream_context(session, connection_id)
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        res = await client.get(
+            f"{base}{STREAM_BASE}/stream.m3u8",
+            params=_stream_query(org_id, camera_id, jwt),
+        )
+    if res.status_code != 200:
+        raise HTTPException(
+            status_code=502, detail=f"stream playlist failed: HTTP {res.status_code}"
+        )
+
+    lines: list[str] = []
+    for line in res.text.splitlines():
+        if line.startswith("#EXT-X-MAP:"):
+            m = re.search(r'URI="([^"?]+)', line)
+            if m:
+                line = f'#EXT-X-MAP:URI="seg/{m.group(1)}"'
+        elif line and not line.startswith("#"):
+            line = f"seg/{line.split('?', 1)[0]}"
+        lines.append(line)
+
+    return Response(
+        content="\n".join(lines) + "\n",
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/stream/{camera_id}/seg/{name}")
+async def stream_segment(
+    camera_id: str,
+    name: str,
+    connection_id: UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Proxy one media segment, re-attaching the credentials server-side."""
+    if not _SEGMENT_RE.match(name):
+        raise HTTPException(status_code=400, detail="bad segment name")
+    base, org_id, jwt = await _stream_context(session, connection_id)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        res = await client.get(
+            f"{base}{STREAM_BASE}/{name}",
+            params=_stream_query(org_id, camera_id, jwt),
+        )
+    if res.status_code != 200:
+        raise HTTPException(
+            status_code=502, detail=f"segment failed: HTTP {res.status_code}"
+        )
+    return Response(
+        content=res.content,
+        media_type="video/mp4",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/history")

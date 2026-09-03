@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import Hls from "hls.js";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { API_BASE, apiDelete, apiGet, apiPost } from "../lib/api";
@@ -36,6 +38,9 @@ interface LiveObject {
   w: number;
   h: number;
   age: number;
+  /** Camera-clock detection time in ms, used to line boxes up with the
+   *  video frame on screen rather than with the wall clock. */
+  ts: number | null;
 }
 
 interface LiveCamera {
@@ -385,36 +390,127 @@ function useLiveTracks(cameraId: string) {
 }
 
 function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | null }) {
-  const [frameKey, setFrameKey] = useState(0);
-  const box = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  // Boxes keyed by camera timestamp, so a frame can be reconstructed for
+  // any moment the video might be showing.
+  const buffer = useRef<{ ts: number; objects: LiveObject[] }[]>([]);
+  const [drawn, setDrawn] = useState<LiveObject[]>([]);
+  const [offset, setOffset] = useState<number | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
-  // The backdrop is a still, and it was refetching on a timer — which
-  // costs a real API call each time and makes the scene flicker under
-  // boxes that are genuinely live. Load it once per camera; refreshing
-  // is a button, because you only want it when the scene changed.
   useEffect(() => {
-    setFrameKey((k) => k + 1);
+    const video = videoRef.current;
+    if (!cameraId || !video) return;
+    setError(null);
+    setPlaying(false);
+    const src = `${API_BASE}/api/mqtt/stream/${cameraId}/index.m3u8`;
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Safari plays HLS natively, and is also the browser most likely to
+      // decode this camera's HEVC.
+      video.src = src;
+      video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      return () => {
+        video.removeAttribute("src");
+        video.load();
+      };
+    }
+
+    if (!Hls.isSupported()) {
+      setError("This browser cannot play HLS.");
+      return;
+    }
+    const hls = new Hls({ lowLatencyMode: true, backBufferLength: 30, xhrSetup: (xhr) => {
+      xhr.withCredentials = true;
+    } });
+    hlsRef.current = hls;
+    hls.loadSource(src);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    });
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return;
+      // The camera streams HEVC and only some browsers decode it.
+      setError(
+        data.type === Hls.ErrorTypes.MEDIA_ERROR
+          ? "Could not decode the stream. This camera sends HEVC, which Safari plays and most Chrome builds do not."
+          : `Stream error: ${data.details}`,
+      );
+    });
+    return () => {
+      hls.destroy();
+      hlsRef.current = null;
+    };
+  }, [cameraId]);
+
+  // Collect every frame of boxes with its camera timestamp.
+  useEffect(() => {
+    if (!live?.objects?.length) return;
+    const ts = live.objects.find((o) => o.ts)?.ts;
+    if (!ts) return;
+    const buf = buffer.current;
+    buf.push({ ts, objects: live.objects });
+    const cutoff = ts - 60_000;
+    while (buf.length && buf[0].ts < cutoff) buf.shift();
+  }, [live]);
+
+  // Draw the boxes belonging to the frame actually on screen. HLS runs
+  // roughly 8-12s behind real time; without this the boxes lead the
+  // subject by an entire segment or three and look plain wrong.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const hls = hlsRef.current;
+      // hls.js exposes the EXT-X-PROGRAM-DATE-TIME of the current frame
+      // directly. Safari plays HLS natively instead, where the same
+      // information comes from the WebKit-only getStartDate().
+      const native = video as HTMLVideoElement & { getStartDate?: () => Date };
+      let playingDate: Date | null = hls?.playingDate ?? null;
+      if (!playingDate && typeof native.getStartDate === "function") {
+        const start = native.getStartDate();
+        if (start && !Number.isNaN(start.getTime())) {
+          playingDate = new Date(start.getTime() + video.currentTime * 1000);
+        }
+      }
+      if (!playingDate) return;
+      const target = playingDate.getTime();
+      setOffset(Math.round((Date.now() - target) / 100) / 10);
+      const buf = buffer.current;
+      if (!buf.length) return;
+      // Nearest frame within half a second; otherwise nothing was moving.
+      let best = buf[0];
+      for (const f of buf) {
+        if (Math.abs(f.ts - target) < Math.abs(best.ts - target)) best = f;
+      }
+      setDrawn(Math.abs(best.ts - target) < 500 ? best.objects : []);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [cameraId]);
 
   if (!cameraId) {
     return <div className="text-sm text-slate-500">Pick a camera to start.</div>;
   }
 
-  const objects = live?.objects ?? [];
   return (
     <div className="space-y-2">
       <div
-        ref={box}
         className="relative w-full max-w-2xl rounded-md overflow-hidden bg-slate-950 border border-slate-800"
         style={{ aspectRatio: "16 / 9" }}
       >
-        <img
-          key={frameKey}
-          src={`${API_BASE}/api/mqtt/frame/${cameraId}?k=${frameKey}`}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-70"
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
         />
-        {objects.map((o) => {
+        {drawn.map((o) => {
           const color = TYPE_COLOR[o.type] ?? "#94a3b8";
           return (
             <div
@@ -427,9 +523,8 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
                 height: `${o.h * 100}%`,
                 borderColor: color,
                 boxShadow: `0 0 12px ${color}55`,
-                // Boxes arrive ~125ms apart; a short transition turns a
-                // sequence of jumps into motion without inventing position.
-                transition: "left 120ms linear, top 120ms linear, width 120ms linear, height 120ms linear",
+                transition:
+                  "left 120ms linear, top 120ms linear, width 120ms linear, height 120ms linear",
               }}
             >
               <span
@@ -441,9 +536,14 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
             </div>
           );
         })}
-        {objects.length === 0 && (
+        {error && (
+          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs text-amber-300 bg-slate-950/80">
+            {error}
+          </div>
+        )}
+        {!playing && !error && (
           <div className="absolute inset-0 grid place-items-center text-xs text-slate-500">
-            No objects in view
+            Connecting to the stream…
           </div>
         )}
       </div>
@@ -457,26 +557,24 @@ function LiveView({ cameraId, live }: { cameraId: string; live: LiveCamera | nul
             {t} <span className="font-mono text-slate-200">{live?.counts?.[t] ?? 0}</span>
           </span>
         ))}
-        <span className="text-slate-500">
-          {live?.age_sec != null ? `last message ${live.age_sec}s ago` : "nothing received yet"}
-        </span>
         {live?.latency_ms != null && (
           <span
             className="text-slate-500"
-            title="Camera detection timestamp to arrival here. The camera keeps its own clock, so treat this as an estimate — clock skew shows up as a constant offset."
+            title="Camera detection timestamp to arrival here. The camera keeps its own clock, so treat this as an estimate — skew shows up as a constant offset."
           >
-            latency ~
+            box latency ~
             <span className="font-mono text-slate-200">{live.latency_ms}ms</span>
-            <span className="text-slate-600"> (est, n={live.latency_samples})</span>
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setFrameKey((k) => k + 1)}
-          className="text-slate-500 hover:text-slate-300 underline underline-offset-2"
-        >
-          Refresh frame
-        </button>
+        {offset != null && (
+          <span
+            className="text-slate-500"
+            title="How far behind real time the video is. Boxes are delayed to match it, so what you see lines up."
+          >
+            video behind{" "}
+            <span className="font-mono text-slate-200">{offset.toFixed(1)}s</span>
+          </span>
+        )}
       </div>
     </div>
   );

@@ -58,6 +58,10 @@ class Track:
     last_seen: float
     first_seen: float
     first_wall: float = 0.0
+    # Camera-clock timestamp of the latest detection, in ms. The video is
+    # 8-12s behind the boxes, so the UI needs this to draw the box that
+    # belongs to the frame actually on screen.
+    ts_ms: float = 0.0
     path: list[tuple[float, float, float, float]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -69,6 +73,7 @@ class Track:
             "w": round(self.w, 4),
             "h": round(self.h, 4),
             "age": round(time.monotonic() - self.first_seen, 2),
+            "ts": self.ts_ms or None,
         }
 
 
@@ -195,8 +200,9 @@ class Ingest:
             except (KeyError, TypeError, ValueError):
                 continue
             ts = last.get("timestamp")
-            if isinstance(ts, (int, float)) and ts > 0:
-                state.latencies_ms.append(wall_ms - float(ts))
+            detection_ms = float(ts) if isinstance(ts, (int, float)) and ts > 0 else 0.0
+            if detection_ms:
+                state.latencies_ms.append(wall_ms - detection_ms)
             obj_id = str(obj.get("obj_id", ""))
             if not obj_id:
                 continue
@@ -213,6 +219,7 @@ class Ingest:
                 last_seen=now,
                 first_seen=existing.first_seen if existing else now,
                 first_wall=existing.first_wall if existing else time.time(),
+                ts_ms=detection_ms or wall_ms,
                 path=existing.path if existing else [],
             )
             if len(track.path) < MAX_PATH_POINTS:
