@@ -820,6 +820,11 @@ async def compose(
 
 
 class SaveAnalyticRequest(BaseModel):
+    # Present when an existing analytic is being edited rather than a new
+    # one saved. Keeping the id stable matters: Templates links to
+    # ?analytic=<id>, so a "save" that minted a fresh one broke every
+    # link that already pointed at it.
+    id: str | None = None
     name: str
     summary: str | None = None
     prompt: str

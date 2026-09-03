@@ -677,17 +677,62 @@ function Figure({ type, color }: { type: string; color: string }) {
       className="absolute inset-0 w-full h-full opacity-90 animate-walk"
       aria-hidden="true"
     >
-      {/* Each limb swings on its own, half a cycle apart, because a pair
-          rotating together is a rigid V rather than a stride. Arms
-          oppose the same-side leg, which is what makes a gait read as
-          balanced instead of hopping. */}
-      <g className="walk-body" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round">
-        <circle cx="12" cy="7" r="5" fill={color} stroke="none" />
-        <line x1="12" y1="13" x2="12" y2="28" />
-        <line className="walk-arm walk-arm-a" x1="12" y1="17" x2="5" y2="25" />
-        <line className="walk-arm walk-arm-b" x1="12" y1="17" x2="19" y2="25" />
-        <line className="walk-leg walk-leg-a" x1="12" y1="28" x2="6" y2="43" />
-        <line className="walk-leg walk-leg-b" x1="12" y1="28" x2="18" y2="43" />
+      {/* Drawn in profile, facing right. The previous figure was
+          front-on with its limbs splayed into a V, and rotating a
+          splayed limb about its root can only widen or narrow that V —
+          which is a jumping jack, not a stride. A walk only reads from
+          the side.
+
+          Each limb is two segments with a real joint: the shin group
+          sits inside the thigh group, so knee rotation composes on top
+          of hip rotation the way forward kinematics does. That knee is
+          what carries the whole thing — a straight stick leg swinging
+          fore and aft is a metronome, while a leg that folds under
+          itself through swing and straightens to meet the ground is a
+          person. Far-side limbs are dimmed so the near pair reads in
+          front rather than the four crossing into a scribble. */}
+      <g
+        className="walk-body"
+        fill="none"
+        stroke={color}
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <g className="walk-far" opacity="0.45">
+          <g className="walk-arm walk-phase-a">
+            <line x1="12.4" y1="15" x2="12.4" y2="21" />
+            <g className="walk-forearm">
+              <line x1="12.4" y1="21" x2="12.4" y2="26.5" />
+            </g>
+          </g>
+          <g className="walk-leg walk-phase-b">
+            <line x1="11.5" y1="27" x2="11.5" y2="36" />
+            <g className="walk-shin">
+              <line x1="11.5" y1="36" x2="11.5" y2="44" />
+              <line x1="11.5" y1="44" x2="14.3" y2="44.6" />
+            </g>
+          </g>
+        </g>
+
+        {/* Torso and head sit between the two limb pairs, so the far
+            arm passes behind the body and the near one in front. */}
+        <circle cx="13" cy="7.5" r="4.6" fill={color} stroke="none" />
+        <line x1="12.6" y1="12" x2="11.5" y2="27" />
+
+        <g className="walk-leg walk-phase-a">
+          <line x1="11.5" y1="27" x2="11.5" y2="36" />
+          <g className="walk-shin">
+            <line x1="11.5" y1="36" x2="11.5" y2="44" />
+            <line x1="11.5" y1="44" x2="14.3" y2="44.6" />
+          </g>
+        </g>
+        <g className="walk-arm walk-phase-b">
+          <line x1="12.4" y1="15" x2="12.4" y2="21" />
+          <g className="walk-forearm">
+            <line x1="12.4" y1="21" x2="12.4" y2="26.5" />
+          </g>
+        </g>
       </g>
     </svg>
   );

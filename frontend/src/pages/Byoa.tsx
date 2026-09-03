@@ -413,11 +413,33 @@ export default function Byoa() {
   // for the selection.
   const preselectId = searchParams.get("analytic");
   const preselected = useRef(false);
+  // The saved analytic currently open for editing, if any. Set by the
+  // preselect below, so refining a prompt updates that entry rather than
+  // quietly forking it into a near-duplicate.
+  const [editingAnalytic, setEditingAnalytic] = useState<SavedAnalytic | null>(
+    null,
+  );
+  const updateAnalytic = useMutation({
+    mutationFn: () =>
+      apiPost<SavedAnalytic>("/api/byoa/analytics", {
+        id: editingAnalytic?.id,
+        name: editingAnalytic?.name,
+        summary: editingAnalytic?.summary,
+        prompt,
+        helix_event_type: editingAnalytic?.helix_event_type,
+        helix_attribute_mapping: editingAnalytic?.helix_attribute_mapping,
+      }),
+    onSuccess: (saved) => {
+      setEditingAnalytic(saved);
+      savedAnalytics.refetch();
+    },
+  });
   useEffect(() => {
     if (preselected.current || !preselectId) return;
     const found = (savedAnalytics.data ?? []).find((a) => a.id === preselectId);
     if (!found) return;
     preselected.current = true;
+    setEditingAnalytic(found);
     setPrompt(found.prompt);
     setPickedTemplate({
       name: found.name,
@@ -731,6 +753,52 @@ export default function Byoa() {
                     : "write your own analytic"}
                 </div>
               </div>
+              {/* Opened from Templates, so edits here have somewhere to
+                  go. Without this the only way to refine a saved
+                  analytic was to compose a new one and let the
+                  name-collision overwrite do the work — which minted a
+                  fresh id and broke the link that got you here. */}
+              {editingAnalytic && (
+                <div className="flex flex-wrap items-center gap-2 mb-2 text-[11px]">
+                  <span className="text-slate-400">
+                    Editing{" "}
+                    <span className="text-slate-200">{editingAnalytic.name}</span>
+                  </span>
+                  {prompt !== editingAnalytic.prompt ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => updateAnalytic.mutate()}
+                        disabled={updateAnalytic.isPending}
+                        className="px-2 py-1 rounded border border-sky-700/60 bg-sky-900/40 text-sky-200 hover:bg-sky-800/60 disabled:opacity-50"
+                      >
+                        {updateAnalytic.isPending ? "Updating…" : "Update analytic"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPrompt(editingAnalytic.prompt)}
+                        className="text-slate-500 hover:text-slate-300 underline underline-offset-2"
+                      >
+                        revert
+                      </button>
+                      {/* The flow took a copy. Saying so here is the
+                          only place it can be said before someone
+                          assumes otherwise. */}
+                      <span className="text-slate-500 basis-full">
+                        Flows built from this analytic keep the copy they were
+                        created with — updating here changes what Build and new
+                        flows use, not the ones already wired up.
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-600">no changes</span>
+                  )}
+                  {updateAnalytic.isSuccess &&
+                    prompt === editingAnalytic.prompt && (
+                      <span className="text-emerald-400">saved</span>
+                    )}
+                </div>
+              )}
             </div>
           )}
           {allTemplates.length > 0 && !promptOpen && !prompt.trim() && (
@@ -1143,8 +1211,27 @@ export default function Byoa() {
               <div>
                 {(() => {
                   const paired = pickedTemplate?.helix_event_type;
-                  const missing =
-                    !!paired && !pairedTypeExists(helixTypes.data ?? [], paired);
+                  // helixTypes is disabled until postToHelix flips on, so
+                  // on arrival its data is undefined — not empty. Treating
+                  // that as empty told people to create a type they had
+                  // already created, every time they opened a saved
+                  // analytic, until the fetch landed.
+                  const known = helixTypes.data;
+                  const checking = known === undefined;
+                  const missing = !!paired && !checking && !pairedTypeExists(known!, paired);
+                  if (paired && checking) {
+                    return (
+                      <Field
+                        label="Helix event type"
+                        required
+                        help={`Checking whether ${paired.name} is already on this org.`}
+                      >
+                        <div className="px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm text-slate-500">
+                          Checking…
+                        </div>
+                      </Field>
+                    );
+                  }
                   // A paired analytic's attribute mapping only makes
                   // sense against its own type. Offering the picker here
                   // lets someone post Package Delivery attributes to a
@@ -1197,8 +1284,13 @@ export default function Byoa() {
                   // name (case-insensitive) — uid wins because the
                   // template ships with one, but legacy types in older
                   // orgs sometimes only line up by name.
+                  //
+                  // Never while the list is still loading: offering to
+                  // create something that already exists is worse than
+                  // offering it a beat late.
+                  if (helixTypes.data === undefined) return null;
                   const exists = pairedTypeExists(
-                    helixTypes.data ?? [],
+                    helixTypes.data,
                     pickedTemplate?.helix_event_type,
                   );
                   if (exists) return null;

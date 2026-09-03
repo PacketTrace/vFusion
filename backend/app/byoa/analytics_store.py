@@ -69,7 +69,13 @@ async def add(analytic: dict[str, Any]) -> dict[str, Any]:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     async with _lock:
-        items = [i for i in _load() if i.get("name") != entry.get("name")]
+        # Drop by id as well as by name, so renaming while editing moves
+        # the entry rather than leaving the old name behind alongside it.
+        items = [
+            i
+            for i in _load()
+            if i.get("name") != entry.get("name") and i.get("id") != entry["id"]
+        ]
         items.append(entry)
         _save(items)
     return entry

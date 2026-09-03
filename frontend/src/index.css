@@ -195,75 +195,132 @@ button:not(:disabled):active {
   transform-origin: top center;
 }
 
-/* The figure inside a tracked box.
-   Limbs swing independently and in antiphase. Rotating a pair together
-   gives a rigid V that reads as a ragdoll being shaken; a stride needs
-   the left and right of each pair half a cycle apart, and the arms
-   opposing the same-side leg.
+/* The figure inside a tracked box: a side-on walk cycle.
 
-   Easing is ease-in-out on purpose: a limb is a pendulum, fastest
-   through the middle of its swing and slowest at the extremes. Linear
-   motion is most of what makes cheap walk cycles look wrong.
+   Four things separate this from a stick figure waving its limbs.
 
-   The body also rises twice per stride — once per step, at mid-stance,
-   when the supporting leg is straightest. It is half a unit in a 48-unit
-   figure, felt rather than seen. */
+   1. Joints. Each limb is a thigh/shin (or upper arm/forearm) pair, the
+      distal group nested inside the proximal one so its rotation
+      composes on top. The knee is the whole illusion: it folds to ~60
+      degrees through swing so the foot clears the ground, and
+      straightens to meet it. A rigid leg pendulum never looks like
+      walking no matter how well it is timed.
+
+   2. Phasing. Contralateral — the near arm swings with the far leg.
+      Half-cycle negative delays, so the figure is already mid-stride on
+      its first frame rather than starting from a pose nobody stands in.
+
+   3. Asymmetric key spacing. The stance phase is slow and shallow, the
+      swing phase fast and deep; that unevenness is what a real gait
+      sounds like when you write it down as numbers. Evenly spaced keys
+      give the sinusoidal bounce that reads as animation-of-a-person
+      rather than a person.
+
+   4. A bob at twice step frequency — lowest at contact when both feet
+      are down, highest at mid-stance over a straight supporting leg.
+      Under a unit in a 48-unit figure. You notice its absence, not its
+      presence.
+
+   Timing functions: linear for the legs, whose shape is already carried
+   by the keys, and ease-in-out for the arms, which really are pendulums
+   described by two extremes. */
 
 .animate-walk .walk-leg,
-.animate-walk .walk-arm {
-  animation-duration: 900ms;
-  animation-timing-function: var(--ease-in-out);
+.animate-walk .walk-shin,
+.animate-walk .walk-arm,
+.animate-walk .walk-forearm {
+  transform-box: view-box;
+  animation-duration: 1000ms;
   animation-iteration-count: infinite;
 }
 
+/* Origins are the joint's rest position in viewBox units (24 x 48),
+   expressed as percentages. transform-box: view-box is load-bearing
+   here — without it the lengths resolve against CSS pixels and the
+   joints drift apart at any zoom other than 100%. */
 .animate-walk .walk-leg {
-  transform-box: view-box;
-  /* hip: (12, 28) in a 24x48 viewBox */
-  transform-origin: 50% 58.33%;
-  animation-name: walk-leg;
+  transform-origin: 47.917% 56.25%; /* hip (11.5, 27) */
+  animation-name: walk-thigh;
+  animation-timing-function: linear;
+}
+
+.animate-walk .walk-shin {
+  transform-origin: 47.917% 75%; /* knee (11.5, 36) */
+  animation-name: walk-knee;
+  animation-timing-function: linear;
 }
 
 .animate-walk .walk-arm {
-  transform-box: view-box;
-  /* shoulder: (12, 17) in a 24x48 viewBox */
-  transform-origin: 50% 35.42%;
-  animation-name: walk-arm;
+  transform-origin: 51.667% 31.25%; /* shoulder (12.4, 15) */
+  animation-name: walk-shoulder;
+  animation-timing-function: var(--ease-in-out);
 }
 
-/* Half a cycle apart. Negative delays start mid-animation rather than
-   pausing first, so the figure is already walking on the first frame. */
-.animate-walk .walk-leg-b,
-.animate-walk .walk-arm-a {
-  animation-delay: -450ms;
+.animate-walk .walk-forearm {
+  transform-origin: 51.667% 43.75%; /* elbow (12.4, 21) */
+  animation-name: walk-elbow;
+  animation-timing-function: var(--ease-in-out);
+}
+
+/* Half a cycle apart. The delay has to reach the nested joint groups
+   too, or a shin would run in phase with the opposite thigh. */
+.animate-walk .walk-phase-b,
+.animate-walk .walk-phase-b * {
+  animation-delay: -500ms;
 }
 
 .animate-walk .walk-body {
   transform-box: view-box;
   transform-origin: 50% 100%;
-  animation: walk-bob 450ms var(--ease-in-out) infinite;
+  animation: walk-bob 500ms var(--ease-in-out) infinite;
 }
 
-@keyframes walk-leg {
-  0%, 100% { transform: rotate(14deg); }
-  50% { transform: rotate(-14deg); }
+/* Hip. Furthest forward at contact, furthest back at toe-off, and the
+   return swing is quicker than the stance it replaces. */
+@keyframes walk-thigh {
+  0%   { transform: rotate(21deg); }
+  15%  { transform: rotate(13deg); }
+  32%  { transform: rotate(1deg); }
+  50%  { transform: rotate(-19deg); }
+  64%  { transform: rotate(-7deg); }
+  82%  { transform: rotate(13deg); }
+  100% { transform: rotate(21deg); }
 }
 
-/* Arms swing less than legs — roughly two thirds, as they do. */
-@keyframes walk-arm {
-  0%, 100% { transform: rotate(-9deg); }
-  50% { transform: rotate(9deg); }
+/* Knee. Never hyperextends — every value is flexion. The small dip at
+   12% is the loading response, the body absorbing its own weight; the
+   deep fold at 62% is what lets the foot pass the standing one. */
+@keyframes walk-knee {
+  0%   { transform: rotate(-4deg); }
+  12%  { transform: rotate(-17deg); }
+  30%  { transform: rotate(-6deg); }
+  48%  { transform: rotate(-33deg); }
+  62%  { transform: rotate(-61deg); }
+  80%  { transform: rotate(-27deg); }
+  93%  { transform: rotate(-5deg); }
+  100% { transform: rotate(-4deg); }
+}
+
+/* Shoulder. Roughly two thirds the leg's throw, as arms do. */
+@keyframes walk-shoulder {
+  0%   { transform: rotate(15deg); }
+  50%  { transform: rotate(-15deg); }
+  100% { transform: rotate(15deg); }
+}
+
+/* Elbow. Held bent throughout and bent most at the front of the swing —
+   a straight arm swinging from the shoulder is the other classic tell. */
+@keyframes walk-elbow {
+  0%   { transform: rotate(-27deg); }
+  50%  { transform: rotate(-11deg); }
+  100% { transform: rotate(-27deg); }
 }
 
 @keyframes walk-bob {
-  0%, 100% { transform: translateY(0.5px); }
-  50% { transform: translateY(-0.5px); }
+  0%, 100% { transform: translateY(0.45px); }
+  50%      { transform: translateY(-0.45px); }
 }
 
-.animate-walk .walk-arms {
-  transform-origin: 12px 17px;
-  animation-direction: reverse;
-  animation-duration: 900ms;
-}
 
 /* Confirmation dialogs. The panel grows a touch rather than sliding, so
    it reads as appearing over the page rather than arriving from a
