@@ -577,11 +577,15 @@ export default function Byoa() {
           onSaved={() => savedAnalytics.refetch()}
         />
 
-        <Field label="Prompt" required>
+        <Field label="">
           {allTemplates.length > 0 && (
             <>
-              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
-                Pick a template
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-[11px] text-slate-500">
+                  or start from one of these
+                </span>
+                <div className="h-px flex-1 bg-white/10" />
               </div>
               {/* Picker grid — replaces the old <select> so the demo /
                   video story reads as "pick the analytic" instead of
@@ -685,7 +689,7 @@ export default function Byoa() {
                 onClick={() => setPromptOpen(true)}
                 className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
               >
-                or write a prompt yourself
+                or write the prompt yourself
               </button>
             </div>
           )}
@@ -1344,10 +1348,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <div className="text-xs font-medium text-slate-300 mb-1">
-        {label}
-        {required && <span className="text-rose-400 ml-1">*</span>}
-      </div>
+      {label && (
+        <div className="text-xs font-medium text-slate-300 mb-1">
+          {label}
+          {required && <span className="text-rose-400 ml-1">*</span>}
+        </div>
+      )}
       {children}
       {help && <div className="text-xs text-slate-500 mt-1">{help}</div>}
     </label>
