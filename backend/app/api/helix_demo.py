@@ -37,7 +37,7 @@ from app.crypto import decrypt_secret
 from app.db import get_session
 from app.helixdemo import compose as composer
 from app.helixdemo import generate
-from app.models import Connection
+from app.models import Connection, VerkadaCamera
 from app.models.verkada_api import VerkadaApiEndpoint
 from app.pricing import ledger
 
@@ -170,64 +170,116 @@ async def _resolve_path(session: AsyncSession, *words: str) -> str | None:
     return best[1] if best else None
 
 
+# Labels worth anchoring to. Person first: a sale rung up as somebody
+# walked in reads better than one stamped on a passing car.
+ANCHOR_LABELS = ("person", "vehicle")
+
+# Object search answers with 100 detections, newest first. Asking it for
+# a whole week in one call therefore returns the most recent hundred --
+# on a busy camera, the last few hours -- and every anchored event would
+# bunch at the end of the window instead of spreading across it, which
+# is the one thing this timing mode exists to avoid. Asking a day at a
+# time costs more calls and gets the spread. This caps how many.
+MAX_ANCHOR_CALLS = 20
+
+
 async def _detection_times(
     session: AsyncSession,
     client: VerkadaClient,
     camera_id: str,
     start: datetime,
     end: datetime,
-) -> list[datetime]:
+) -> tuple[list[datetime], str | None]:
     """Moments this camera actually saw a person or a vehicle.
 
     The most convincing timing there is: an event stamped at a second
     when somebody really walked through the door means clicking it in
     Command shows a person rather than an empty room.
 
-    Object *counts* are the wrong source — they are totals per bucket,
+    Object *counts* are the wrong source -- they are totals per bucket,
     not moments. What is wanted is the object search, which returns one
-    row per detection with the exact best frame.
+    row per detection with the exact best frame. Nothing here reads
+    webhooks: a webhook only fires for what the org configured alerts
+    for, so it would anchor to notifications rather than to everything
+    the camera saw.
 
-    Best effort throughout. A camera with detection history switched off
-    returns nothing, which is indistinguishable from a quiet week, so
-    every failure here falls back to a shaped-random timeline rather than
-    failing the seed.
+    Returns (times, why it came back empty). The reason matters because
+    the two ways of getting nothing look identical from here and mean
+    opposite things: a camera with History switched off will never
+    produce anchors however busy it is, while a camera with History on
+    and nothing in the window was genuinely quiet. Reporting "no
+    detection history" for both was wrong about half the time.
     """
+    cam = (
+        await session.execute(
+            select(VerkadaCamera).where(VerkadaCamera.camera_id == camera_id)
+        )
+    ).scalars().first()
+    raw = cam.raw if cam is not None and isinstance(cam.raw, dict) else {}
+    # ``is not False`` rather than truthiness: an uncached camera has
+    # neither flag, and refusing to look because we have not synced yet
+    # would be worse than asking and getting nothing.
+    flag_for = {"person": "people_history_enabled", "vehicle": "vehicle_history_enabled"}
+    labels = [x for x in ANCHOR_LABELS if raw.get(flag_for[x]) is not False]
+    if not labels:
+        return [], (
+            "People History and Vehicle History are both off on this camera, "
+            "so it has no detections to anchor to. Turn them on in Command."
+        )
+
     path = await _resolve_path(session, "object", "search")
     if not path:
         logger.info("no object-search endpoint in the catalog; skipping anchors")
-        return []
+        return [], "The Verkada API catalog has not been synced yet."
+
+    # Day-sized slices, walked backwards from now: a partial answer that
+    # covers the recent days is more useful than one that covers the
+    # oldest and stops.
+    slices: list[tuple[datetime, datetime]] = []
+    cursor = end
+    while cursor > start and (len(slices) + 1) * len(labels) <= MAX_ANCHOR_CALLS:
+        edge = max(start, cursor - timedelta(days=1))
+        slices.append((edge, cursor))
+        cursor = edge
 
     out: list[datetime] = []
-    for label in ("person", "vehicle"):
-        try:
-            result = await client.request(
-                method="GET",
-                path=path.replace("{camera_id}", camera_id),
-                query={
-                    "camera_id": camera_id,
-                    "label": label,
-                    "start_time": int(start.timestamp()),
-                    "end_time": int(end.timestamp()),
-                },
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.info("detection lookup failed (%s): %s", label, e)
-            continue
-        body = result.get("body") if isinstance(result, dict) else None
-        if not isinstance(body, dict):
-            continue
-        rows = body.get("detections") or body.get("object_detections") or []
-        for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, dict):
-                continue
-            ms = row.get("best_frame_ms") or row.get("first_seen_ms")
-            if not ms:
-                continue
+    for slice_start, slice_end in slices:
+        for label in labels:
             try:
-                out.append(datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc))
-            except (TypeError, ValueError, OSError):
+                result = await client.request(
+                    method="GET",
+                    path=path.replace("{camera_id}", camera_id),
+                    query={
+                        "camera_id": camera_id,
+                        "label": label,
+                        "start_time": int(slice_start.timestamp()),
+                        "end_time": int(slice_end.timestamp()),
+                    },
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.info("detection lookup failed (%s): %s", label, e)
                 continue
-    return out
+            body = result.get("body") if isinstance(result, dict) else None
+            if not isinstance(body, dict):
+                continue
+            rows = body.get("detections") or body.get("object_detections") or []
+            for row in rows if isinstance(rows, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                ms = row.get("best_frame_ms") or row.get("first_seen_ms")
+                if not ms:
+                    continue
+                try:
+                    out.append(datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc))
+                except (TypeError, ValueError, OSError):
+                    continue
+
+    if not out:
+        return [], (
+            "This camera has detection history on, but saw no people or "
+            "vehicles in that window."
+        )
+    return out, None
 
 
 @router.post("/seed")
@@ -250,10 +302,11 @@ async def seed(
     client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
 
     anchors: list[datetime] = []
+    anchor_note: str | None = None
     used_timing = body.timing
     if body.timing == "detections":
         now = datetime.now(timezone.utc)
-        anchors = await _detection_times(
+        anchors, anchor_note = await _detection_times(
             session,
             client,
             body.camera_id,
@@ -320,6 +373,7 @@ async def seed(
             "seed": seed_value,
             "timing": used_timing,
             "anchored_to_detections": bool(anchors),
+            "detections_note": anchor_note,
             "first_at": None,
             "last_at": None,
             "errors": [canary],
@@ -339,6 +393,10 @@ async def seed(
         "seed": seed_value,
         "timing": used_timing,
         "anchored_to_detections": bool(anchors),
+        # Why the detections mode produced nothing, when it did. "The
+        # camera has History off" and "the camera was quiet" both land
+        # on business-hours timing and want different things done next.
+        "detections_note": anchor_note,
         "first_at": events[0]["at"].isoformat() if events else None,
         "last_at": events[-1]["at"].isoformat() if events else None,
         # First few only: a hundred identical timeouts is not more

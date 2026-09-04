@@ -32,6 +32,7 @@ interface SeedResult {
   seed: number;
   timing: string;
   anchored_to_detections: boolean;
+  detections_note: string | null;
   first_at: string | null;
   last_at: string | null;
   errors: string[];
@@ -576,9 +577,7 @@ function DemoPanel({ connId }: { connId: string }) {
                 {span ? `Spread across ${span}` : "Spread across the window"}
                 {seed.data.anchored_to_detections
                   ? ", each one stamped at a moment the camera really saw a person or a vehicle"
-                  : seed.data.timing !== timing
-                    ? " — this camera had no detection history, so they follow business hours instead"
-                    : ", shaped like a working day rather than scattered evenly"}
+                  : ", shaped like a working day rather than scattered evenly"}
                 .
               </div>
               <div className="mt-2 text-xs text-slate-400">
@@ -586,6 +585,11 @@ function DemoPanel({ connId }: { connId: string }) {
                 search Helix for this event type. Run it again for a different
                 set — nothing here overwrites what you just posted.
               </div>
+              {seed.data.timing !== timing && seed.data.detections_note && (
+                <div className="mt-2 text-xs text-amber-300">
+                  {seed.data.detections_note} Business hours were used instead.
+                </div>
+              )}
               {seed.data.posted < seed.data.requested && (
                 <div className="mt-2 text-xs text-amber-300">
                   {(seed.data.requested - seed.data.posted).toLocaleString()} of{" "}
