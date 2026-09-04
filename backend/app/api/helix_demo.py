@@ -274,6 +274,21 @@ async def _detection_times(
                 except (TypeError, ValueError, OSError):
                     continue
 
+    # At warning, because uvicorn leaves the root logger there and an
+    # info line would be invisible. Worth the noise: every way this can
+    # go wrong -- a path that resolves to the wrong endpoint, timestamps
+    # in the wrong unit, a scope the key does not have -- shows up
+    # identically as zero detections and a quiet fallback to business
+    # hours. One line here is the difference between reading the answer
+    # and guessing at it.
+    logger.warning(
+        "helix demo anchors: %s detections for %s over %s day-slices of %s",
+        len(out),
+        camera_id,
+        len(slices),
+        ", ".join(labels),
+    )
+
     if not out:
         return [], (
             "This camera has detection history on, but saw no people or "
