@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.api import mqtt_config as mqtt_api
 from app.api import onvif as onvif_api
 from app.api import helix_demo as helix_demo_api
+from app.api import security as security_api
 from app.api import rtsp as rtsp_api
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
@@ -31,7 +32,8 @@ from app.api import (
     verkada_resources,
     webhook_events,
 )
-from app.auth import SESSION_COOKIE, verify_session_token
+from app.auth import SESSION_COOKIE, set_epoch, verify_session_token
+from app.security.surface import PUBLIC_PATH_PREFIXES
 from app.config import settings
 from app.pricing.gemini import refresh_gemini_pricing
 from app.queue import make_pool
@@ -47,6 +49,22 @@ async def lifespan(app: FastAPI):
     # save.
     from app.crypto import _fernet
     _fernet()
+    # Resolve the session signing key eagerly too, so a published-default
+    # SECRET_KEY is reported in the startup logs rather than discovered
+    # when somebody wonders why they were signed out.
+    from app.security.keys import session_key_status
+
+    session_key_status()
+    # The session epoch backs "sign out everywhere". Verifying a cookie
+    # runs on every request and must stay synchronous, so the value is
+    # cached in-process and loaded once here.
+    from app.settings_store import get_str as _get_setting
+
+    _raw_epoch = await _get_setting("session_epoch")
+    try:
+        set_epoch(int(_raw_epoch or 0))
+    except (TypeError, ValueError):
+        set_epoch(0)
     # Re-classify unknowns against the latest taxonomy.
     await reclassify_unknowns()
     # Seed Gemini pricing so cost_for() has rows on first request, even
@@ -80,7 +98,14 @@ async def lifespan(app: FastAPI):
 
 from app.brand import BRAND_NAME
 
-app = FastAPI(title=BRAND_NAME, version="0.3.0", lifespan=lifespan)
+app = FastAPI(
+    title=BRAND_NAME,
+    version="0.3.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,25 +119,9 @@ app.add_middleware(
 # Routes that bypass the session-cookie gate. Webhooks are public by
 # design (signature-verified, not cookie-verified) and the auth + tiny
 # public-config + health endpoints must work before the operator has
-# anything resembling a session.
-_PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
-    "/hooks",
-    "/api/auth",
-    "/api/config",
-    "/api/health",
-    # ONVIF is not unauthenticated — it authenticates differently. A
-    # camera client proves itself with a WS-UsernameToken digest inside
-    # the SOAP envelope, checked per operation in app/api/onvif.py, and
-    # has no way to obtain or present a session cookie. Leaving it behind
-    # this gate means the Connector gets a 401 it cannot interpret before
-    # any of that runs.
-    "/onvif",
-    # FastAPI's interactive docs — handy in dev, harmless in prod since
-    # they only describe the API surface, not its data.
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-)
+# anything resembling a session. The list itself lives in
+# app/security/surface.py so the security page can render the real one.
+_PUBLIC_PATH_PREFIXES = PUBLIC_PATH_PREFIXES
 
 
 @app.middleware("http")
@@ -158,6 +167,7 @@ app.include_router(mqtt_api.router)
 app.include_router(rtsp_api.router)
 app.include_router(helix_demo_api.router)
 app.include_router(onvif_api.router)
+app.include_router(security_api.router)
 app.include_router(settings_api.router)
 
 

@@ -979,6 +979,40 @@ async def run_byoa_upload(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  
         return {"status": "success"}
 
 
+async def keywatch_cron(ctx: dict[str, Any]) -> None:  # noqa: ARG001
+    """Poll Verkada's audit log for use of our key from an unexpected IP.
+
+    Opt-in and self-scheduling: the cron fires hourly, and the check
+    itself decides whether enough time has passed for the operator's
+    chosen interval. Doing it that way means changing the interval takes
+    effect immediately instead of at the next deploy.
+    """
+    from app.security import keywatch
+
+    if not await keywatch.is_enabled():
+        return
+    state = await keywatch.load_state()
+    interval = await keywatch.interval_hours()
+    last = state.get("last_check")
+    if last and interval > 1:
+        try:
+            elapsed = (
+                datetime.now(timezone.utc) - datetime.fromisoformat(str(last))
+            ).total_seconds()
+        except (TypeError, ValueError):
+            elapsed = None
+        if elapsed is not None and elapsed < interval * 3600 - 300:
+            return
+    async with SessionLocal() as session:
+        result = await keywatch.run_check(session)
+        await session.commit()
+    if result.get("alerts"):
+        logger.warning(
+            "keywatch: %s unexpected IP(s) using the watched Verkada key",
+            len(result["alerts"]),
+        )
+
+
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     functions = [run_flow, run_byoa, run_byoa_upload]
@@ -1001,5 +1035,8 @@ class WorkerSettings:
         cron(poll_mcp_cron, hour={1, 7, 13, 19}, minute=41, run_at_startup=True),
         # Every minute: fire any due schedule-trigger flows.
         cron(tick_schedule_flows, minute=set(range(60))),
+        # Hourly: has anyone else used our Verkada key? Cheap when the
+        # monitor is off (one settings read) and bounded when it is on.
+        cron(keywatch_cron, minute=53),
     ]
     max_tries = 1

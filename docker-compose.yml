@@ -37,7 +37,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://verkada:verkada@postgres:5432/vfusion
       REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY:-}
       FERNET_KEY: ${FERNET_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173}
       PUBLIC_WEBHOOK_BASE: ${PUBLIC_WEBHOOK_BASE:-}

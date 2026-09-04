@@ -30,6 +30,7 @@ from app.auth import (
     verify_session_token,
 )
 from app.db import get_session
+from app.security import throttle
 from app.settings_store import get_str, set_value
 
 
@@ -113,9 +114,23 @@ async def login(
             status_code=409,
             detail="No password is set yet — run the setup wizard first.",
         )
+    # Unlimited guesses against the one password guarding an app that
+    # holds a door-unlock capable API key is the kind of gap that only
+    # looks small until somebody scripts it.
+    wait = throttle.retry_after()
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {int(wait) + 1}s.",
+        )
     if not verify_password(body.password, stored):
+        cooldown = throttle.record_failure()
         # Single generic 401 — don't leak whether the password was close.
-        raise HTTPException(status_code=401, detail="Invalid password.")
+        detail = "Invalid password."
+        if cooldown:
+            detail += f" Too many attempts — locked for {int(cooldown)}s."
+        raise HTTPException(status_code=401, detail=detail)
+    throttle.record_success()
     _set_session_cookie(response)
     return AuthStatus(password_set=True, authenticated=True)
 

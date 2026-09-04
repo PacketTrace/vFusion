@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import Connections from "./Connections";
+import Security from "./Security";
 import Stats from "./Stats";
 
 import { ONBOARDING_QUERY_KEY } from "../components/OnboardingGate";
@@ -32,7 +33,11 @@ export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab");
   const tab =
-    requested === "connections" || requested === "stats" ? requested : "retention";
+    requested === "connections" ||
+    requested === "stats" ||
+    requested === "security"
+      ? requested
+      : "retention";
   const setTab = (next: string) => {
     const p = new URLSearchParams(searchParams);
     p.set("tab", next);
@@ -48,12 +53,15 @@ export default function Settings() {
             ? "Verkada orgs and Gemini keys this instance can use."
             : tab === "stats"
               ? "Counters for ingest, flow runs, spend and on-disk storage."
-              : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
+              : tab === "security"
+                ? "What this install stands on, what it exposes, and whether its credentials are being used by anyone else."
+                : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
         </p>
         <div className="mt-4 flex items-center gap-1 border-b border-white/10">
           {[
             { key: "retention", label: "Retention" },
             { key: "connections", label: "Connections" },
+            { key: "security", label: "Security" },
             { key: "stats", label: "Stats" },
           ].map((t) => (
             <button
@@ -73,6 +81,7 @@ export default function Settings() {
       </div>
 
       {tab === "connections" && <Connections />}
+      {tab === "security" && <Security />}
       {tab === "stats" && <Stats />}
       {tab === "retention" && (
       <>

@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     fernet_key: str = ""
     cors_origins: str = "http://localhost:5173"
+    # FastAPI's interactive docs. On by default because they are genuinely
+    # useful, and off is one line for anyone who would rather not publish a
+    # map of the API to whoever can reach the host.
+    enable_docs: bool = True
     # Set by named-tunnel deploys (Cloudflare Tunnel with a custom domain).
     # The Webhook Explorer banner displays this URL so users know what to paste
     # into Verkada Command. Quick-mode deploys auto-discover instead.
