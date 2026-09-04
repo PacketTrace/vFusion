@@ -869,42 +869,34 @@ export default function Byoa() {
         </div>
         <div className="border-t border-white/10 my-5" />
 
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-          Where it runs
+        {/* "Where it runs" described a deployment. This is a trial: one
+            shot against real footage to find out whether the analytic
+            works at all, before it is wired into anything that runs on
+            its own. Saying so is worth more than any tooltip explaining
+            a heading that was pointing at the wrong idea. */}
+        <div className="text-[11px] uppercase tracking-wider text-slate-400">
+          Try it on something real
         </div>
-        <Row>
-          <Field label="Verkada connection" required>
-            <select
-              value={verkadaConnId}
-              onChange={(e) => {
-                setVerkadaConnId(e.target.value);
-                setCameraId("");
-              }}
-              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-            >
-              <option value="">— pick —</option>
-              {verkadaConns.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Gemini connection" required>
-            <select
-              value={geminiConnId}
-              onChange={(e) => setGeminiConnId(e.target.value)}
-              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-            >
-              <option value="">— pick —</option>
-              {geminiConns.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </Row>
+        <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
+          One run against live, historical or uploaded footage, so you can see
+          what comes back before wiring it into a flow.
+        </p>
+
+        {/* Connections collapse to a line. They are plumbing — set once,
+            changed almost never — and leading with two dropdowns put the
+            apparatus ahead of the subject, which is the same mistake
+            this page already fixed by moving the prompt to the top. */}
+        <ConnectionsLine
+          verkadaConns={verkadaConns}
+          geminiConns={geminiConns}
+          verkadaConnId={verkadaConnId}
+          geminiConnId={geminiConnId}
+          onVerkada={(id) => {
+            setVerkadaConnId(id);
+            setCameraId("");
+          }}
+          onGemini={setGeminiConnId}
+        />
 
         {/* Source picker — primary mode-switch for the whole form, so it
             gets dedicated card styling instead of the smaller pill-style
@@ -914,11 +906,18 @@ export default function Byoa() {
             unmistakable at a glance — important because flipping the
             wrong way silently changes whether anything posts to Helix. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 -mt-1">
+          {/* The badge mirrors the one on Upload, and appears only when
+              this run would actually write. The two paths differ in the
+              one way that matters -- whether anything lands in Verkada
+              -- and only one of them was saying so. A trial that leaves
+              a real event behind should not have to be inferred from a
+              checkbox further down the page. */}
           <SourceCard
             active={source === "camera"}
             icon="🎥"
             title="Verkada camera"
-            tagline="Pull a clip or live frame from a real camera. Posts to Helix when configured."
+            tagline="Pull a clip or live frame from a real camera."
+            badge={postToHelix ? "WRITES TO HELIX" : undefined}
             onClick={() => {
               setSource("camera");
             }}
@@ -1220,6 +1219,13 @@ export default function Byoa() {
             to touch the toggle manually. */}
         {source === "camera" && (pickedTemplate || (prompt.trim() !== "" && prompt !== DEFAULT_PROMPT)) && (
         <div className="border-t border-white/10 pt-4 space-y-3">
+          {/* Its own group, because it is a different kind of decision
+              from the rest of the section. Everything above chooses what
+              to try the analytic on; this decides whether the trial
+              leaves anything behind in Verkada. */}
+          <div className="text-[11px] uppercase tracking-wider text-slate-400">
+            What happens to the result
+          </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -1521,6 +1527,97 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+/** Which org and which key, as a line rather than two dropdowns.
+ *
+ *  Nobody comes to this page to choose a connection; they come to try an
+ *  analytic. Showing the current pair and getting out of the way suits
+ *  how often it is actually changed — and the pickers are one click
+ *  behind it when it does need changing. Opens by itself when either
+ *  side is unset, because then it is not plumbing, it is the next thing
+ *  to do.
+ */
+function ConnectionsLine({
+  verkadaConns,
+  geminiConns,
+  verkadaConnId,
+  geminiConnId,
+  onVerkada,
+  onGemini,
+}: {
+  verkadaConns: Connection[];
+  geminiConns: Connection[];
+  verkadaConnId: string;
+  geminiConnId: string;
+  onVerkada: (id: string) => void;
+  onGemini: (id: string) => void;
+}) {
+  const incomplete = !verkadaConnId || !geminiConnId;
+  const [open, setOpen] = useState(incomplete);
+  const nameOf = (list: Connection[], id: string) =>
+    list.find((c) => c.id === id)?.name ?? "";
+
+  if (!open) {
+    return (
+      <div className="text-[11px] text-slate-500 mb-3">
+        <span className="text-slate-400">{nameOf(verkadaConns, verkadaConnId)}</span>
+        {" · "}
+        <span className="text-slate-400">{nameOf(geminiConns, geminiConnId)}</span>
+        {" — "}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="underline underline-offset-2 hover:text-slate-300"
+        >
+          change
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-3">
+      <Row>
+        <Field label="Verkada connection" required>
+          <select
+            value={verkadaConnId}
+            onChange={(e) => onVerkada(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+          >
+            <option value="">— pick —</option>
+            {verkadaConns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Gemini connection" required>
+          <select
+            value={geminiConnId}
+            onChange={(e) => onGemini(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+          >
+            <option value="">— pick —</option>
+            {geminiConns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Row>
+      {!incomplete && (
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-[11px] text-slate-500 hover:text-slate-300 mt-1"
+        >
+          done
+        </button>
+      )}
+    </div>
+  );
+}
 
 function Row({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>;
