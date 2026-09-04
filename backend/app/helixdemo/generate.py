@@ -50,8 +50,16 @@ def _money(value: float) -> str:
     return f"{value:.2f}"
 
 
+# Helix truncates a value past this, so a longer one is not a richer
+# demo -- it is a row that ends mid-word in Command.
+MAX_VALUE_CHARS = 200
+
+
 def _one_field(
-    rng: random.Random, spec: dict[str, Any], row: dict[str, Any]
+    rng: random.Random,
+    spec: dict[str, Any],
+    row: dict[str, Any],
+    fields: dict[str, Any],
 ) -> str:
     kind = str(spec.get("kind") or "choice")
 
@@ -74,8 +82,23 @@ def _one_field(
                 factor = float(str(row[driver]).replace(",", ""))
             except ValueError:
                 factor = 1.0
-            per = (low + high) / 2 / max(1.0, float(spec.get("scale_base", 4)))
-            value = per * factor * rng.uniform(0.72, 1.35)
+            # Per-unit comes from the driver's own ceiling: max total at
+            # max quantity. Deriving it from a mid-range guess instead
+            # made every basket over about eight items clamp to the
+            # maximum, so a ten-item sale and a fourteen-item sale rang
+            # up identical totals -- which is worse than random, because
+            # it looks deliberate.
+            driver_max = 0.0
+            driver_spec = fields.get(driver)
+            if isinstance(driver_spec, dict):
+                try:
+                    driver_max = float(driver_spec.get("max", 0) or 0)
+                except (TypeError, ValueError):
+                    driver_max = 0.0
+            if driver_max <= 0:
+                driver_max = float(spec.get("scale_base", 4) or 4)
+            per = high / max(1.0, driver_max)
+            value = per * factor * rng.uniform(0.78, 1.22)
             value = min(max(value, low), high)
         elif str(spec.get("skew")) == "low":
             # Most baskets are small. A flat distribution over 1..12 puts
@@ -98,7 +121,24 @@ def _one_field(
         if count <= 0:
             count = rng.randint(1, min(3, len(pool)))
         count = max(1, min(count, len(pool)))
-        return ", ".join(rng.sample(pool, count))
+        # Fill up to the character budget rather than to the count. A
+        # fourteen-item basket is a real basket, but fourteen product
+        # names is well past what Helix stores and what a row can show,
+        # so the list is as long as it can be and then says how much it
+        # left out.
+        chosen = rng.sample(pool, count)
+        out: list[str] = []
+        used = 0
+        for item in chosen:
+            if used + len(item) + 2 > MAX_VALUE_CHARS - 12:
+                break
+            out.append(item)
+            used += len(item) + 2
+        text = ", ".join(out)
+        remaining = count - len(out)
+        if remaining > 0:
+            text = f"{text} +{remaining} more"
+        return text
 
     if kind == "text":
         return str(_weighted(rng, spec.get("values") or [""], spec.get("weights")))
@@ -127,7 +167,10 @@ def build_row(rng: random.Random, fields: dict[str, Any]) -> dict[str, str]:
         spec = fields.get(name) or {}
         if not isinstance(spec, dict):
             continue
-        row[name] = _one_field(rng, spec, row)
+        # Truncated here as well as in the fields that know their own
+        # budget: a model can put a 400-character phrase in a "text"
+        # pool, and a value Helix cuts in half is worse than a short one.
+        row[name] = _one_field(rng, spec, row, fields)[:MAX_VALUE_CHARS]
     return row
 
 

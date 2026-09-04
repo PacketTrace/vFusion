@@ -48,6 +48,11 @@ router = APIRouter(prefix="/api/helix-demo", tags=["helix-demo"])
 class ComposeRequest(BaseModel):
     gemini_connection_id: UUID
     intent: str
+    # A second pass. The first answer is rarely wrong so much as not
+    # yours -- groceries when the customer sells timber -- and starting
+    # over loses the parts that were right.
+    previous: dict[str, Any] | None = None
+    refinement: str = ""
 
 
 class SeedRequest(BaseModel):
@@ -87,7 +92,9 @@ async def compose_demo(
         raise HTTPException(status_code=400, detail="describe the integration first")
 
     try:
-        raw, model = composer.compose(api_key, body.intent)
+        raw, model = composer.compose(
+            api_key, body.intent, body.previous, body.refinement
+        )
         data = composer.validate(raw)
     except ValueError as e:
         # A model that returned a mismatched type and spec. Worth saying
@@ -105,6 +112,11 @@ async def compose_demo(
     return {
         **data,
         "model": model,
+        # What the model actually said, before validation tidied it.
+        # Worth being able to look at when the result is surprising:
+        # the difference between "the model chose that" and "we did
+        # something to it" is otherwise unknowable from the outside.
+        "raw": raw,
         "sample": [
             {"attributes": e["attributes"], "at": e["at"].isoformat()}
             for e in sample

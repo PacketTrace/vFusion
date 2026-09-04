@@ -37,8 +37,15 @@ events. A generator expands the specification, so describe the shape of
 the data rather than listing rows.
 
 Rules that matter:
-- 3 to 5 attributes. Fewer and the demo is thin; more and a Helix row
-  is unreadable.
+- Include an attribute for EVERY field the operator named. They listed
+  what they want to see; dropping one to stay tidy is the one mistake
+  that makes the demo not theirs. Add a couple more only if the system
+  described would obviously carry them.
+- Up to 10 attributes. Verkada allows more than a demo needs.
+- Helix stores at most 200 characters per value, and truncates past it.
+  Keep pools to short names, and never design a field whose typical
+  value is a long list -- a row cut off mid-word is worse than a
+  shorter one.
 - Every Helix attribute type is "string". Numbers, money and booleans
   are all strings.
 - Attribute names are Title Case and human readable.
@@ -68,6 +75,8 @@ Field kinds available:
 basket sizes, queue lengths and durations actually look like.
 "scale_base" is the quantity at which a scaled value sits mid-range.
 
+__REFINEMENT__
+
 Respond with ONLY this JSON object:
 
 {
@@ -90,11 +99,42 @@ Respond with ONLY this JSON object:
 """
 
 
-def compose(api_key: str, intent: str) -> tuple[dict[str, Any], str]:
+REFINE_BLOCK = """
+You already produced this, and the operator wants it changed:
+
+__PREVIOUS__
+
+What they want different:
+
+__NOTE__
+
+Keep everything they did not comment on. A refinement is an adjustment,
+not a fresh start -- changing the product pool should not also rename
+the event type and rewrite the attributes they were happy with.
+"""
+
+
+def compose(
+    api_key: str,
+    intent: str,
+    previous: dict[str, Any] | None = None,
+    refinement: str = "",
+) -> tuple[dict[str, Any], str]:
     """Generate a type and a spec. Returns (parsed, model that answered)."""
     from google import genai
 
-    prompt = COMPOSE_PROMPT.replace("__INTENT__", intent.strip())
+    refine = ""
+    if previous and refinement.strip():
+        refine = (
+            REFINE_BLOCK
+            .replace("__PREVIOUS__", _json.dumps(previous, indent=2)[:6000])
+            .replace("__NOTE__", refinement.strip())
+        )
+    prompt = (
+        COMPOSE_PROMPT
+        .replace("__INTENT__", intent.strip())
+        .replace("__REFINEMENT__", refine)
+    )
     client = genai.Client(api_key=api_key)
     last: Exception | None = None
     for model in COMPOSE_MODELS:

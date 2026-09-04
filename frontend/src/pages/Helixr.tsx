@@ -22,6 +22,7 @@ interface ComposedDemo {
   model: string;
   helix_event_type: { name: string; event_schema: Record<string, string> };
   spec: Record<string, unknown>;
+  raw: unknown;
   sample: { attributes: Record<string, string>; at: string }[];
 }
 
@@ -74,17 +75,17 @@ export default function Helixr() {
 
   return (
     <div className="space-y-6">
-      {/* Its own page now rather than a Workbench tab. The header moved
-          with it — a destination without one reads as a fragment of
-          somewhere else. */}
-      <div className="max-w-3xl">
+      {/* Verkada's own framing, near enough to their words: Helix is an
+          event search and integration feature in Command that connects
+          third-party data to camera footage. One line, because the two
+          tabs below say what you can do here and a second paragraph
+          restating the first is just something to scroll past. */}
+      <div className="max-w-2xl">
         <h1 className="text-2xl font-semibold text-white">Helix</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Verkada Helix attaches structured events to a camera's timeline, so
-          Command can search and filter footage by what happened rather than
-          only by when. This is where the event types those events are written
-          into are managed — and where a timeline can be filled with
-          believable sample data before the system that would feed it exists.
+          Connects third-party data to camera footage, so you can find video by
+          what happened rather than scrub for it. An event type is the shape
+          that data arrives in.
         </p>
       </div>
 
@@ -100,23 +101,6 @@ export default function Helixr() {
         </Card>
       ) : (
         <>
-          {/* What a Helix event type is, in the terms someone arriving
-              here has. The tab blurb says what the page does; this says
-              why the thing it manages exists, which is the part that is
-              not guessable from a list of names and attributes. */}
-          <div className="text-[11px] text-slate-500 leading-relaxed max-w-3xl">
-            A Helix event type is a schema Verkada stores against a camera's
-            timeline — a name and a set of typed attributes. When an analytic
-            runs, its answer is written into one of these, and Command can then
-            search and filter footage by those attributes.
-            <br />
-            Anything that writes to Helix has to name a type that already
-            exists on the org, which is what this page is for: create one,
-            change its attributes, or remove one nothing posts against any
-            more. Renaming or removing an attribute that events were already
-            written with will break searches that rely on it.
-          </div>
-
           <div className="flex items-center gap-1 border-b border-white/10">
             {([
               ["types", "Event types"],
@@ -227,20 +211,31 @@ function DemoPanel({ connId }: { connId: string }) {
   );
   const [draft, setDraft] = useState<ComposedDemo | null>(null);
   const [typeUid, setTypeUid] = useState("");
+  // The name is editable before it is created. The model picks a good
+  // one often enough to keep, and not often enough to be stuck with.
+  const [typeName, setTypeName] = useState("");
+  const [refinement, setRefinement] = useState("");
   const [err, setErr] = useState<string | null>(null);
   if (!geminiId && geminiConns.length > 0 && geminiConns[0]) {
     setGeminiId(geminiConns[0].id);
   }
 
   const compose = useMutation({
-    mutationFn: () =>
+    mutationFn: (note: string) =>
       apiPost<ComposedDemo>("/api/helix-demo/compose", {
         gemini_connection_id: geminiId,
         intent,
+        // Only on a second pass. The model is told to keep everything
+        // the note did not mention, so refining the product pool does
+        // not also rename the type.
+        previous: note ? draft : null,
+        refinement: note,
       }),
     onSuccess: (d) => {
       setErr(null);
       setDraft(d);
+      setTypeName(d.helix_event_type.name);
+      setRefinement("");
       // If a type with this name already exists, seed into it rather
       // than making a near-duplicate the customer then has to tell
       // apart in Command.
@@ -255,7 +250,7 @@ function DemoPanel({ connId }: { connId: string }) {
   const createType = useMutation({
     mutationFn: () =>
       apiPost<HelixEventType>(`/api/connections/${connId}/helix-event-types`, {
-        name: draft!.helix_event_type.name,
+        name: typeName.trim() || draft!.helix_event_type.name,
         event_schema: draft!.helix_event_type.event_schema,
       }),
     onSuccess: (row) => {
@@ -315,7 +310,7 @@ function DemoPanel({ connId }: { connId: string }) {
           </select>
           <button
             type="button"
-            onClick={() => compose.mutate()}
+            onClick={() => compose.mutate("")}
             disabled={!intent.trim() || !geminiId || compose.isPending}
             className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
           >
@@ -365,7 +360,11 @@ function DemoPanel({ connId }: { connId: string }) {
                 {draft.sample.map((row, i) => (
                   <tr key={i}>
                     {attrs.map((a) => (
-                      <td key={a} className="px-2 py-1 whitespace-nowrap">
+                      <td
+                        key={a}
+                        title={row.attributes[a]}
+                        className="px-2 py-1 max-w-[22rem] truncate"
+                      >
                         {row.attributes[a] || "—"}
                       </td>
                     ))}
@@ -376,8 +375,42 @@ function DemoPanel({ connId }: { connId: string }) {
           </div>
           <p className="text-[10px] text-slate-500 mt-1">
             A sample from the same generator that will fill the timeline.
-            Design it again if the values do not sound like your customer.
           </p>
+
+          {/* Refining beats starting over. The first answer is usually
+              right in shape and wrong in flavour — groceries when the
+              customer sells timber — and re-describing the whole thing
+              to fix that loses the parts that were already right. */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            <input
+              value={refinement}
+              onChange={(e) => setRefinement(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && refinement.trim()) {
+                  compose.mutate(refinement.trim());
+                }
+              }}
+              placeholder="not quite? e.g. these should be hardware store items"
+              className="flex-1 min-w-[18rem] px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs placeholder:text-slate-500 placeholder:italic"
+            />
+            <button
+              type="button"
+              onClick={() => compose.mutate(refinement.trim())}
+              disabled={!refinement.trim() || compose.isPending}
+              className="text-xs px-3 py-1.5 rounded border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+            >
+              {compose.isPending ? "Adjusting…" : "Adjust it"}
+            </button>
+          </div>
+
+          <details className="mt-2">
+            <summary className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer">
+              raw model output
+            </summary>
+            <pre className="mt-1 text-[10px] font-mono text-slate-500 bg-black/40 border border-white/10 rounded p-2 max-h-64 overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(draft.raw, null, 2)}
+            </pre>
+          </details>
         </Card>
       )}
 
@@ -420,16 +453,26 @@ function DemoPanel({ connId }: { connId: string }) {
           </div>
 
           {!typeUid && (
-            <button
-              type="button"
-              onClick={() => createType.mutate()}
-              disabled={createType.isPending}
-              className="mt-2 text-sm px-3 py-1.5 rounded border border-emerald-700/60 bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/60 disabled:opacity-40"
-            >
-              {createType.isPending
-                ? "Creating…"
-                : `Create "${draft.helix_event_type.name}" on this org`}
-            </button>
+            <div className="flex flex-wrap items-end gap-2 mt-2">
+              <label className="flex-1 min-w-[16rem]">
+                <div className="text-xs text-slate-300 mb-1">
+                  Name it before creating
+                </div>
+                <input
+                  value={typeName}
+                  onChange={(e) => setTypeName(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => createType.mutate()}
+                disabled={createType.isPending || !typeName.trim()}
+                className="text-sm px-3 py-1.5 rounded border border-emerald-700/60 bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/60 disabled:opacity-40"
+              >
+                {createType.isPending ? "Creating…" : "Create on this org"}
+              </button>
+            </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
