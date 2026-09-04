@@ -356,179 +356,21 @@ button:not(:disabled):active {
 }
 
 /* ---- Brand mark -----------------------------------------------------
-   An atom: three orbital rings at fixed tilts, each turning at its own
-   rate with a particle riding it, around a lit core.
+   Sizing only. The glyph — rings, electrons, nucleus, glow — is drawn
+   and styled by components/VfusionAtom.tsx, which generates its own CSS
+   from the CONFIG block at the top of that file. Colours and geometry
+   appear in both the markup and the stylesheet, so they are kept in one
+   place rather than half here and half there.
 
    Every earlier attempt drew the orbit around the wordmark itself, which
-   cannot work in a 56px header — wide enough to read means tall enough
-   to leave the bar. A compact glyph sidesteps that entirely.
-
-   Warm orange against violet and blue, thin strokes, glow from
-   drop-shadow rather than a blur filter, which is far cheaper to
-   composite for something that never stops moving. Decorative:
-   aria-hidden, and static under reduced motion, where it still reads as
-   an atom rather than as something broken. */
+   cannot work in a 56px header: wide enough to read means tall enough to
+   leave the bar. A compact glyph sidesteps that entirely. */
 
 .brand-atom {
   width: 24px;
   height: 24px;
   flex: none;
   overflow: visible;
-}
-
-/* Cartoon atom, not instrument panel.
- *
- * The earlier version was drawn like lab equipment: hairline strokes, a
- * nervous flicker, a slow travelling arc. Read at 22px it mostly read as
- * grey. This one is built the way an animated title card is -- fat
- * strokes, saturated colour, big glossy electrons and enough speed to
- * feel keen -- because at this size boldness is legibility, and every
- * subtlety is a detail nobody can see.
- */
-
-.atom-ring ellipse {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-}
-
-.atom-ring {
-  /* transform-box: view-box is load-bearing. transform-origin lengths are
-     CSS pixels, but 20 is a viewBox user unit — they coincide only at
-     100% zoom. At any other zoom each ring rotated about a point drifted
-     off centre and the three flew apart. Anchoring percentages to the
-     viewBox makes the origin the real centre at every scale. */
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: atom-spin 3.4s linear infinite;
-}
-
-/* The comet trail behind each electron.
- *
- * A fixed dash rather than an animated one. The electron sits at path
- * position 0 of its ellipse -- SVG starts an ellipse at (cx+rx, cy),
- * which is exactly where the particle is -- so a dash of 16 units with
- * the offset pulling it backwards lands immediately behind it, and then
- * rides the same rotation. No animation, no sync to maintain, and the
- * paint-level dashoffset animation this replaces is gone entirely.
- *
- * pathLength normalises the ellipse to 100 units, so 16 means 16% of the
- * orbit rather than a number that changes if the geometry does. */
-.atom-trail {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-dasharray: 16 84;
-  stroke-dashoffset: 16;
-  opacity: 0.45;
-}
-
-/* Teal, orange and violet: the palette of every cartoon atom drawn
-   since the sixties, and it survives being 24 pixels wide. */
-.atom-ring-a {
-  color: rgb(45 212 191);
-  filter: drop-shadow(0 0 2px rgb(45 212 191 / 0.85));
-}
-
-.atom-ring-b {
-  color: rgb(251 146 60);
-  animation-duration: 4.6s;
-  animation-direction: reverse;
-  filter: drop-shadow(0 0 2px rgb(251 146 60 / 0.85));
-}
-
-.atom-ring-c {
-  color: rgb(192 132 252);
-  animation-duration: 3.9s;
-  filter: drop-shadow(0 0 2px rgb(192 132 252 / 0.85));
-}
-
-/* Big, white-hot, and glossy. The particles are the thing the eye
-   follows, so they are drawn to be followed: larger than the stroke
-   that carries them, lit from their own colour, and swelling as they
-   come past the front.
- *
- * The depth cue is what keeps it an atom rather than three flat loops --
- * dim and small through the far half, bright and large through the near
- * half, phase-locked to its ring because the two animations share a
- * duration and a start frame. */
-.atom-particle {
-  fill: rgb(255 255 255);
-  filter: drop-shadow(0 0 3px currentColor);
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  animation: atom-depth 3.4s linear infinite;
-}
-
-.atom-particle-b {
-  animation-duration: 4.6s;
-  animation-direction: reverse;
-}
-
-.atom-particle-c {
-  animation-duration: 3.9s;
-}
-
-/* A nucleus that glows rather than flickers. The unsteady version read
-   as failing hardware; a cartoon atom's core is confident. */
-.atom-core {
-  fill: rgb(255 251 235);
-  filter: drop-shadow(0 0 5px rgb(251 146 60));
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: atom-core-glow 2.2s var(--ease-in-out) infinite;
-}
-
-/* The pop. Quick and punchy rather than a slow swell, and rare enough
-   that the eye never learns its timing. */
-.atom-halo {
-  fill: none;
-  stroke: rgb(251 146 60);
-  stroke-width: 1.6;
-  opacity: 0;
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: atom-pop 4.7s var(--ease-out) infinite;
-}
-
-@keyframes atom-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Extremes at 25% and 75% -- the top and bottom of the ellipse, the two
-   points furthest from the plane of the screen. */
-@keyframes atom-depth {
-  0%, 100% { transform: scale(1); opacity: 0.95; }
-  25% { transform: scale(0.55); opacity: 0.4; }
-  50% { transform: scale(1); opacity: 0.95; }
-  75% { transform: scale(1.35); opacity: 1; }
-}
-
-@keyframes atom-core-glow {
-  0%, 100% { transform: scale(1); opacity: 0.92; }
-  50% { transform: scale(1.14); opacity: 1; }
-}
-
-@keyframes atom-pop {
-  0%, 78% { opacity: 0; transform: scale(1); }
-  84% { opacity: 0.7; }
-  100% { opacity: 0; transform: scale(3.6); }
-}
-
-/* Movement goes, colour stays. The glyph still reads as an atom rather
-   than as something that failed to load. */
-@media (prefers-reduced-motion: reduce) {
-  .atom-ring,
-  .atom-particle,
-  .atom-core,
-  .atom-halo {
-    animation: none;
-  }
-  .atom-halo {
-    display: none;
-  }
 }
 
 /* ON AIR.

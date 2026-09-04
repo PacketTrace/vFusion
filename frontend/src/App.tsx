@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 
 import AuthGate from "./components/AuthGate";
+import VfusionAtom from "./components/VfusionAtom";
 import OnboardingGate from "./components/OnboardingGate";
 import { apiPost } from "./lib/api";
 import { useBrand } from "./lib/brand";
@@ -71,7 +72,7 @@ function AppShell() {
   // Everything animated in the glyph speeds up together, or the parts
   // that did not would drift out of the relationship they were tuned to.
   const markRef = useRef<HTMLDivElement>(null);
-  const ANIMATED = ".atom-ring, .atom-particle, .atom-core, .atom-halo";
+  const ANIMATED = ".ring, .nucleus";
   const setOrbitRate = (rate: number) => {
     markRef.current?.querySelectorAll(ANIMATED).forEach((el) => {
       for (const anim of el.getAnimations()) {
@@ -93,100 +94,17 @@ function AppShell() {
     <div className="h-full flex flex-col">
       <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
-          {/* An atom rather than something orbiting the word: rings at
-              three tilts turning at different rates, a particle riding
-              each, and a lit core. Compact and self-contained, which is
-              what every previous attempt was missing — a track drawn
-              around the letters is either too big for the header or too
-              tight to read. */}
+          {/* Compact and self-contained, which is what every earlier
+              attempt was missing — a track drawn around the letters is
+              either too big for a 56px header or too tight to read. The
+              glyph itself lives in components/VfusionAtom.tsx. */}
           <div
             ref={markRef}
             onMouseEnter={() => setOrbitRate(2.6)}
             onMouseLeave={() => setOrbitRate(1)}
             className="brand-mark flex items-center gap-1 font-semibold text-white tracking-tight select-none"
           >
-            <svg
-              viewBox="0 0 40 40"
-              className="brand-atom"
-              aria-hidden="true"
-              focusable="false"
-            >
-              {/* Each orbit is a tilt group holding a ring, a trail and
-                  a particle, all riding one rotation. The particle dims
-                  and shrinks on the half of the orbit that reads as
-                  behind the core — phase-locked, because that animation
-                  shares a duration and a start frame with the ring's.
-                  That depth cue is what stops three ellipses reading as
-                  three flat loops.
-
-                  The trail is a fixed dash rather than an animated one.
-                  SVG starts an ellipse at (cx+rx, cy), which is exactly
-                  where the particle sits, so a dash pinned to the start
-                  of the path lands right behind it and then travels with
-                  it — a comet tail with nothing to keep in sync. */}
-              <g transform="rotate(0 20 20)">
-                <g className="atom-ring atom-ring-a">
-                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <ellipse
-                    className="atom-trail"
-                    cx="20"
-                    cy="20"
-                    rx="17"
-                    ry="6.5"
-                    pathLength={100}
-                  />
-                  <circle
-                    className="atom-particle atom-particle-a"
-                    cx="37"
-                    cy="20"
-                    r="2.1"
-                  />
-                </g>
-              </g>
-              <g transform="rotate(60 20 20)">
-                <g className="atom-ring atom-ring-b">
-                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <ellipse
-                    className="atom-trail"
-                    cx="20"
-                    cy="20"
-                    rx="17"
-                    ry="6.5"
-                    pathLength={100}
-                  />
-                  <circle
-                    className="atom-particle atom-particle-b"
-                    cx="37"
-                    cy="20"
-                    r="2.1"
-                  />
-                </g>
-              </g>
-              <g transform="rotate(120 20 20)">
-                <g className="atom-ring atom-ring-c">
-                  <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <ellipse
-                    className="atom-trail"
-                    cx="20"
-                    cy="20"
-                    rx="17"
-                    ry="6.5"
-                    pathLength={100}
-                  />
-                  <circle
-                    className="atom-particle atom-particle-c"
-                    cx="37"
-                    cy="20"
-                    r="2.1"
-                  />
-                </g>
-              </g>
-              {/* Drawn after the rings so the core sits in front of the
-                  far halves and behind nothing — the one place a flat
-                  SVG can cheat depth for free. */}
-              <circle className="atom-halo" cx="20" cy="20" r="3" />
-              <circle className="atom-core" cx="20" cy="20" r="3.4" />
-            </svg>
+            <VfusionAtom />
             <span>{brand}</span>
           </div>
           <nav className="flex items-center gap-1">
