@@ -333,7 +333,9 @@ async def keywatch_check(
     from datetime import datetime, timezone
 
     try:
-        state = await keywatch.run_check(session)
+        state = await keywatch.run_check(
+            session, budget_sec=keywatch.INTERACTIVE_BUDGET_SEC
+        )
         await session.commit()
         return state
     except Exception as e:  # noqa: BLE001

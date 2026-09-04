@@ -72,6 +72,7 @@ interface KeywatchState {
   events_seen: number;
   scanned_rows?: number;
   requests_used: number;
+  coverage_gap: { from: number; to: number; note: string } | null;
   truncated?: boolean;
 }
 
@@ -478,6 +479,12 @@ export default function Security() {
           )}
         </div>
 
+        {st.coverage_gap && (
+          <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200">
+            Coverage gap: {st.coverage_gap.note} Part of the last window was
+            never scanned.
+          </div>
+        )}
         {st.last_error && (
           <div className="mt-3 rounded border border-rose-500/30 bg-rose-500/5 p-2 text-xs text-rose-200">
             Last check failed: {st.last_error}

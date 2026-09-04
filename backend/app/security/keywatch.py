@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -67,6 +68,14 @@ DEFAULT_INTERVAL_HOURS = 1
 # advances over what was actually read.
 MAX_PAGES = 50
 PAGE_SIZE = 200
+
+# A wall-clock ceiling, separate from the page cap. A browser waiting on
+# a request has no way to distinguish "still working" from "dead", so an
+# interactive check returns partial results rather than being right
+# eventually. The cursor only advances over what was actually read, so a
+# short cycle costs nothing but a later catch-up.
+INTERACTIVE_BUDGET_SEC = 20.0
+CRON_BUDGET_SEC = 240.0
 
 # Never reach back further than this on a first run or after a long
 # outage. Without it, a cursor that is weeks stale would try to read
@@ -111,6 +120,7 @@ def blank_state() -> dict[str, Any]:
         "last_error": None,
         "events_seen": 0,
         "requests_used": 0,
+        "coverage_gap": None,
     }
 
 
@@ -137,18 +147,33 @@ async def save_state(session: AsyncSession, state: dict[str, Any]) -> None:
 
 
 async def _fetch_window(
-    client: VerkadaClient, start: int, end: int
-) -> tuple[list[dict[str, Any]], int, bool]:
+    client: VerkadaClient, start: int, end: int, budget_sec: float
+) -> tuple[list[dict[str, Any]], int, bool, int]:
     """Every audit row between two epoch seconds.
 
-    Returns (rows, requests made, whether it stopped early). Stopping
-    early is not an error: the cursor advances only over what was read,
-    so the remainder arrives next cycle.
+    Returns (rows, requests, stopped early, last timestamp reached).
+
+    Stopping early leaves a hole. Pages arrive newest-first, so a
+    truncated read has the recent end of the window and is missing the
+    older part -- and the cursor still has to advance, because falling
+    behind permanently is worse than one gap. The gap is therefore
+    recorded and shown rather than swallowed: a monitor that quietly
+    skipped an hour is exactly the hour worth knowing about.
     """
     rows: list[dict[str, Any]] = []
     token: str | None = None
+    seen_tokens: set[str] = set()
     requests = 0
-    for _ in range(MAX_PAGES):
+    deadline = time.monotonic() + budget_sec
+    for page in range(MAX_PAGES):
+        if time.monotonic() > deadline:
+            logger.warning(
+                "keywatch: stopping at page %s — %.0fs budget spent, %s rows so far",
+                page,
+                budget_sec,
+                len(rows),
+            )
+            return rows, requests, True, 0
         query: dict[str, Any] = {
             "start_time": start,
             "end_time": end,
@@ -168,13 +193,23 @@ async def _fetch_window(
             raise RuntimeError("audit log returned an unexpected body")
         page = body.get("audit_logs")
         rows.extend(r for r in (page or []) if isinstance(r, dict))
+        logger.warning(
+            "keywatch: page %s -> %s rows (%s total)", page, len(page or []), len(rows)
+        )
         token = body.get("next_page_token") or None
-        if not token:
-            return rows, requests, False
-    return rows, requests, True
+        # Three ways to be done. A page shorter than the size asked for
+        # is the end of the data; a repeated token means the API is not
+        # advancing and looping on it would burn the whole page budget
+        # re-reading one page.
+        if not token or len(page or []) < PAGE_SIZE or token in seen_tokens:
+            return rows, requests, False, 0
+        seen_tokens.add(token)
+    return rows, requests, True, 0
 
 
-async def run_check(session: AsyncSession) -> dict[str, Any]:
+async def run_check(
+    session: AsyncSession, budget_sec: float = CRON_BUDGET_SEC
+) -> dict[str, Any]:
     """One polling cycle. Returns the updated state.
 
     Never raises: a monitor whose failures are exceptions somewhere in a
@@ -234,8 +269,23 @@ async def run_check(session: AsyncSession) -> dict[str, Any]:
         logger.info("keywatch heartbeat failed: %s", e)
 
     try:
-        rows, used, truncated = await _fetch_window(client, start, now_s)
+        logger.warning(
+            "keywatch: scanning %s..%s (%ss) with a %.0fs budget",
+            start,
+            now_s,
+            now_s - start,
+            budget_sec,
+        )
+        rows, used, truncated, _ = await _fetch_window(
+            client, start, now_s, budget_sec
+        )
         requests_used += used
+        logger.warning(
+            "keywatch: read %s rows in %s request(s), truncated=%s",
+            len(rows),
+            used,
+            truncated,
+        )
     except Exception as e:  # noqa: BLE001
         state["last_error"] = str(e)
         state["requests_used"] = requests_used
@@ -328,6 +378,17 @@ async def run_check(session: AsyncSession) -> dict[str, Any]:
             "scanned_rows": len(rows),
             "requests_used": requests_used,
             "truncated": truncated,
+            # Named, not implied. If this is set, some of the window was
+            # never looked at.
+            "coverage_gap": (
+                {
+                    "from": start,
+                    "to": now_s,
+                    "note": "Hit the time budget before reading the whole window.",
+                }
+                if truncated
+                else None
+            ),
         }
     )
     await save_state(session, state)
