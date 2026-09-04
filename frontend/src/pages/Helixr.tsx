@@ -225,9 +225,13 @@ function DemoPanel({ connId }: { connId: string }) {
   const [draft, setDraft] = useState<ComposedDemo | null>(null);
   // Names for the result message. Both lists are already loaded for the
   // pickers, so there is nothing to fetch.
+  const allCameras = cameras.data ?? [];
+  const onlineCameras = allCameras.filter(
+    (c) => (c.status ?? "").toLowerCase() !== "offline",
+  );
+  const offlineCount = allCameras.length - onlineCameras.length;
   const cameraName =
-    (cameras.data ?? []).find((c) => c.camera_id === cameraId)?.name ||
-    "this camera";
+    allCameras.find((c) => c.camera_id === cameraId)?.name || "this camera";
   const [typeUid, setTypeUid] = useState("");
   // The name is editable before it is created. The model picks a good
   // one often enough to keep, and not often enough to be stuck with.
@@ -456,12 +460,25 @@ function DemoPanel({ connId }: { connId: string }) {
                 className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
               >
                 <option value="">— pick a camera —</option>
-                {(cameras.data ?? []).map((c) => (
+                {onlineCameras.map((c) => (
                   <option key={c.camera_id} value={c.camera_id}>
                     {c.name ?? c.camera_id}
                   </option>
                 ))}
               </select>
+              {offlineCount > 0 && (
+                <div className="text-[11px] text-slate-500 mt-1">
+                  {offlineCount} offline{" "}
+                  {offlineCount === 1 ? "camera is" : "cameras are"} hidden —
+                  there would be no footage under the events.
+                </div>
+              )}
+              {allCameras.length > 0 && onlineCameras.length === 0 && (
+                <div className="text-[11px] text-amber-300 mt-1">
+                  Every known camera is offline. Sync cameras on the
+                  Connections page if that looks wrong.
+                </div>
+              )}
             </label>
             <label className="block">
               <div className="text-xs text-slate-300 mb-1">Event type</div>
