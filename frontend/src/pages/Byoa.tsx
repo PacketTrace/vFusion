@@ -2157,14 +2157,32 @@ function MakeItRun({
 
   // Arriving from a run means the intent is already "automate this", so
   // put it on screen rather than leaving it below the fold.
+  //
+  // Aligned to the bottom, not the centre: this panel is the last thing
+  // on the page, so centring it can only ever leave its lower half off
+  // screen — including the button the whole trip was for.
+  //
+  // And scrolled more than once. Everything above here — cameras,
+  // templates, connections — is still loading when this first fires, so
+  // the page grows underneath the scroll and the panel ends up below
+  // where the browser just went. That is why it landed part way. A
+  // repeat on the next frame and again once the queries have had time
+  // to land costs nothing and is what makes it arrive.
   useEffect(() => {
     if (!defaultOpen) return;
-    panelRef.current?.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-      block: "center",
-    });
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const bring = () =>
+      panelRef.current?.scrollIntoView({
+        behavior: reduced ? "auto" : "smooth",
+        block: "end",
+      });
+    bring();
+    const frame = requestAnimationFrame(bring);
+    const settled = window.setTimeout(bring, 450);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(settled);
+    };
   }, [defaultOpen]);
 
   if (!open) {
