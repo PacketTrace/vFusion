@@ -70,7 +70,7 @@ function AppShell() {
   // Everything animated in the glyph speeds up together, or the parts
   // that did not would drift out of the relationship they were tuned to.
   const markRef = useRef<HTMLDivElement>(null);
-  const ANIMATED = ".atom-ring, .atom-arc, .atom-particle, .atom-core, .atom-halo";
+  const ANIMATED = ".atom-ring, .atom-particle, .atom-core, .atom-halo";
   const setOrbitRate = (rate: number) => {
     markRef.current?.querySelectorAll(ANIMATED).forEach((el) => {
       for (const anim of el.getAnimations()) {
@@ -110,20 +110,24 @@ function AppShell() {
               aria-hidden="true"
               focusable="false"
             >
-              {/* Each orbit is a tilt group holding a ring and a
-                  particle. The particle rides the ring's own rotation,
-                  and dims and shrinks on the half of the orbit that
-                  reads as behind the core — phase-locked because the two
-                  animations share a duration and a start. That depth cue
-                  is what stops three ellipses reading as three flat
-                  loops. The second, dashed ellipse is a bright arc that
-                  travels the ring: the trace of something moving, on a
-                  ring that is otherwise just geometry. */}
+              {/* Each orbit is a tilt group holding a ring, a trail and
+                  a particle, all riding one rotation. The particle dims
+                  and shrinks on the half of the orbit that reads as
+                  behind the core — phase-locked, because that animation
+                  shares a duration and a start frame with the ring's.
+                  That depth cue is what stops three ellipses reading as
+                  three flat loops.
+
+                  The trail is a fixed dash rather than an animated one.
+                  SVG starts an ellipse at (cx+rx, cy), which is exactly
+                  where the particle sits, so a dash pinned to the start
+                  of the path lands right behind it and then travels with
+                  it — a comet tail with nothing to keep in sync. */}
               <g transform="rotate(0 20 20)">
                 <g className="atom-ring atom-ring-a">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
                   <ellipse
-                    className="atom-arc"
+                    className="atom-trail"
                     cx="20"
                     cy="20"
                     rx="17"
@@ -134,7 +138,7 @@ function AppShell() {
                     className="atom-particle atom-particle-a"
                     cx="37"
                     cy="20"
-                    r="1.5"
+                    r="2.1"
                   />
                 </g>
               </g>
@@ -142,7 +146,7 @@ function AppShell() {
                 <g className="atom-ring atom-ring-b">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
                   <ellipse
-                    className="atom-arc"
+                    className="atom-trail"
                     cx="20"
                     cy="20"
                     rx="17"
@@ -153,7 +157,7 @@ function AppShell() {
                     className="atom-particle atom-particle-b"
                     cx="37"
                     cy="20"
-                    r="1.5"
+                    r="2.1"
                   />
                 </g>
               </g>
@@ -161,7 +165,7 @@ function AppShell() {
                 <g className="atom-ring atom-ring-c">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
                   <ellipse
-                    className="atom-arc"
+                    className="atom-trail"
                     cx="20"
                     cy="20"
                     rx="17"
@@ -172,15 +176,15 @@ function AppShell() {
                     className="atom-particle atom-particle-c"
                     cx="37"
                     cy="20"
-                    r="1.5"
+                    r="2.1"
                   />
                 </g>
               </g>
               {/* Drawn after the rings so the core sits in front of the
                   far halves and behind nothing — the one place a flat
                   SVG can cheat depth for free. */}
-              <circle className="atom-halo" cx="20" cy="20" r="2.4" />
-              <circle className="atom-core" cx="20" cy="20" r="2.4" />
+              <circle className="atom-halo" cx="20" cy="20" r="3" />
+              <circle className="atom-core" cx="20" cy="20" r="3.4" />
             </svg>
             <span>{brand}</span>
           </div>
