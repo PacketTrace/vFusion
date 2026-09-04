@@ -89,6 +89,7 @@ class Pump:
         # most needed to be useful.
         self.log: deque[str] = deque(maxlen=40)
         self._log_task: asyncio.Task | None = None
+        self._source_log_task: asyncio.Task | None = None
         # How long the pipe went unfed between one source exiting and the
         # next producing. The encoder timestamps by frame count, so a gap
         # is not dropped time -- it stalls and resumes, which downstream
@@ -306,10 +307,19 @@ class Pump:
         if proc is None:
             await asyncio.sleep(1.0)
             return
+        started = time.monotonic()
         try:
             await proc.wait()
         finally:
             self._source = None
+            # How long it actually ran, which is the number that
+            # distinguishes "played the clip and joined seamlessly" from
+            # "exited instantly and is looping hot". The gap between
+            # sources looks identical in both.
+            ran = int((time.monotonic() - started) * 1000)
+            logger.warning(
+                "rtsp source ended after %dms (exit %s)", ran, proc.returncode
+            )
             # From here until the next source produces, the pipe is dry.
             self._idle_since = time.monotonic()
 
@@ -345,7 +355,13 @@ class Pump:
             self.last_error = f"could not start source: {e}"
             return None
         self._source = proc
-        asyncio.create_task(self._drain(proc))
+        # Held, not fired and forgotten. asyncio keeps only a weak
+        # reference to a task, so one whose result nobody holds can be
+        # collected before it runs -- and this one is what turns a
+        # source's stderr into a log line. Losing it means a source that
+        # fails says nothing at all, which is exactly what "no ffmpeg
+        # lines anywhere" looked like.
+        self._source_log_task = asyncio.create_task(self._drain(proc))
         return proc
 
     def _close_pipe(self) -> None:
