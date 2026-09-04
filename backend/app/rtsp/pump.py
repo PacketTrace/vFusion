@@ -418,8 +418,41 @@ def _silence() -> list[str]:
     ]
 
 
-def _pcm_out(afd: int, seconds: str | None = None) -> list[str]:
-    out = ["-ar", str(settings.AUDIO_RATE), "-ac", str(settings.AUDIO_CHANNELS)]
+# Getting the most out of a telephone codec.
+#
+# G.711 mu-law is 8kHz and 8-bit companded, so everything above ~3.4kHz
+# is gone whatever we do and the noise floor is high. What is left is
+# worth spending carefully:
+#
+#   highpass  rumble below 80Hz is inaudible through this and eats the
+#             range the companding has to spend on everything else
+#   lowpass   band-limit deliberately at 3.4kHz rather than leaving it
+#             to the resampler, so nothing folds back as aliasing
+#   soxr      a materially better resampler than the default for a 6:1
+#             downsample; the default is built for speed
+#   dynaudnorm  8-bit companded audio is unlistenable when quiet, and
+#             source material is mastered for far more headroom than
+#             this has
+#
+# None of it makes G.711 sound good. It makes it sound like G.711 rather
+# than like a bad copy of one.
+AUDIO_FILTER = (
+    "highpass=f=80,"
+    "lowpass=f=3400,"
+    "dynaudnorm=f=200:g=11,"
+    f"aresample={settings.AUDIO_RATE}:resampler=soxr:precision=28"
+)
+
+
+def _pcm_out(
+    afd: int, seconds: str | None = None, shape: bool = False
+) -> list[str]:
+    out: list[str] = []
+    if shape:
+        # Only for real audio. Running it over generated silence would be
+        # cycles spent on nothing.
+        out += ["-af", AUDIO_FILTER]
+    out += ["-ar", str(settings.AUDIO_RATE), "-ac", str(settings.AUDIO_CHANNELS)]
     if seconds:
         out += ["-t", seconds]
     return out + ["-f", "s16le", f"pipe:{afd}"]
@@ -455,7 +488,9 @@ def _clip_cmd(item: dict[str, Any], afd: int, limit: float = 0.0) -> list[str]:
             seconds = f"{limit:.3f}"
 
     cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
-    cmd += ["-map", audio_map] + _pcm_out(afd, seconds)
+    cmd += ["-map", audio_map] + _pcm_out(
+        afd, seconds, shape=bool(item.get("has_audio"))
+    )
     return cmd
 
 
