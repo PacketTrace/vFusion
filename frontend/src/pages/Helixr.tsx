@@ -12,7 +12,7 @@ import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
 
 
 /**
- * Helixr — Helix event type CRUD.
+ * The Helix tab — event type CRUD.
  *
  * Lists every Helix event type for a chosen Verkada connection. The
  * editor itself lives in ``components/HelixEventTypeEditor`` so it can
@@ -58,6 +58,23 @@ export default function Helixr() {
         </Card>
       ) : (
         <>
+          {/* What a Helix event type is, in the terms someone arriving
+              here has. The tab blurb says what the page does; this says
+              why the thing it manages exists, which is the part that is
+              not guessable from a list of names and attributes. */}
+          <div className="text-[11px] text-slate-500 leading-relaxed max-w-3xl">
+            A Helix event type is a schema Verkada stores against a camera's
+            timeline — a name and a set of typed attributes. When an analytic
+            runs, its answer is written into one of these, and Command can then
+            search and filter footage by those attributes.
+            <br />
+            Anything that writes to Helix has to name a type that already
+            exists on the org, which is what this page is for: create one,
+            change its attributes, or remove one nothing posts against any
+            more. Renaming or removing an attribute that events were already
+            written with will break searches that rely on it.
+          </div>
+
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <label className="flex items-center gap-2 text-sm">
               <span className="text-slate-300">Verkada org</span>

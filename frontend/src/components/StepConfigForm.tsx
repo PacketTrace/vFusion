@@ -862,7 +862,7 @@ function HelixEventRefField({
   });
   // ``creating`` toggles the inline editor modal. On successful create
   // we auto-select the new type so the operator doesn't have to find
-  // it in the dropdown manually. Same modal the Helixr page uses.
+  // it in the dropdown manually. Same modal the Helix page uses.
   const [creating, setCreating] = useState(false);
   const current = (config[f.name] as string) ?? "";
   return (

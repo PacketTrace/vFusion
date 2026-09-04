@@ -12,7 +12,7 @@ import Helixr from "./Helixr";
  *     Pick a camera, write a prompt, see what the model returns —
  *     without committing to a flow first.
  *
- *   - **Helixr**: manage Helix video-tagging event types for a Verkada
+ *   - **Helix**: manage Helix video-tagging event types for a Verkada
  *     org. Same data the flow editor's helix_event_ref dropdown reads,
  *     but writable — create new types and edit existing ones in place.
  */
@@ -31,9 +31,12 @@ const TABS: { key: Tab; label: string; blurb: string }[] = [
   },
   {
     key: "helixr",
-    label: "Helixr",
+    // "Helix" is what Verkada calls it, so it is what everyone reading
+    // this already knows it as. The URL keeps ?tab=helixr: renaming a
+    // label is cosmetic, renaming the param would break links.
+    label: "Helix",
     blurb:
-      "Manage Helix video-tagging event types. Create the templates flows post events against, or edit existing ones.",
+      "Verkada's Helix event types — the schemas your AI results are written into. Create one, edit its attributes, or delete one you no longer post against. Types only: the events themselves are posted by flows and by Build.",
   },
 ];
 
@@ -79,7 +82,7 @@ export default function Workbench() {
       </div>
 
       {/* Neither tab constrains its own width. They did it differently
-          before -- Build through its own wrapper, Helixr through this
+          before -- Build through its own wrapper, Helix through this
           one -- so the content jumped between two widths on switching,
           and on a wide screen sat well left of the container it was
           nominally centred in. The shell is already 1600px and centred;

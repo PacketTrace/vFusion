@@ -426,7 +426,7 @@ export default function Byoa() {
   );
   // "Not on this org yet" is read off vFusion's synced copy, not off
   // Verkada. Create the type anywhere else — Command, a script, the
-  // Helixr tab on another connection — and this page keeps saying it is
+  // Helix tab on another connection — and this page keeps saying it is
   // missing, and keeps offering to make a second one. Re-checking is a
   // click from where the claim is made rather than a trip to Connections.
   const resyncHelix = useMutation({
@@ -816,7 +816,7 @@ export default function Byoa() {
                       .join(" · ")}
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1">
-                    Post to Helix has been toggled on with this event type pre-selected. If it's not yet on your Verkada org, create it on the Helixr tab.
+                    Post to Helix has been toggled on with this event type pre-selected. If it's not yet on your Verkada org, create it on the Helix tab.
                   </div>
                 </div>
               )}

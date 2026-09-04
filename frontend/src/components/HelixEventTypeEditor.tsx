@@ -18,7 +18,7 @@ interface AttrRow {
  *
  * Two consumers:
  *
- *   1. **Helixr page** — the dedicated "manage Helix types" UI on the
+ *   1. **Helix page** — the dedicated "manage Helix types" UI on the
  *      Workbench. Used for both create + edit.
  *   2. **StepConfigForm's helix_event_ref field** — when the operator
  *      is configuring a ``verkada_helix_event`` step and the type they
