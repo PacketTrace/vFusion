@@ -44,12 +44,22 @@ const CONFIG = {
   pulseSeconds: 2.4,
 
   // ---- COLORS ----
-  orbitColor: "#ff3b1f", // ring line colour + ring glow
+  // White cores with a sky bloom, to sit with the rest of the app --
+  // sky-300/400 are the accent everything else here already uses.
+  //
+  // orbitGlow is split out from orbitColor, which the standalone file
+  // used for both the line and its glow. White lines with a white glow
+  // are just a brighter white; the halo is where the colour can live,
+  // which is how the electron already worked.
+  orbitColor: "#ffffff", // ring line
+  orbitGlow: "#7dd3fc", // ring halo (sky-300)
   electronColor: "#ffffff", // dot core
-  electronGlow: "#ff3b1f", // dot glow
-  nucleusColor: "#ffd9d4", // center core
-  nucleusGlow: "#ff1a1a", // center glow
-  glow: 1, // glow strength multiplier. 0 = none, 2 = very hot.
+  electronGlow: "#38bdf8", // dot glow (sky-400)
+  nucleusColor: "#ffffff", // center core
+  nucleusGlow: "#38bdf8", // center glow (sky-400)
+  // White blooms harder than the original red at the same strength, so
+  // this is pulled back a little to stop the nucleus reading as a blob.
+  glow: 0.9,
 
   // ---- INTRO ----
   fadeIn: true, // fade + scale in on mount
@@ -67,7 +77,7 @@ const ds = (col: string, a: number, b: number) =>
 const CSS = `
   .vfa{width:100%;height:100%;display:block;overflow:visible}
   .vfa .orbit{fill:none;stroke:${CONFIG.orbitColor};stroke-width:${CONFIG.orbitStroke};opacity:${CONFIG.orbitOpacity};
-    filter:${ds(CONFIG.orbitColor, 3, 10)}}
+    filter:${ds(CONFIG.orbitGlow, 3, 10)}}
   .vfa .ring{transform-origin:100px 100px;animation:vfa-spin var(--dur) linear infinite var(--dir)}
   .vfa .e{fill:${CONFIG.electronColor};filter:${ds(CONFIG.electronGlow, 4, 12)}}
   .vfa .nucleus{fill:${CONFIG.nucleusColor};
