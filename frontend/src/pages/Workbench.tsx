@@ -78,13 +78,15 @@ export default function Workbench() {
         </div>
       </div>
 
+      {/* Neither tab constrains its own width. They did it differently
+          before -- Build through its own wrapper, Helixr through this
+          one -- so the content jumped between two widths on switching,
+          and on a wide screen sat well left of the container it was
+          nominally centred in. The shell is already 1600px and centred;
+          a narrower box inside it with no mx-auto only anchors left. */}
       <div>
         {tab === "byoa" && <Byoa />}
-        {tab === "helixr" && (
-          <div className="max-w-6xl">
-            <Helixr />
-          </div>
-        )}
+        {tab === "helixr" && <Helixr />}
       </div>
     </div>
   );

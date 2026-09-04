@@ -611,7 +611,7 @@ export default function Byoa() {
   const noConnections = verkadaConns.length === 0 || geminiConns.length === 0;
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="space-y-6">
       {noConnections && (
         <Card>
           <div className="text-sm text-amber-200">
