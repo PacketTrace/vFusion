@@ -11,6 +11,7 @@ import {
   KnownDoor,
   KnownScenario,
   PromptTemplate,
+  SavedAnalytic,
   TriggerField,
   VerkadaCamera,
 } from "../lib/api";
@@ -114,6 +115,13 @@ export default function StepConfigForm({
   const userTemplates = useQuery({
     queryKey: ["prompt-templates"],
     queryFn: () => apiGet<PromptTemplate[]>("/api/prompt-templates"),
+  });
+  // Analytics composed in Build. Same store the Templates page lists and
+  // the Build picker reads; this form was the one place that never
+  // looked, so a saved analytic could be run but not wired into a flow.
+  const savedAnalytics = useQuery({
+    queryKey: ["byoa-analytics"],
+    queryFn: () => apiGet<SavedAnalytic[]>("/api/byoa/analytics"),
   });
   // Used by the field auto-wire effect below — knows which trigger
   // fields exist so we can default things like camera_id to
@@ -249,16 +257,36 @@ export default function StepConfigForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec, connections.data, triggerSample.data, priorSteps]);
 
-  // Merge user-saved templates into any field that already declares
-  // built-in templates. User entries are listed first so the most-recent
-  // intent is at the top of the dropdown.
+  // Merge saved analytics and user templates into any field that already
+  // declares built-in templates. Both are listed before the built-ins so
+  // the most-recent intent is at the top of the dropdown.
+  //
+  // Analytics were missing here entirely: this form read prompt-templates
+  // and the built-ins and had no idea /api/byoa/analytics existed, so an
+  // analytic composed in Build could be run there and never picked in a
+  // flow. Same shape once you take the prompt as the value, and the
+  // Helix pairing carries through untouched for the step below to use.
   const userTplList = userTemplates.data ?? [];
+  const analyticList = savedAnalytics.data ?? [];
+  const extraTemplates = [
+    ...analyticList.map((a) => ({
+      name: a.name,
+      value: a.prompt,
+      helix_event_type: a.helix_event_type,
+      helix_attribute_mapping: a.helix_attribute_mapping,
+    })),
+    ...userTplList.map((t) => ({ name: t.name, value: t.value })),
+  ];
   const mergeTemplates = (f: ActionFieldSpec): ActionFieldSpec => {
-    if (!f.templates || userTplList.length === 0) return f;
-    const merged = [
-      ...userTplList.map((t) => ({ name: t.name, value: t.value })),
-      ...f.templates,
-    ];
+    if (!f.templates || extraTemplates.length === 0) return f;
+    // Deduped by name: an analytic saved under a built-in's name would
+    // otherwise appear twice with no way to tell which is which.
+    const seen = new Set<string>();
+    const merged = [...extraTemplates, ...f.templates].filter((t) => {
+      if (seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
+    });
     return { ...f, templates: merged };
   };
   const renderOne = (f: ActionFieldSpec) => {

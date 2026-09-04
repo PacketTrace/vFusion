@@ -630,6 +630,11 @@ export default function Byoa() {
         <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
           What should it look for
         </div>
+        {/* Describe-it and pick-one, side by side rather than stacked.
+            They are alternatives, not steps: stacking them read as a
+            sequence, and pushed the cards below the fold on the way to
+            the camera and model pickers underneath. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <AnalyticComposer
           defaultOpen={!prompt.trim()}
           geminiConnectionId={geminiConnId}
@@ -647,15 +652,11 @@ export default function Byoa() {
           onSaved={() => savedAnalytics.refetch()}
         />
 
-        <Field label="">
+        <div>
           {allTemplates.length > 0 && (
             <>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="text-[11px] text-slate-500">
-                  or start from one of these
-                </span>
-                <div className="h-px flex-1 bg-white/10" />
+              <div className="text-[11px] text-slate-500 mb-2">
+                or start from one of these
               </div>
               {/* Picker grid — replaces the old <select> so the demo /
                   video story reads as "pick the analytic" instead of
@@ -665,7 +666,10 @@ export default function Byoa() {
                   operators can see the pairing at a glance. The
                   active card gets a sky border + scale-up so the
                   current pick is unmistakable. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 mb-3">
+              {/* Two columns at most now: these cards live in half the
+                  width they used to, and three across turned every name
+                  into two wrapped lines. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                 {allTemplates.map((t) => {
                   const active = pickedTemplate?.name === t.name;
                   // Paired templates carry an emoji in their helix
@@ -749,6 +753,12 @@ export default function Byoa() {
               )}
             </>
           )}
+        </div>
+        </div>
+
+        {/* The prompt runs full width under both columns. It is what
+            either path produces, not a third alternative to them. */}
+        <div>
           {/* "Custom prompt" header tells operators this is the
               free-form path — write your own analytic instead of
               picking a card. Sits with a hairline divider above so
@@ -840,7 +850,7 @@ export default function Byoa() {
             }`}
           />
           )}
-        </Field>
+        </div>
         <div className="border-t border-white/10 my-5" />
 
         <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
