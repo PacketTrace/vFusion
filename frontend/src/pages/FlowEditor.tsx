@@ -56,6 +56,12 @@ const NODE_TYPES = { trigger: TriggerNode, action: ActionNode, condition: Condit
 const EDGE_TYPES = { glow: GlowEdge };
 const COL_X = 320;
 const ROW_Y = 200;
+// Space left *between* nodes, rather than between their top edges.
+const ROW_GAP = 64;
+// Used until React Flow reports what a node actually measured. Close to
+// a plain two-line action card, so the first frame is roughly right and
+// the settle is not a jump.
+const DEFAULT_NODE_H = 120;
 const TRIGGER_ID = "__trigger__";
 
 
@@ -521,9 +527,14 @@ function FlowEditorInner() {
     return false;
   }, [nodes, actionSpecs.data, lockedVerkadaConnectionId]);
 
+  // Measured node heights, keyed by id, reported by React Flow as it
+  // lays out. The layout needs them to leave an even gap rather than an
+  // even pitch; until they arrive it falls back to an estimate.
+  const [heights, setHeights] = useState<Record<string, number>>({});
+
   // Auto-layout positions for nodes that don't have a persisted position.
   // User-dragged nodes (node.position set) win — that's the snapping lock.
-  const layout = computeLayout(nodes, edges);
+  const layout = computeLayout(nodes, edges, heights);
   const posFor = (node: FlowNode) =>
     node.position ?? layout.get(node.id) ?? { x: 0, y: ROW_Y };
 
@@ -536,10 +547,11 @@ function FlowEditorInner() {
   // happen during a drag. Without this RF holds the new position
   // internally but every parent re-render slams the prop position back to
   // the previous value, so the node visually freezes until drag-stop.
-  // Selection / dimension changes are ignored — we manage those ourselves.
+  // Selection changes are ignored — we manage those ourselves.
   const onNodesChange = (changes: NodeChange[]) => {
     let dirty = false;
     let next = nodes;
+    const measured: Record<string, number> = {};
     for (const c of changes) {
       if (
         c.type === "position" &&
@@ -551,6 +563,22 @@ function FlowEditorInner() {
         );
         dirty = true;
       }
+      // Dimension changes were being dropped, and they are the only
+      // place the real height of a node is ever reported. Without them
+      // the layout has to assume every node is the same height, which
+      // is what made the spacing uneven: a tall trigger and a short
+      // action leave very different gaps under a fixed pitch.
+      if (c.type === "dimensions" && c.dimensions?.height) {
+        measured[c.id] = c.dimensions.height;
+      }
+    }
+    if (Object.keys(measured).length) {
+      setHeights((prev) => {
+        const changed = Object.entries(measured).some(
+          ([id, h]) => prev[id] !== h,
+        );
+        return changed ? { ...prev, ...measured } : prev;
+      });
     }
     if (dirty) setNodes(next);
   };
@@ -1769,10 +1797,19 @@ function Field({
 }
 
 
-/** Auto-layout: depth-based vertical layering with horizontal spread per layer. */
+/** Auto-layout: depth-based vertical layering with horizontal spread per layer.
+ *
+ *  Layers are stacked by accumulated height, not by a fixed pitch. A
+ *  fixed pitch spaces the node *origins* evenly, which makes the gaps
+ *  uneven by exactly as much as the nodes differ in height — a trigger
+ *  carrying four filter chips leaves almost no room beneath it while a
+ *  two-line action leaves a chasm. Even gaps are what reads as evenly
+ *  spaced, and they need each node's real height.
+ */
 function computeLayout(
   nodes: FlowNode[],
   edges: FlowEdge[],
+  heights: Record<string, number> = {},
 ): Map<string, { x: number; y: number }> {
   const depth = new Map<string, number>();
   const incoming = new Map<string, FlowEdge[]>();
@@ -1807,12 +1844,22 @@ function computeLayout(
   }
 
   const positions = new Map<string, { x: number; y: number }>();
-  for (const [d, ids] of byDepth.entries()) {
+  // The trigger is not in ``nodes`` — it sits at y=0 and is the thing
+  // depth 0 has to clear.
+  let y = (heights[TRIGGER_ID] ?? DEFAULT_NODE_H) + ROW_GAP;
+  for (const d of [...byDepth.keys()].sort((a, b) => a - b)) {
+    const ids = byDepth.get(d)!;
     const total = ids.length;
     ids.forEach((id, i) => {
       const xOffset = (i - (total - 1) / 2) * COL_X;
-      positions.set(id, { x: COL_X + xOffset, y: (d + 1) * ROW_Y });
+      positions.set(id, { x: COL_X + xOffset, y });
     });
+    // The tallest node in a layer sets where the next one starts, so a
+    // branch with one long node does not overlap its sibling's child.
+    const tallest = Math.max(
+      ...ids.map((id) => heights[id] ?? DEFAULT_NODE_H),
+    );
+    y += tallest + ROW_GAP;
   }
   return positions;
 }
