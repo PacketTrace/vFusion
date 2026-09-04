@@ -262,7 +262,11 @@ export default function HelixEventTypeEditor({
                 <button
                   type="button"
                   onClick={() => setConfirming(true)}
-                  className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800"
+                  // Red before it is hovered, not after. A destructive
+                  // action that looks like every other button until the
+                  // pointer is already on it has told you nothing at the
+                  // moment the telling was useful.
+                  className="text-sm px-3 py-1.5 rounded border border-rose-800/70 text-rose-300 hover:bg-rose-950/40 hover:border-rose-700"
                 >
                   Delete
                 </button>

@@ -42,7 +42,7 @@ import time
 from collections import deque
 from typing import Any
 
-from app.rtsp import queue, settings
+from app.rtsp import mediamtx, queue, settings
 
 
 logger = logging.getLogger(__name__)
@@ -616,3 +616,12 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
 
 
 pump = Pump()
+
+
+async def viewers() -> tuple[int | None, str]:
+    """How many clients are pulling either published path."""
+    state = settings.get()
+    streams = [state.get("stream") or settings.DEFAULT_STREAM]
+    if settings.is_onvif(state):
+        streams.append(settings.sub_stream(state))
+    return await mediamtx.viewers(streams)

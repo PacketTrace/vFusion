@@ -50,6 +50,8 @@ type Status = {
     http_auth: string;
     result: string;
   }[];
+  viewers: number | null;
+  viewers_error: string;
   queued: number;
   played: number;
   pump: {
@@ -224,7 +226,23 @@ export default function Rtsp() {
         </p>
       </div>
 
+      {s?.pump.publishing && (
+        <div className="flex items-center gap-3">
+          <span className="on-air text-[11px] font-bold tracking-[0.2em] uppercase px-3 py-1.5 rounded-md">
+            On air
+          </span>
+          <span className="text-[11px] text-slate-500">
+            {s.viewers === null
+              ? s.viewers_error
+              : s.viewers === 0
+                ? "Publishing, nobody watching yet."
+                : `${s.viewers} viewer${s.viewers === 1 ? "" : "s"} pulling the stream.`}
+          </span>
+        </div>
+      )}
+
       <StatusBar s={s} />
+
 
       <Card title="1 · Where the Connector will find it">
         <label className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">
@@ -599,6 +617,23 @@ function StatusBar({ s }: { s?: Status }) {
       value: s.pump.publishing ? "publishing" : s.enabled ? "starting" : "off",
       good: s.pump.publishing,
       hint: "Whether the encoder is pushing frames into the RTSP server",
+    },
+    {
+      label: "Viewers",
+      value:
+        s.viewers === null
+          ? "unknown"
+          : s.viewers === 0
+            ? "nobody"
+            : String(s.viewers),
+      good: (s.viewers ?? 0) > 0,
+      // Asked-and-nobody is a different fact from could-not-ask, and the
+      // first version of this reported both as "unknown" with no reason
+      // attached -- which is why it got deleted rather than fixed.
+      hint:
+        s.viewers === null
+          ? s.viewers_error || "Could not reach the RTSP server's API"
+          : "Clients pulling either published path. The Command Connector is one of them",
     },
     {
       label: "Showing",

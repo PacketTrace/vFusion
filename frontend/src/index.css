@@ -555,3 +555,56 @@ button:not(:disabled):active {
   }
 }
 
+
+/* ON AIR.
+ *
+ * The one thing on the page that should be readable from across a room:
+ * whether this camera is live. A tile saying "publishing" states it; a
+ * lit sign means it.
+ *
+ * Neon is a stack of shadows rather than a filter — an inset for the
+ * tube's own brightness, then two outer glows at different radii for the
+ * fall-off a single shadow cannot give. Filters would blur the text
+ * along with everything else and cost a compositing pass on something
+ * that never stops.
+ *
+ * The flicker is deliberately mostly-off: four short dips inside eight
+ * seconds, at uneven spacing, and never twice the same length. A regular
+ * flicker reads as an animation. An irregular one reads as a tube. */
+.on-air {
+  --neon: 244 63 94;
+  border: 1px solid rgb(var(--neon) / 0.55);
+  color: rgb(255 228 230);
+  text-shadow:
+    0 0 4px rgb(var(--neon) / 0.9),
+    0 0 12px rgb(var(--neon) / 0.55);
+  box-shadow:
+    inset 0 0 6px rgb(var(--neon) / 0.35),
+    0 0 6px rgb(var(--neon) / 0.45),
+    0 0 18px rgb(var(--neon) / 0.25);
+  animation: on-air-flicker 8s linear infinite;
+}
+
+@keyframes on-air-flicker {
+  0%, 100% { opacity: 1; }
+  /* Long steady burn, then a stutter, then steady again. */
+  17% { opacity: 1; }
+  18% { opacity: 0.55; }
+  19% { opacity: 1; }
+  44% { opacity: 1; }
+  45% { opacity: 0.4; }
+  46% { opacity: 0.9; }
+  47% { opacity: 0.5; }
+  49% { opacity: 1; }
+  81% { opacity: 1; }
+  82% { opacity: 0.62; }
+  83.5% { opacity: 1; }
+}
+
+/* Steady, still lit. The sign is information, not decoration, so it
+   stays on when motion is turned down — it just stops flickering. */
+@media (prefers-reduced-motion: reduce) {
+  .on-air {
+    animation: none;
+  }
+}

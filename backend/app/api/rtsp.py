@@ -44,6 +44,10 @@ async def status() -> dict:
     return {
         **state,
         "pump": pump_mod.pump.status(),
+        # None means we could not ask and carries why; 0 means we asked
+        # and nobody is watching. Collapsing those into one value is what
+        # made the previous attempt at this unreadable.
+        **dict(zip(("viewers", "viewers_error"), await pump_mod.viewers())),
         "queued": sum(1 for i in items if not i.get("played_at")),
         "played": sum(1 for i in items if i.get("played_at")),
         # What ONVIF clients have tried lately. "Invalid credentials"

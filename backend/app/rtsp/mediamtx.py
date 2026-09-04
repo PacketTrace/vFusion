@@ -46,7 +46,8 @@ hls: no
 webrtc: no
 srt: no
 moq: no
-api: no
+api: yes
+apiAddress: :9997
 authMethod: internal
 authInternalUsers: []
 paths: {}
@@ -90,11 +91,11 @@ srt: no
 # certificate for it on first boot. Nothing here speaks it.
 moq: no
 
-# Off with everything else. It existed to answer "is the Connector
-# actually pulling this?" for a status tile that is gone, and an HTTP
-# listener nothing reads is surface for no return. The rtsp-server logs
-# say who is reading, which is where that answer was always clearer.
-api: no
+# On, for the viewer count. Reachable only on the compose network --
+# nothing publishes 9997 to the LAN -- so it answers vFusion and nothing
+# else.
+api: yes
+apiAddress: :9997
 
 authMethod: internal
 authInternalUsers:
@@ -170,6 +171,53 @@ def write(state: dict[str, Any]) -> bool:
         logger.error("refusing to write mediamtx config: %s", problem)
         return False
     return _write_text(text)
+
+
+async def viewers(streams: list[str]) -> tuple[int | None, str]:
+    """(clients reading these paths, why not).
+
+    Asks for the whole path list and matches by name rather than fetching
+    each path by id. get/{name} 404s for a path that exists in the config
+    but has never been published to, which is indistinguishable from a
+    server that is not answering -- and that is exactly the state
+    everything was in the last time this was wired up.
+
+    None is "we do not know" and carries the reason; 0 is "asked, nobody
+    is watching". Reporting both as None is what made this useless
+    before.
+    """
+    import httpx
+
+    url = f"http://{settings.INTERNAL_HOST}:9997/v3/paths/list"
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(url)
+    except Exception as e:
+        return None, f"cannot reach the RTSP server's API: {e}"
+    if resp.status_code != 200:
+        return None, f"the RTSP server's API answered {resp.status_code}"
+    try:
+        items = (resp.json() or {}).get("items")
+    except ValueError:
+        return None, "the RTSP server's API returned something that is not JSON"
+    if not isinstance(items, list):
+        return None, "no path list in the API response"
+
+    wanted = set(streams)
+    total = 0
+    seen = False
+    for item in items:
+        if not isinstance(item, dict) or item.get("name") not in wanted:
+            continue
+        seen = True
+        readers = item.get("readers")
+        if isinstance(readers, list):
+            total += len(readers)
+    if not seen:
+        # The server is answering, it just has no record of these paths --
+        # nothing has published to them yet.
+        return 0, ""
+    return total, ""
 
 
 def _write_text(text: str) -> bool:
