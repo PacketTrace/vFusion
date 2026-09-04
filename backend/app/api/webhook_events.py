@@ -51,8 +51,45 @@ class WebhookEventListItem(BaseModel):
     webhook_type: str | None
     notification_type: str | None
     signature_status: str | None
+    # A few fields lifted out of the payload, so a list of events is not
+    # twenty identical rows reading "alert_rule_motion". The body is
+    # already on the row being serialised; picking from it costs nothing
+    # and is the difference between choosing an event and guessing.
+    preview: dict[str, str] = {}
 
     model_config = {"from_attributes": True}
+
+
+# What actually distinguishes one event of the same type from another.
+# Ordered: a row has room for two or three, and the first ones are the
+# ones worth showing.
+PREVIEW_FIELDS = (
+    "camera_id",
+    "objects",
+    "door_id",
+    "user_id",
+    "license_plate",
+    "person_name",
+    "site_id",
+)
+
+
+def _preview(body: dict | None) -> dict[str, str]:
+    if not isinstance(body, dict):
+        return {}
+    data = body.get("data")
+    source = data if isinstance(data, dict) else body
+    out: dict[str, str] = {}
+    for key in PREVIEW_FIELDS:
+        value = source.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value if v not in (None, ""))
+            if not value:
+                continue
+        out[key] = str(value)[:120]
+    return out
 
 
 class WebhookEventList(BaseModel):
@@ -176,7 +213,12 @@ async def list_events(
         )
     ).scalar_one()
     return WebhookEventList(
-        items=[WebhookEventListItem.model_validate(r) for r in rows],
+        items=[
+            WebhookEventListItem.model_validate(r).model_copy(
+                update={"preview": _preview(r.body_json)}
+            )
+            for r in rows
+        ],
         total=total,
         unknown_count=unknown,
     )

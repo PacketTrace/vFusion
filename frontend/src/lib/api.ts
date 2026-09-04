@@ -121,6 +121,9 @@ export interface WebhookEventListItem {
   webhook_type: string | null;
   notification_type: string | null;
   signature_status: SignatureStatus | null;
+  /** A few payload fields lifted out server-side so a row can be told
+   *  apart from the twenty others of the same notification_type. */
+  preview?: Record<string, string>;
 }
 
 export interface WebhookEventListResponse {
