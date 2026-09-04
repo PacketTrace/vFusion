@@ -634,7 +634,7 @@ export default function Byoa() {
             They are alternatives, not steps: stacking them read as a
             sequence, and pushed the cards below the fold on the way to
             the camera and model pickers underneath. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 items-start">
         <AnalyticComposer
           defaultOpen={!prompt.trim()}
           geminiConnectionId={geminiConnId}
@@ -652,11 +652,26 @@ export default function Byoa() {
           onSaved={() => savedAnalytics.refetch()}
         />
 
+        {/* The word between the two, on the line that separates them.
+            Vertical once they sit side by side, horizontal when they
+            stack — self-stretch takes the row's height, which the
+            columns set. */}
+        <div className="flex lg:flex-col items-center gap-3 self-stretch">
+          <div className="h-px w-full lg:h-auto lg:w-px lg:flex-1 bg-white/10" />
+          <span className="text-[11px] uppercase tracking-wider text-slate-500">
+            or
+          </span>
+          <div className="h-px w-full lg:h-auto lg:w-px lg:flex-1 bg-white/10" />
+        </div>
+
         <div>
           {allTemplates.length > 0 && (
             <>
+              {/* No longer "or start from…" — the divider beside it now
+                  carries the "or", and saying it twice reads as two
+                  different alternatives rather than one. */}
               <div className="text-[11px] text-slate-500 mb-2">
-                or start from one of these
+                start from one of these
               </div>
               {/* Picker grid — replaces the old <select> so the demo /
                   video story reads as "pick the analytic" instead of
