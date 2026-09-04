@@ -50,8 +50,6 @@ type Status = {
     http_auth: string;
     result: string;
   }[];
-  readers: number | null;
-  readers_error: string;
   queued: number;
   played: number;
   pump: {
@@ -603,23 +601,6 @@ function StatusBar({ s }: { s?: Status }) {
       hint: "Whether the encoder is pushing frames into the RTSP server",
     },
     {
-      label: "Watching",
-      value:
-        s.readers == null
-          ? "unknown"
-          : s.readers === 0
-            ? "nobody"
-            : `${s.readers} client${s.readers === 1 ? "" : "s"}`,
-      good: (s.readers ?? 0) > 0,
-      // The distinction is load-bearing: unknown means the RTSP server
-      // did not answer, which is a different problem from a Connector
-      // that has not been pointed here yet.
-      hint:
-        s.readers == null
-          ? s.readers_error || "The RTSP server did not answer"
-          : "Clients pulling the stream. The Command Connector is one of these",
-    },
-    {
       label: "Showing",
       value: s.pump.now_playing ? s.pump.now_playing.name : "standby",
       good: !!s.pump.now_playing,
@@ -657,13 +638,6 @@ function StatusBar({ s }: { s?: Status }) {
           </div>
         </div>
       ))}
-      {/* "unknown" on its own is the least useful thing this page can
-          say, and the reason was known where it was discarded. */}
-      {s.readers == null && s.readers_error && (
-        <div className="col-span-2 sm:col-span-4 text-[11px] text-amber-300/90">
-          Watching is unknown — {s.readers_error}
-        </div>
-      )}
       {s.pump.encoder_starts > 1 && (
         <div className="col-span-2 sm:col-span-4 text-[11px] text-amber-300/90">
           The encoder has restarted {s.pump.encoder_starts - 1} time

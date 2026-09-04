@@ -46,8 +46,7 @@ hls: no
 webrtc: no
 srt: no
 moq: no
-api: yes
-apiAddress: :9997
+api: no
 authMethod: internal
 authInternalUsers: []
 paths: {}
@@ -91,11 +90,11 @@ srt: no
 # certificate for it on first boot. Nothing here speaks it.
 moq: no
 
-# The HTTP API is how vFusion answers "is the Connector actually pulling
-# this?" -- it reports readers per path, which is the difference between
-# publishing into the void and being watched.
-api: yes
-apiAddress: :9997
+# Off with everything else. It existed to answer "is the Connector
+# actually pulling this?" for a status tile that is gone, and an HTTP
+# listener nothing reads is surface for no return. The rtsp-server logs
+# say who is reading, which is where that answer was always clearer.
+api: no
 
 authMethod: internal
 authInternalUsers:
@@ -196,36 +195,3 @@ def _write_text(text: str) -> bool:
     except OSError as e:
         logger.warning("could not write mediamtx config: %s", e)
         return False
-
-
-async def readers(stream: str) -> tuple[int | None, str]:
-    """(count, why not) for clients pulling the path.
-
-    None and 0 are different answers: one means the server is not talking
-    to us, the other means nobody is watching. Returning only None for
-    both meant the page said "unknown" and nothing else, which is the
-    same mistake as discarding ffmpeg's stderr — the reason was known at
-    the point it was thrown away.
-    """
-    import httpx
-
-    url = f"http://{settings.INTERNAL_HOST}:9997/v3/paths/get/{stream}"
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(url)
-    except Exception as e:
-        return None, f"cannot reach the RTSP server's API: {e}"
-    if resp.status_code == 404:
-        # The path exists in the config but has never been published to,
-        # so the server has no record of it yet.
-        return None, f"the server has no path named {stream} yet"
-    if resp.status_code != 200:
-        return None, f"the server's API answered {resp.status_code}"
-    try:
-        data = resp.json()
-    except ValueError:
-        return None, "the server's API returned something that is not JSON"
-    value = data.get("readers")
-    if isinstance(value, list):
-        return len(value), ""
-    return None, f"no reader list in the API response (keys: {sorted(data)[:6]})"

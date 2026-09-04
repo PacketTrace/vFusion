@@ -42,7 +42,7 @@ import time
 from collections import deque
 from typing import Any
 
-from app.rtsp import mediamtx, queue, settings
+from app.rtsp import queue, settings
 
 
 logger = logging.getLogger(__name__)
@@ -616,9 +616,3 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
 
 
 pump = Pump()
-
-
-async def readers() -> tuple[int | None, str]:
-    return await mediamtx.readers(
-        settings.get().get("stream") or settings.DEFAULT_STREAM
-    )
