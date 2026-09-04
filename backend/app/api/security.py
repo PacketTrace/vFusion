@@ -152,9 +152,10 @@ async def overview(
             {
                 "path": prefix,
                 "label": note.get("label") or prefix,
-                "auth": note.get("auth") or "Unknown",
-                "why": note.get("why") or "",
-                "concern": note.get("concern"),
+                "plain": note.get("plain") or "",
+                "who": note.get("who") or "",
+                "required": bool(note.get("required", True)),
+                "note": note.get("note"),
             }
         )
 

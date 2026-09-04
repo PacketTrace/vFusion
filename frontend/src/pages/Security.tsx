@@ -45,9 +45,10 @@ interface KeyStatus {
 interface PublicPath {
   path: string;
   label: string;
-  auth: string;
-  why: string;
-  concern: string | null;
+  plain: string;
+  who: string;
+  required: boolean;
+  note: string | null;
 }
 
 interface KeywatchAlert {
@@ -646,23 +647,61 @@ export default function Security() {
       </Card>
 
       {/* ---- Exposure ---- */}
-      <Card title="What answers without a session">
-        {s.exposure.public_paths.map((p) => (
-          <Row key={p.path} ok={!p.concern} title={`${p.path} — ${p.label}`}>
-            Authenticated by: {p.auth}. {p.why}
-            {p.concern && <span className="text-amber-300"> {p.concern}</span>}
-          </Row>
-        ))}
-        <Row ok={s.exposure.cors_origins.length > 0} title="CORS origins">
-          {s.exposure.cors_origins.length > 0
-            ? s.exposure.cors_origins.join(", ")
-            : "None configured."}
-        </Row>
-        {!s.exposure.docs_enabled && (
-          <Row ok title="Interactive docs">
-            Disabled — /docs, /redoc and /openapi.json return 404.
-          </Row>
+      <Card title="Reachable without signing in">
+        <p className="text-xs text-slate-400 mb-3">
+          Everything else on this install returns 401 without a session
+          cookie. These answer anyway, because whatever calls them has no way
+          to hold one — Verkada, Docker, or your own browser before you have
+          logged in.
+        </p>
+
+        <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+          Has to stay open
+        </div>
+        {s.exposure.public_paths
+          .filter((p) => p.required)
+          .map((p) => (
+            <Row key={p.path} ok title={`${p.path} — ${p.label}`}>
+              {p.plain}
+              <span className="text-slate-500"> Called by: {p.who}.</span>
+              {p.note && <span className="block mt-0.5">{p.note}</span>}
+            </Row>
+          ))}
+
+        {s.exposure.public_paths.some((p) => !p.required) && (
+          <>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 mt-4 mb-1">
+              Optional — safe to turn off
+            </div>
+            {s.exposure.public_paths
+              .filter((p) => !p.required)
+              .map((p) => (
+                <Row key={p.path} ok={false} title={`${p.path} — ${p.label}`}>
+                  {p.plain}
+                  {p.note && <span className="block mt-0.5">{p.note}</span>}
+                </Row>
+              ))}
+            <div className="mt-2 text-xs text-amber-300">
+              Set <code className="text-amber-200">ENABLE_DOCS=false</code> in
+              .env and restart the backend to remove all three. They are not
+              needed to run vFusion.
+            </div>
+          </>
         )}
+
+        <div className="mt-4 pt-3 border-t border-white/10">
+          <Row ok={s.exposure.cors_origins.length > 0} title="Browser origins allowed to call the API">
+            {s.exposure.cors_origins.length > 0
+              ? s.exposure.cors_origins.join(", ")
+              : "None configured — the dashboard will not be able to reach the API from a browser."}
+          </Row>
+          {!s.exposure.docs_enabled && (
+            <Row ok title="Interactive docs are off">
+              /docs, /redoc and /openapi.json are not mounted at all — they
+              return 404 rather than being blocked.
+            </Row>
+          )}
+        </div>
       </Card>
 
       {/* ---- Data ---- */}

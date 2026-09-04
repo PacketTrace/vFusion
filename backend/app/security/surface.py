@@ -30,63 +30,103 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
 )
 
 
-# How each public prefix is actually protected, and what it would mean
-# if it were not. ``concern`` is None when the surface is fine as it is.
-SURFACE_NOTES: dict[str, dict[str, str | None]] = {
+# What each open path is for, in the terms someone would actually ask
+# about it. The earlier version led with "Authenticated by: None", which
+# reads like an alarm on a health check that returns the word "ok", and
+# buried whether there was anything to do about it.
+#
+# ``required`` is the useful distinction: most of these cannot be closed
+# without breaking something that has no way to sign in. The ones that
+# can be closed say so.
+SURFACE_NOTES: dict[str, dict[str, object]] = {
     "/hooks": {
         "label": "Webhook ingress",
-        "auth": "Verkada's signature over the request body",
-        "why": "Verkada has no way to present a session cookie.",
-        "concern": None,
+        "plain": (
+            "Where Verkada POSTs events. Every request carries a signature "
+            "that is checked before anything is read or stored."
+        ),
+        "who": "Verkada Command",
+        "required": True,
+        "note": None,
     },
     "/api/auth": {
-        "label": "Login, logout, password",
-        "auth": "The password itself, rate limited",
-        "why": "Has to answer before a session exists.",
-        "concern": None,
+        "label": "Sign in",
+        "plain": (
+            "Login, logout, and the status check the page uses to decide "
+            "whether to show you a login form."
+        ),
+        "who": "Your browser, before you are signed in",
+        "required": True,
+        "note": (
+            "Rate limited: five free attempts, then a doubling cooldown."
+        ),
     },
     "/api/config": {
-        "label": "Public config",
-        "auth": "None — returns branding and the public webhook URL",
-        "why": "The login screen reads it before authenticating.",
-        "concern": None,
+        "label": "Login-screen config",
+        "plain": (
+            "Branding and the public webhook URL, read by the login page "
+            "before you sign in. No credentials in it."
+        ),
+        "who": "Your browser, before you are signed in",
+        "required": True,
+        "note": (
+            "It does reveal your tunnel hostname and whether a Verkada org "
+            "is connected, to anyone who can reach this host."
+        ),
     },
     "/api/health": {
         "label": "Health check",
-        "auth": "None — returns {\"status\": \"ok\"}",
-        "why": "Container orchestration probes it.",
-        "concern": None,
+        "plain": (
+            "Answers {\"status\": \"ok\"} and nothing else. Docker restarts "
+            "the container when it stops answering."
+        ),
+        "who": "Docker",
+        "required": True,
+        "note": None,
     },
     "/onvif": {
         "label": "ONVIF camera service",
-        "auth": "WS-UsernameToken digest, checked per operation",
-        "why": "A Command Connector cannot hold a session cookie.",
-        "concern": (
-            "GetSystemDateAndTime answers unauthenticated by design — clients "
-            "compute digest clock skew from it before they can authenticate. "
-            "It returns the time and nothing else."
+        "plain": (
+            "How Verkada's Command Connector talks to the virtual camera. "
+            "This one is authenticated -- the Connector proves itself with "
+            "a digest inside every request -- it just cannot use a browser "
+            "cookie to do it."
+        ),
+        "who": "Command Connector",
+        "required": True,
+        "note": (
+            "One call, GetSystemDateAndTime, answers unauthenticated by "
+            "design: a client needs your clock before it can compute the "
+            "digest. It returns the time and nothing else."
         ),
     },
     "/docs": {
         "label": "Interactive API docs",
-        "auth": "None",
-        "why": "Convenient in development.",
-        "concern": (
-            "Describes every endpoint to anyone who can reach this host. It "
-            "exposes no data, but it is a map. Set ENABLE_DOCS=false in .env "
-            "to turn it off."
+        "plain": (
+            "A browsable page listing every endpoint. Nobody added it -- it "
+            "comes with the web framework and is on by default."
+        ),
+        "who": "Nothing. It exists for humans.",
+        "required": False,
+        "note": (
+            "vFusion runs fine without it. It exposes no data, but it hands "
+            "anyone who can reach this host a map of the API."
         ),
     },
     "/redoc": {
         "label": "API reference",
-        "auth": "None",
-        "why": "Same document as /docs, rendered differently.",
-        "concern": "Turned off by the same ENABLE_DOCS=false.",
+        "plain": "The same listing as /docs, rendered as read-only docs.",
+        "who": "Nothing. It exists for humans.",
+        "required": False,
+        "note": None,
     },
     "/openapi.json": {
-        "label": "OpenAPI schema",
-        "auth": "None",
-        "why": "Backs /docs and /redoc.",
-        "concern": "Turned off by the same ENABLE_DOCS=false.",
+        "label": "API schema",
+        "plain": (
+            "The machine-readable file the two pages above are built from."
+        ),
+        "who": "/docs and /redoc",
+        "required": False,
+        "note": None,
     },
 }
