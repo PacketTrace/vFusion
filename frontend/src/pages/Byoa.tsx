@@ -387,6 +387,10 @@ export default function Byoa() {
   // so we can render the "Pairs with X" hint and react to changes in
   // the picked Verkada connection (re-resolve the matching Helix type).
   const [pickedTemplate, setPickedTemplate] = useState<BuiltinTemplate | null>(null);
+  // Whether the current pick came from the composer rather than a
+  // template card. The composer shows the Helix pairing itself, so
+  // the banner under the cards would be a second copy of it.
+  const [pickedFromComposer, setPickedFromComposer] = useState(false);
   const [pasteId, setPasteId] = useState(false);
   // The prompt box only appears once there is a prompt — generated,
   // picked from a template, or explicitly asked for.
@@ -455,6 +459,7 @@ export default function Byoa() {
     preselected.current = true;
     setEditingAnalytic(found);
     setPrompt(found.prompt);
+    setPickedFromComposer(false);
     setPickedTemplate({
       name: found.name,
       value: found.prompt,
@@ -482,6 +487,45 @@ export default function Byoa() {
   }, [pickedTemplate, helixTypes.data]);
 
   const [err, setErr] = useState<string | null>(null);
+
+  // Validation lived inline in each button's onClick, which meant it ran
+  // only when pressed: fix what it complained about and the complaint
+  // stayed on screen until you pressed again. One function, called from
+  // both buttons and re-checked as things change.
+  const validate = (): string | null => {
+    if (!geminiConnId) return "Pick a Gemini connection.";
+    if (!prompt.trim()) return "Prompt is required.";
+    if (source === "upload") {
+      return uploadFile ? null : "Pick a file to upload.";
+    }
+    if (!verkadaConnId) return "Pick a Verkada connection.";
+    if (!cameraId.trim()) return "Pick a camera.";
+    if (mode === "historical" && !startEpoch)
+      return "Pick a start time for historical mode.";
+    if (postToHelix && !helixEventTypeUid)
+      return "Pick a Helix event type or turn off 'Post to Helix'.";
+    if (postToHelix && !helixAttribute)
+      return "Pick which Helix attribute to write the AI text into.";
+    return null;
+  };
+
+  // Which message in ``err`` came from validation. Only those clear
+  // themselves — a failure returned by the server should stay until the
+  // next attempt rather than vanishing because a dropdown moved.
+  const validationRef = useRef<string | null>(null);
+  const setValidationErr = (message: string) => {
+    validationRef.current = message;
+    setErr(message);
+  };
+  // No dependency list on purpose: the check is a handful of string
+  // comparisons, and enumerating every field it reads is a list that
+  // would silently go stale the next time one is added.
+  useEffect(() => {
+    if (err && err === validationRef.current && !validate()) {
+      validationRef.current = null;
+      setErr(null);
+    }
+  });
   const run = useMutation({
     mutationFn: () => {
       const body: Record<string, unknown> = {
@@ -641,6 +685,7 @@ export default function Byoa() {
           geminiConnectionId={geminiConnId}
           onUse={(a) => {
             setPrompt(a.prompt);
+            setPickedFromComposer(true);
             setPickedTemplate({
               name: a.name,
               value: a.prompt,
@@ -702,6 +747,7 @@ export default function Byoa() {
                       type="button"
                       onClick={() => {
                         setPrompt(t.value);
+                        setPickedFromComposer(false);
                         setPickedTemplate(t);
                         // A fresh template selection invalidates
                         // whatever replay state we restored — its
@@ -749,7 +795,14 @@ export default function Byoa() {
                   );
                 })}
               </div>
-              {pickedTemplate?.helix_event_type && (
+              {/* Not shown for a pick that came from the composer. Its
+                  result card, a few inches to the left, already lists
+                  the event type and every attribute — so the pairing
+                  appeared once before saving and twice after, in two
+                  different styles, for no reason the operator could see.
+                  A template card carries none of that, so the banner is
+                  the only place it appears and stays. */}
+              {pickedTemplate?.helix_event_type && !pickedFromComposer && (
                 <div className="text-[11px] bg-emerald-950/30 border border-emerald-900/60 rounded px-2 py-1.5 mb-2">
                   <div className="text-slate-300">
                     <span className="text-emerald-300">Pairs with Helix:</span>{" "}
@@ -840,17 +893,13 @@ export default function Byoa() {
               )}
             </div>
           )}
-          {allTemplates.length > 0 && !promptOpen && !prompt.trim() && (
-            <div className="border-t border-white/10 mt-3 pt-3">
-              <button
-                type="button"
-                onClick={() => setPromptOpen(true)}
-                className="text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
-              >
-                or write the prompt yourself
-              </button>
-            </div>
-          )}
+          {/* No "write it yourself" invitation before there is anything
+              to write against. Nobody composes one of these prompts from
+              an empty box -- they describe an analytic, or pick a card,
+              and then edit what comes back. Offering a blank textarea as
+              a third way in was offering the one path nobody takes. The
+              prompt appears once something has produced one, and is
+              editable from that moment. */}
           {(promptOpen || prompt.trim()) && (
           <textarea
             ref={promptRef}
@@ -1427,17 +1476,9 @@ export default function Byoa() {
           {source === "camera" ? (
             <button
               onClick={() => {
+                const problem = validate();
+                if (problem) return setValidationErr(problem);
                 setErr(null);
-                if (!verkadaConnId) return setErr("Pick a Verkada connection.");
-                if (!geminiConnId) return setErr("Pick a Gemini connection.");
-                if (!cameraId.trim()) return setErr("Pick a camera.");
-                if (!prompt.trim()) return setErr("Prompt is required.");
-                if (mode === "historical" && !startEpoch)
-                  return setErr("Pick a start time for historical mode.");
-                if (postToHelix && !helixEventTypeUid)
-                  return setErr("Pick a Helix event type or turn off 'Post to Helix'.");
-                if (postToHelix && !helixAttribute)
-                  return setErr("Pick which Helix attribute to write the AI text into.");
                 run.mutate();
               }}
               disabled={run.isPending || noConnections}
@@ -1448,10 +1489,9 @@ export default function Byoa() {
           ) : (
             <button
               onClick={() => {
+                const problem = validate();
+                if (problem) return setValidationErr(problem);
                 setErr(null);
-                if (!uploadFile) return setErr("Pick a file to upload.");
-                if (!geminiConnId) return setErr("Pick a Gemini connection.");
-                if (!prompt.trim()) return setErr("Prompt is required.");
                 dryRun.mutate();
               }}
               disabled={dryRun.isPending || geminiConns.length === 0}
@@ -1553,7 +1593,14 @@ function ConnectionsLine({
   onGemini: (id: string) => void;
 }) {
   const incomplete = !verkadaConnId || !geminiConnId;
-  const [open, setOpen] = useState(incomplete);
+  // Derived, not initialised. useState(incomplete) evaluated on the
+  // first render — before the connections query had returned and
+  // auto-filled both ids — so it latched open and stayed there even
+  // once there was nothing to choose. Same shape as every other bug on
+  // this page that read state before it existed.
+  const [manual, setManual] = useState(false);
+  const open = manual || incomplete;
+  const setOpen = setManual;
   const nameOf = (list: Connection[], id: string) =>
     list.find((c) => c.id === id)?.name ?? "";
 

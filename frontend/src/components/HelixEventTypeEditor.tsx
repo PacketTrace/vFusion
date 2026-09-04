@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { apiPost, apiPut, HelixEventType } from "../lib/api";
+import { apiDelete, apiPost, apiPut, HelixEventType } from "../lib/api";
 
 
 export type AttrType = "string" | "integer" | "float";
@@ -101,6 +101,26 @@ export default function HelixEventTypeEditor({
       onClose();
     },
     onError: (e: Error) => setErr(e.message),
+  });
+
+  // Deleting from the editor, not only from the row behind it. If you
+  // have opened a type and decided it is wrong, closing the dialog to
+  // hunt for a bin icon in the list is a detour past the screen that
+  // already knows which type you mean.
+  const [confirming, setConfirming] = useState(false);
+  const remove = useMutation({
+    mutationFn: () =>
+      apiDelete(
+        `/api/connections/${connId}/helix-event-types/${existing!.event_type_uid}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["helix-event-types", connId] });
+      onClose();
+    },
+    onError: (e: Error) => {
+      setConfirming(false);
+      setErr(e.message);
+    },
   });
 
   const setAttr = (i: number, patch: Partial<AttrRow>) => {
@@ -213,7 +233,42 @@ export default function HelixEventTypeEditor({
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-white/10 flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-white/10 flex items-center gap-2">
+          {mode === "edit" && existing && (
+            <div className="mr-auto flex items-center gap-2">
+              {confirming ? (
+                <>
+                  <span className="text-[11px] text-rose-300">
+                    Delete "{existing.name ?? "this type"}" from Verkada?
+                    Events already posted against it stay.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => remove.mutate()}
+                    disabled={remove.isPending}
+                    className="text-sm px-3 py-1.5 rounded bg-rose-800 hover:bg-rose-700 text-white disabled:opacity-40"
+                  >
+                    {remove.isPending ? "Deleting…" : "Delete"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(false)}
+                    className="text-[11px] text-slate-400 hover:text-slate-200"
+                  >
+                    Keep it
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirming(true)}
+                  className="text-sm px-3 py-1.5 rounded border border-white/15 text-slate-400 hover:text-rose-300 hover:border-rose-800"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={onClose}
