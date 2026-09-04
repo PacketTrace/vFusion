@@ -22,9 +22,18 @@ interface StorageBucket {
 
 interface ModelSpend {
   model: string;
+  // Billed calls. Named "runs" on the wire from when a run was the only
+  // way to reach Gemini.
   runs: number;
   tokens_in: number;
   tokens_out: number;
+  cost_usd: number;
+}
+
+
+interface SourceSpend {
+  source: string;
+  calls: number;
   cost_usd: number;
 }
 
@@ -72,6 +81,7 @@ interface StatsOverview {
   storage_total_bytes: number;
   gemini_spend_30d_usd: number;
   gemini_spend_by_model: ModelSpend[];
+  gemini_spend_by_source: SourceSpend[];
   gemini_pricing: PricingRow[];
 }
 
@@ -201,15 +211,15 @@ export default function Stats() {
           <Card title="Gemini spend by model (30d)">
             {s.gemini_spend_by_model.length === 0 ? (
               <div className="text-sm text-slate-500">
-                No Gemini runs in the last 30 days yet — kick off a BYOA or a
-                flow that uses a Gemini analyze step.
+                No Gemini calls in the last 30 days yet — kick off a flow with
+                a Gemini analyze step, or compose an analytic.
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
                     <th className="pb-2 pr-4">Model</th>
-                    <th className="pb-2 pr-4">Runs</th>
+                    <th className="pb-2 pr-4">Calls</th>
                     <th className="pb-2 pr-4">In tok</th>
                     <th className="pb-2 pr-4">Out tok</th>
                     <th className="pb-2">Cost (est.)</th>
@@ -237,6 +247,27 @@ export default function Stats() {
                   ))}
                 </tbody>
               </table>
+            )}
+            {s.gemini_spend_by_source.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-white/10">
+                <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  Outside flow runs
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  {s.gemini_spend_by_source.map((x) => (
+                    <div key={x.source} className="text-xs text-slate-400">
+                      <span className="text-slate-300">{x.source}</span>{" "}
+                      {x.calls.toLocaleString()}
+                      {x.calls === 1 ? " call" : " calls"} ·{" "}
+                      <span className="text-slate-200">{fmtUsd(x.cost_usd)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Design-time calls — composing analytics and Helix demos,
+                  drafting flows. Included in the totals above.
+                </p>
+              </div>
             )}
             <p className="text-[11px] text-slate-500 mt-3">
               Estimate based on Google's published per-token rates × the

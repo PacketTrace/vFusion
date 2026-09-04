@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connectors.verkada.footage import CLIP_ROOT
 from app.db import get_session
 from app.models import GeminiPricing, Run, WebhookAsset, WebhookEvent
+from app.pricing import ledger
 
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -48,9 +49,19 @@ class StorageBucket(BaseModel):
 
 class ModelSpend(BaseModel):
     model: str
+    # Billed calls, not flow runs. Composing an analytic is one of
+    # these and is not a run at all.
     runs: int
     tokens_in: int
     tokens_out: int
+    cost_usd: float
+
+
+class SourceSpend(BaseModel):
+    """Spend from somewhere other than a flow run."""
+
+    source: str
+    calls: int
     cost_usd: float
 
 
@@ -81,6 +92,7 @@ class StatsOverview(BaseModel):
     # tokens captured on each run). Numbers are pre-discount, pre-credit.
     gemini_spend_30d_usd: float
     gemini_spend_by_model: list[ModelSpend]
+    gemini_spend_by_source: list[SourceSpend]
     gemini_pricing: list[PricingRow]
 
 
@@ -292,8 +304,39 @@ async def overview(session: AsyncSession = Depends(get_session)) -> StatsOvervie
             entry.tokens_in += t_in
             entry.tokens_out += t_out
             entry.cost_usd += cost_usd
+    # Gemini calls that happened outside a run — composing an analytic
+    # or a Helix demo, drafting a flow. They bill to the same key, so
+    # leaving them out reported a number that was low by exactly the
+    # amount of design work done that month.
+    by_source: dict[str, SourceSpend] = {}
+    for entry in await ledger.since(cutoff_30d):
+        model = str(entry.get("model") or "unknown")
+        cost_usd = float(entry.get("cost_usd") or 0)
+        t_in = int(entry.get("tokens_in") or 0)
+        t_out = int(entry.get("tokens_out") or 0)
+        total_30d += cost_usd
+        if model not in by_model:
+            by_model[model] = ModelSpend(
+                model=model, runs=0, tokens_in=0, tokens_out=0, cost_usd=0.0
+            )
+        entry_m = by_model[model]
+        entry_m.runs += 1
+        entry_m.tokens_in += t_in
+        entry_m.tokens_out += t_out
+        entry_m.cost_usd += cost_usd
+
+        source = str(entry.get("source") or "Other")
+        if source not in by_source:
+            by_source[source] = SourceSpend(source=source, calls=0, cost_usd=0.0)
+        entry_s = by_source[source]
+        entry_s.calls += 1
+        entry_s.cost_usd += cost_usd
+
     spend_by_model = sorted(
         by_model.values(), key=lambda m: m.cost_usd, reverse=True
+    )
+    spend_by_source = sorted(
+        by_source.values(), key=lambda x: x.cost_usd, reverse=True
     )
 
     pricing_rows = (await session.execute(
@@ -324,5 +367,6 @@ async def overview(session: AsyncSession = Depends(get_session)) -> StatsOvervie
         storage_total_bytes=storage_total,
         gemini_spend_30d_usd=round(total_30d, 4),
         gemini_spend_by_model=spend_by_model,
+        gemini_spend_by_source=spend_by_source,
         gemini_pricing=pricing,
     )

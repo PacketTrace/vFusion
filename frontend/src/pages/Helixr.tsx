@@ -32,7 +32,19 @@ interface SeedResult {
   seed: number;
   timing: string;
   anchored_to_detections: boolean;
+  first_at: string | null;
+  last_at: string | null;
   errors: string[];
+}
+
+
+/** "Aug 28" — enough to place the window, short enough to sit in a line. */
+function shortDay(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 
@@ -210,6 +222,11 @@ function DemoPanel({ connId }: { connId: string }) {
     "business",
   );
   const [draft, setDraft] = useState<ComposedDemo | null>(null);
+  // Names for the result message. Both lists are already loaded for the
+  // pickers, so there is nothing to fetch.
+  const cameraName =
+    (cameras.data ?? []).find((c) => c.camera_id === cameraId)?.name ||
+    "this camera";
   const [typeUid, setTypeUid] = useState("");
   // The name is editable before it is created. The model picks a good
   // one often enough to keep, and not often enough to be stuck with.
@@ -273,6 +290,16 @@ function DemoPanel({ connId }: { connId: string }) {
       }),
     onError: (e: Error) => setErr(e.message),
   });
+
+  // The name of the type actually posted to, which is not always the
+  // editable draft name above -- an existing type can be picked instead.
+  const postedType =
+    (types.data ?? []).find((t) => t.event_type_uid === typeUid)?.name || "";
+  // "Aug 28 - Sep 4", or one day if the window collapsed to one.
+  const from = shortDay(seed.data?.first_at ?? null);
+  const to = shortDay(seed.data?.last_at ?? null);
+  const span =
+    from && to ? (from === to ? from : from + " – " + to) : "";
 
   const attrs = draft ? Object.keys(draft.helix_event_type.event_schema) : [];
 
@@ -537,21 +564,40 @@ function DemoPanel({ connId }: { connId: string }) {
                   ? "Run it again with fresh data"
                   : "Fill the timeline"}
             </button>
-            {seed.data && (
-              <span className="text-[11px] text-slate-400">
-                Posted {seed.data.posted} of {seed.data.requested}
-                {seed.data.anchored_to_detections
-                  ? ", anchored to real detections"
-                  : seed.data.timing !== timing
-                    ? " — no detection history, so business hours instead"
-                    : ""}
-                . Each run generates different data.
-              </span>
-            )}
           </div>
-          {seed.data && seed.data.errors.length > 0 && (
-            <div className="mt-2 text-[11px] text-rose-300">
-              {seed.data.errors[0]}
+          {seed.data && seed.data.posted > 0 && (
+            <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
+              <div className="text-sm text-emerald-200">
+                {seed.data.posted.toLocaleString()}{" "}
+                {postedType ? <b>{postedType}</b> : "demo"} events are now on{" "}
+                <b>{cameraName}</b>&rsquo;s timeline.
+              </div>
+              <div className="mt-1.5 text-xs text-slate-400">
+                {span ? `Spread across ${span}` : "Spread across the window"}
+                {seed.data.anchored_to_detections
+                  ? ", each one stamped at a moment the camera really saw a person or a vehicle"
+                  : seed.data.timing !== timing
+                    ? " — this camera had no detection history, so they follow business hours instead"
+                    : ", shaped like a working day rather than scattered evenly"}
+                .
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                Open <b>{cameraName}</b> in Command and scrub the timeline, or
+                search Helix for this event type. Run it again for a different
+                set — nothing here overwrites what you just posted.
+              </div>
+              {seed.data.posted < seed.data.requested && (
+                <div className="mt-2 text-xs text-amber-300">
+                  {(seed.data.requested - seed.data.posted).toLocaleString()} of{" "}
+                  {seed.data.requested.toLocaleString()} did not post.
+                  {seed.data.errors[0] ? ` ${seed.data.errors[0]}` : ""}
+                </div>
+              )}
+            </div>
+          )}
+          {seed.data && seed.data.posted === 0 && (
+            <div className="mt-3 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-200">
+              Nothing posted. {seed.data.errors[0] ?? "The API rejected it."}
             </div>
           )}
         </Card>

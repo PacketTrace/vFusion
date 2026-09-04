@@ -20,6 +20,7 @@ away, which is what ``seed`` called twice with different seeds gives.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from datetime import datetime, timedelta, timezone
@@ -38,11 +39,18 @@ from app.helixdemo import compose as composer
 from app.helixdemo import generate
 from app.models import Connection
 from app.models.verkada_api import VerkadaApiEndpoint
+from app.pricing import ledger
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/helix-demo", tags=["helix-demo"])
+
+# In flight at once. Sequential posting wastes about a quarter of a
+# second per event doing nothing; all at once invites a rate limit.
+CONCURRENCY = 6
+RETRIES = 3
+BACKOFF_SEC = 1.5
 
 
 class ComposeRequest(BaseModel):
@@ -92,7 +100,7 @@ async def compose_demo(
         raise HTTPException(status_code=400, detail="describe the integration first")
 
     try:
-        raw, model = composer.compose(
+        raw, model, t_in, t_out = composer.compose(
             api_key, body.intent, body.previous, body.refinement
         )
         data = composer.validate(raw)
@@ -102,6 +110,8 @@ async def compose_demo(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+    await ledger.record(model, t_in, t_out, source="Helix demo composer")
 
     # A preview built from the real generator, not a description of it.
     # Five rows are enough to see whether the totals track the counts and
@@ -236,6 +246,7 @@ async def seed(
         raise HTTPException(status_code=400, detail="pick or create the event type first")
 
     seed_value = body.seed if body.seed is not None else random.randrange(1, 2**31)
+    limit = asyncio.Semaphore(CONCURRENCY)
     client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
 
     anchors: list[datetime] = []
@@ -264,34 +275,63 @@ async def seed(
         timing_shape=None if used_timing == "detections" else used_timing,
     )
 
-    posted = 0
-    failures: list[str] = []
-    for event in events:
-        payload = {
+    def payload_for(event: dict[str, Any]) -> dict[str, Any]:
+        return {
             "camera_id": body.camera_id,
             "event_type_uid": body.event_type_uid,
             "time_ms": int(event["at"].timestamp() * 1000),
             "attributes": event["attributes"],
         }
-        try:
-            result = await client.request(
-                method="POST",
-                path="/cameras/v1/video_tagging/event",
-                query={"org_id": org_id} if org_id else None,
-                json_body=payload,
-            )
-        except Exception as e:  # noqa: BLE001
-            failures.append(str(e))
-            continue
-        if result.get("status_code", 500) >= 400:
-            failures.append(f"{result.get('status_code')}: {result.get('body')!r}")
-            continue
-        posted += 1
-        # Stop hammering a rejecting endpoint. Five identical failures is
-        # a schema mismatch, not bad luck, and the remaining hundreds
-        # will fail the same way.
-        if len(failures) >= 5 and posted == 0:
-            break
+
+    async def post_one(event: dict[str, Any]) -> str | None:
+        """Post one event. Returns None on success, else why not."""
+        async with limit:
+            for attempt in range(RETRIES):
+                try:
+                    result = await client.request(
+                        method="POST",
+                        path="/cameras/v1/video_tagging/event",
+                        query={"org_id": org_id} if org_id else None,
+                        json_body=payload_for(event),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    return str(e)
+                code = int(result.get("status_code") or 500)
+                if code == 429:
+                    # Backing off rather than failing. A rate limit is
+                    # the one error that says "the same request will
+                    # work shortly", and giving up on it would leave a
+                    # timeline with holes for no reason.
+                    await asyncio.sleep(BACKOFF_SEC * (2**attempt))
+                    continue
+                if code >= 400:
+                    return f"{code}: {result.get('body')!r}"
+                return None
+            return "rate limited, gave up after retries"
+
+    # One first, alone. A wrong schema fails identically on every event,
+    # and finding that out after three hundred of them have been sent is
+    # both slower and messier than finding out after one.
+    canary = await post_one(events[0])
+    if canary is not None:
+        return {
+            "posted": 0,
+            "requested": len(events),
+            "seed": seed_value,
+            "timing": used_timing,
+            "anchored_to_detections": bool(anchors),
+            "first_at": None,
+            "last_at": None,
+            "errors": [canary],
+        }
+
+    # The rest concurrently, but only a few at a time. Sixty sequential
+    # round trips is around fifteen seconds of waiting for no reason;
+    # sixty at once is a good way to be rate limited. Six in flight is
+    # brisk and stays well inside what the API will take.
+    results = await asyncio.gather(*(post_one(e) for e in events[1:]))
+    failures = [r for r in results if r]
+    posted = 1 + sum(1 for r in results if r is None)
 
     return {
         "posted": posted,

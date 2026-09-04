@@ -119,8 +119,13 @@ def compose(
     intent: str,
     previous: dict[str, Any] | None = None,
     refinement: str = "",
-) -> tuple[dict[str, Any], str]:
-    """Generate a type and a spec. Returns (parsed, model that answered)."""
+) -> tuple[dict[str, Any], str, int, int]:
+    """Generate a type and a spec.
+
+    Returns (parsed, model that answered, prompt tokens, response
+    tokens). The token counts go to the spend ledger: this call costs
+    money and the Stats page has no other way to hear about it.
+    """
     from google import genai
 
     refine = ""
@@ -150,7 +155,13 @@ def compose(
             text = (res.text or "").strip()
             if not text:
                 raise RuntimeError("model returned an empty response")
-            return _json.loads(text), model
+            usage = getattr(res, "usage_metadata", None)
+            return (
+                _json.loads(text),
+                model,
+                int(getattr(usage, "prompt_token_count", 0) or 0),
+                int(getattr(usage, "candidates_token_count", 0) or 0),
+            )
         except Exception as e:  # noqa: BLE001 — try the next model
             last = e
             continue

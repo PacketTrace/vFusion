@@ -44,6 +44,7 @@ from app.crypto import decrypt_secret
 from app.db import get_session
 from app.engine.actions import ACTIONS
 from app.engine.triggers import matches as trigger_matches
+from app.pricing import ledger
 from app.pricing.gemini import cost_for
 from app.models import (
     Connection,
@@ -877,6 +878,9 @@ async def propose(
         warnings = _warnings(flow)
         run_cost = _estimate_run_cost(flow, observed_costs)
         draft_cost = await cost_for(used_model, draft_tokens_in, draft_tokens_out)
+        await ledger.record(
+            used_model, draft_tokens_in, draft_tokens_out, source="Flow builder"
+        )
         yield line(
             stage="pricing",
             detail=(

@@ -37,6 +37,7 @@ from app.crypto import decrypt_secret
 from app.connectors.verkada.footage import CLIP_ROOT, IMAGE_ROOT
 from app.db import get_session
 from app.models import Connection, GeminiPricing, Run, VerkadaHelixEventType
+from app.pricing import ledger
 
 
 # Workbench uploads land in the same directories camera-mode grabs use
@@ -699,8 +700,13 @@ class ComposeRequest(BaseModel):
     gemini_connection_id: UUID | None = None
 
 
-def _compose(api_key: str, intent: str) -> tuple[dict[str, Any], str]:
-    """Generate an analytic. Returns (parsed, model that answered)."""
+def _compose(api_key: str, intent: str) -> tuple[dict[str, Any], str, int, int]:
+    """Generate an analytic.
+
+    Returns (parsed, model, prompt tokens, response tokens) -- the token
+    counts so the caller can put this call on the Stats page, which
+    otherwise only ever hears about Gemini calls made inside a run.
+    """
     from google import genai
 
     prompt = COMPOSE_PROMPT.replace("__INTENT__", intent.strip())
@@ -719,7 +725,13 @@ def _compose(api_key: str, intent: str) -> tuple[dict[str, Any], str]:
             text = (res.text or "").strip()
             if not text:
                 raise RuntimeError("model returned an empty response")
-            return _json.loads(text), model
+            usage = getattr(res, "usage_metadata", None)
+            return (
+                _json.loads(text),
+                model,
+                int(getattr(usage, "prompt_token_count", 0) or 0),
+                int(getattr(usage, "candidates_token_count", 0) or 0),
+            )
         except Exception as e:  # noqa: BLE001 — try the next model
             last = e
             continue
@@ -808,13 +820,16 @@ async def compose(
         raise HTTPException(status_code=400, detail="Gemini connection has no api_key")
 
     try:
-        raw, model = await asyncio.to_thread(_compose, api_key, body.intent)
+        raw, model, t_in, t_out = await asyncio.to_thread(
+            _compose, api_key, body.intent
+        )
         analytic = _validate_composed(raw)
     except (ValueError, _json.JSONDecodeError) as e:
         raise HTTPException(status_code=422, detail=f"the model's answer was unusable: {e}") from e
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
+    await ledger.record(model, t_in, t_out, source="Analytic composer")
     analytic["model"] = model
     return analytic
 
