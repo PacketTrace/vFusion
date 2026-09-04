@@ -107,6 +107,7 @@ def blank_state() -> dict[str, Any]:
         "denied_count": 0,
         "denied_last": None,
         "last_check": None,
+        "last_success": None,
         "last_error": None,
         "events_seen": 0,
         "requests_used": 0,
@@ -210,7 +211,12 @@ async def run_check(session: AsyncSession) -> dict[str, Any]:
         await save_state(session, state)
         return state
 
-    client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
+    try:
+        client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
+    except Exception as e:  # noqa: BLE001
+        state["last_error"] = f"Could not build a Verkada client: {e}"
+        await save_state(session, state)
+        return state
 
     now_s = int(_now().timestamp())
     cursor = int(state.get("cursor") or 0)
@@ -317,6 +323,7 @@ async def run_check(session: AsyncSession) -> dict[str, Any]:
             "denied_count": int(state.get("denied_count") or 0) + denied,
             "denied_last": denied_last,
             "last_error": None,
+            "last_success": _now().isoformat(),
             "events_seen": ours,
             "scanned_rows": len(rows),
             "requests_used": requests_used,

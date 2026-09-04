@@ -67,6 +67,7 @@ interface KeywatchState {
   denied_count: number;
   denied_last: string | null;
   last_check: string | null;
+  last_success: string | null;
   last_error: string | null;
   events_seen: number;
   scanned_rows?: number;
@@ -207,12 +208,21 @@ export default function Security() {
   const saveWatch = useMutation({
     mutationFn: (cfg: { enabled: boolean; connection_id: string | null; interval_hours: number }) =>
       apiPut("/api/security/keywatch", cfg),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setWatchErr(null);
+      invalidate();
+    },
+    onError: (e: Error) => setWatchErr(e.message),
   });
 
+  const [watchErr, setWatchErr] = useState<string | null>(null);
   const checkNow = useMutation({
-    mutationFn: () => apiPost("/api/security/keywatch/check", {}),
-    onSuccess: invalidate,
+    mutationFn: () => apiPost<KeywatchState>("/api/security/keywatch/check", {}),
+    onSuccess: (st) => {
+      setWatchErr(st.last_error);
+      invalidate();
+    },
+    onError: (e: Error) => setWatchErr(e.message),
   });
 
   const resolveAlert = useMutation({
@@ -227,6 +237,7 @@ export default function Security() {
       setIpDraft("");
       invalidate();
     },
+    onError: (e: Error) => setWatchErr(e.message),
   });
 
   if (q.isLoading) {
@@ -476,17 +487,22 @@ export default function Security() {
         {kw.enabled && !st.last_error && (
           <div
             className={`mt-3 rounded border p-2 text-xs ${
-              !st.last_check ||
-              Date.now() - new Date(st.last_check).getTime() >
+              !st.last_success ||
+              Date.now() - new Date(st.last_success).getTime() >
                 kw.interval_hours * 3600_000 * 2
                 ? "border-amber-500/30 bg-amber-500/5 text-amber-200"
                 : "border-white/10 text-slate-400"
             }`}
           >
-            Last successful check {ago(st.last_check)}.
-            {!st.last_check || Date.now() - new Date(st.last_check).getTime() >
+            Last successful check {ago(st.last_success)}
+            {st.last_check && st.last_check !== st.last_success
+              ? `, last attempted ${ago(st.last_check)}`
+              : ""}
+            .
+            {!st.last_success ||
+            Date.now() - new Date(st.last_success).getTime() >
               kw.interval_hours * 3600_000 * 2
-              ? " That is overdue — a monitor that has quietly stopped shows the same green as one that is working."
+              ? " Nothing has completed yet — press Check now, and if it reports nothing, the error will appear here."
               : ""}
           </div>
         )}
@@ -602,6 +618,16 @@ export default function Security() {
           >
             {checkNow.isPending ? "Checking…" : "Check now"}
           </button>
+          {watchErr && (
+            <span className="text-xs text-rose-300">Check failed: {watchErr}</span>
+          )}
+          {checkNow.isSuccess && !watchErr && (
+            <span className="text-xs text-emerald-300">
+              Read {(st.scanned_rows ?? 0).toLocaleString()} audit events in{" "}
+              {st.requests_used} request{st.requests_used === 1 ? "" : "s"};{" "}
+              {st.events_seen.toLocaleString()} were on this key.
+            </span>
+          )}
           {st.denied_count > 0 && (
             <span className="text-xs text-amber-300">
               {st.denied_count} denied (401/403) response

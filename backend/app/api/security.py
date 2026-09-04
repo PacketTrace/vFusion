@@ -323,10 +323,28 @@ async def set_keywatch(
 async def keywatch_check(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Run one cycle now, rather than waiting for the cron."""
-    state = await keywatch.run_check(session)
-    await session.commit()
-    return state
+    """Run one cycle now, rather than waiting for the cron.
+
+    Returns the state either way. An exception here would surface as a
+    500 that the page has nowhere to put, leaving it rendering the last
+    thing it believed -- stale and confident, which is worse than an
+    error.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        state = await keywatch.run_check(session)
+        await session.commit()
+        return state
+    except Exception as e:  # noqa: BLE001
+        logger.exception("keywatch check failed")
+        await session.rollback()
+        state = await keywatch.load_state()
+        state["last_check"] = datetime.now(timezone.utc).isoformat()
+        state["last_error"] = f"{type(e).__name__}: {e}"
+        await keywatch.save_state(session, state)
+        await session.commit()
+        return state
 
 
 @router.post("/keywatch/expected-ips")
