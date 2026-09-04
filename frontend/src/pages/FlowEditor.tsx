@@ -30,6 +30,8 @@ import {
   WebhookEvent,
 } from "../lib/api";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
+import TriggerSetupModal from "../components/TriggerSetupModal";
+import { useCameras } from "../lib/cameras";
 import ActionNode from "../components/flow-canvas/ActionNode";
 import ConditionNode from "../components/flow-canvas/ConditionNode";
 import TriggerNode from "../components/flow-canvas/TriggerNode";
@@ -116,6 +118,17 @@ function FlowEditorInner() {
     branch: "true" | "false" | null;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // The trigger setup modal, opened by ?setup=trigger after Automate.
+  const [setupOpen, setSetupOpen] = useState(false);
+  // Only so the modal can say which camera by name rather than by UUID.
+  const cameras = useCameras();
+  // Drop the param once it has done its job, so a refresh or a back
+  // button does not ask again about a trigger already decided.
+  const clearSetupParam = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("setup");
+    setSearchParams(next, { replace: true });
+  };
   // Sticky reference to the webhook event that seeded this flow, used to
   // pre-pick the test-run sample. Falls back to recent matching events.
   const [sourceEventId, setSourceEventId] = useState<string | null>(null);
@@ -231,6 +244,12 @@ function FlowEditorInner() {
     }
     setNodes(existing.data.nodes ?? []);
     setEdges(existing.data.edges ?? []);
+    // Arrived here from Automate, which builds a flow but cannot know
+    // what should start it. Opened once the flow is actually loaded, so
+    // the modal writes into real state rather than the empty defaults it
+    // would find a moment earlier.
+    if (searchParams.get("setup") === "trigger") setSetupOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
 
   const save = useMutation({
@@ -1076,6 +1095,29 @@ function FlowEditorInner() {
             <Controls position="bottom-right" />
           </ReactFlow>
 
+          {setupOpen && (
+            <TriggerSetupModal
+              cameraLabel={
+                cameras.data?.find(
+                  (c) =>
+                    c.camera_id ===
+                    trigger.filters.find((f) => f.field === "camera_id")?.value,
+                )?.name || "the camera"
+              }
+              trigger={trigger}
+              onApply={({ triggerType: tt, trigger: next, schedule: sch }) => {
+                setTriggerType(tt);
+                setTrigger(next);
+                if (sch) setSchedule(sch);
+                setSetupOpen(false);
+                clearSetupParam();
+              }}
+              onClose={() => {
+                setSetupOpen(false);
+                clearSetupParam();
+              }}
+            />
+          )}
           {picker && (
             <NodeTypePicker
               onCancel={() => setPicker(null)}

@@ -15,6 +15,7 @@ import {
   VerkadaCamera,
   WebhookEvent,
 } from "../lib/api";
+import { buildFlowBody } from "../lib/automate";
 import EpochPicker from "../components/EpochPicker";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
 import { BetaChip, CostChip } from "../components/StepConfigForm";
@@ -2061,93 +2062,29 @@ function MakeItRun({
   const ready = missing.length === 0;
 
   const create = useMutation({
-    mutationFn: () => {
-      // The camera is written in literally rather than as
-      // {{ trigger.data.camera_id }}. The trigger is filtered to this one
-      // camera, so the two resolve identically today -- but the next
-      // screen lets the trigger be changed to a schedule, and a schedule
-      // has no trigger.data to read a camera out of. A literal id
-      // survives that; a template ref quietly resolves to nothing.
-      const analyzeConfig: Record<string, unknown> = {
-        connection_id: verkadaConnId,
-        gemini_connection_id: geminiConnId,
-        camera_id: cameraId,
-        model,
-        prompt,
-      };
-      if (mode === "historical") {
-        analyzeConfig.start_epoch = "{{ trigger.data.created }}";
-        analyzeConfig.duration_sec = String(durationSec);
-        analyzeConfig.pre_roll_sec = "2";
-      }
-
-      const nodes: Record<string, unknown>[] = [
-        {
-          id: "analyze",
-          name: "analyze",
-          label: "Analyze the camera",
-          kind: "action",
-          action_type: "gemini_analyze_camera",
-          // No position: the editor computes the layout when one is
-          // absent, which is the same thing "Auto arrange" does. Guessing
-          // coordinates here put this node on top of the trigger the
-          // canvas draws above it.
-          config: analyzeConfig,
-        },
-      ];
-      const edges: Record<string, unknown>[] = [];
-
-      if (helixEventTypeUid) {
-        // Rewrite the template-local {{ output.* }} shorthand to point at
-        // the analyze step, which is what the engine resolves.
-        const attributes = Object.fromEntries(
-          Object.entries(helixMapping ?? {}).map(([attr, ref]) => [
-            attr,
-            ref.replace(/output\./g, "steps.analyze.output."),
-          ]),
-        );
-        nodes.push({
-          id: "post_helix",
-          name: "post_helix",
-          label: "Post to Helix",
-          kind: "action",
-          action_type: "verkada_helix_event",
-          config: {
-            connection_id: verkadaConnId,
-            camera_id: cameraId,
-            event_type_uid: helixEventTypeUid,
-            attributes: Object.keys(attributes).length
-              ? attributes
-              : { Summary: "{{ steps.analyze.output.text }}" },
-          },
-        });
-        edges.push({ id: "e_analyze_helix", source: "analyze", target: "post_helix" });
-      }
-
-      return apiPost<{ id: string }>("/api/flows", {
-        name: `${analyticName} — auto`,
-        // Off until it is looked at. A flow that starts firing on every
-        // motion event the moment a button is pressed is a surprise bill
-        // and a surprise write to someone's Helix log.
-        enabled: false,
-        // Motion on this camera, unfiltered by object. A starting point
-        // rather than an answer: the editor this opens into asks the
-        // same question with more of it -- schedule as well as webhook,
-        // any filter field rather than three object types, daily and
-        // weekly as well as intervals -- and opens with the trigger
-        // already selected.
-        trigger_type: "verkada_webhook",
-        trigger_config: {
-          family: "camera",
-          notification_type: "alert_rule_motion",
-          filters: { camera_id: cameraId },
-        },
-        nodes,
-        edges,
-      });
-    },
-    onSuccess: (flow) => navigate(`/flows/${flow.id}/edit`),
+    mutationFn: () =>
+      apiPost<{ id: string }>(
+        "/api/flows",
+        buildFlowBody({
+          analyticName,
+          prompt,
+          model,
+          mode,
+          cameraId,
+          verkadaConnId: verkadaConnId ?? "",
+          geminiConnId: geminiConnId ?? "",
+          helixEventTypeUid,
+          helixMapping,
+          durationSec,
+        }),
+      ),
+    // ?setup=trigger opens the editor's trigger setup straight away.
+    // The flow arrives with a placeholder trigger and the operator has
+    // not yet said what should start it, so asking is the first thing
+    // that should happen rather than something to go and find.
+    onSuccess: (flow) => navigate(`/flows/${flow.id}/edit?setup=trigger`),
   });
+
 
   // One button, no panel. Everything the panel asked -- webhook or
   // schedule, which objects, how often -- the flow editor asks better on

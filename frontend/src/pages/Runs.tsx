@@ -11,6 +11,7 @@ import {
   RunListResponse,
   RunStep,
 } from "../lib/api";
+import { argsFromRunInput, buildFlowBody } from "../lib/automate";
 import JsonView from "../components/JsonView";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -148,6 +149,22 @@ function RunDetailView({ run }: { run: RunDetail }) {
     !isByoa &&
     !!run.flow_id &&
     !!run.webhook_event_id;
+  // One click from "that result was good" to a flow, with the trigger
+  // setup waiting on the other side.
+  const automate = useMutation({
+    mutationFn: () => {
+      const args = argsFromRunInput(
+        run.input as Record<string, unknown> | null,
+      );
+      if (!args) {
+        throw new Error(
+          "This run does not carry enough to build a flow from — open it in Workbench instead.",
+        );
+      }
+      return apiPost<{ id: string }>("/api/flows", buildFlowBody(args));
+    },
+    onSuccess: (flow) => navigate(`/flows/${flow.id}/edit?setup=trigger`),
+  });
   const flowReplay = useMutation({
     mutationFn: () =>
       apiPost<{ run_id: string }>(
@@ -213,18 +230,20 @@ function RunDetailView({ run }: { run: RunDetail }) {
           )}
           {isByoa && (
             // This is the "it worked, now keep it running" moment — you
-            // are looking at a result you like. Rather than rebuilding
-            // the flow assembler here, it reopens the Workbench with
-            // this run's config, so there is one implementation of the
-            // wiring. No automate=1 any more: the panel that param used
-            // to open is gone, replaced by a button that is on screen
-            // without scrolling to it.
+            // are looking at a result you like, and it should cost one
+            // click. It used to route through the Workbench to reach the
+            // button that built the flow, which meant loading a form,
+            // finding a button on it, and pressing that. The run already
+            // holds everything the flow needs; the shared builder in
+            // lib/automate keeps this from being a second, drifting copy
+            // of the wiring.
             <button
-              onClick={() => navigate(`/workbench?from_run=${run.id}`)}
-              className="text-xs px-2 py-1 rounded-md border border-white/15 text-slate-200 hover:border-sky-500"
+              onClick={() => automate.mutate()}
+              disabled={automate.isPending}
+              className="text-xs px-2 py-1 rounded-md border border-white/15 text-slate-200 hover:border-sky-500 disabled:opacity-50"
               title="Turn this run into a flow that runs on its own"
             >
-              Automate
+              {automate.isPending ? "Building…" : "Automate"}
             </button>
           )}
           {canFlowReplay && (
