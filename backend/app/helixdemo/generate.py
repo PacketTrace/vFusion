@@ -1,0 +1,228 @@
+"""Expanding a described scenario into plausible Helix events.
+
+The model writes a *specification*, not the data. It says what a
+point-of-sale transaction looks like -- what an item costs, how often a
+discount is used, which products exist -- and this expands that into as
+many rows as asked for.
+
+Doing it the other way round, asking for the rows themselves, costs a
+model call per batch, caps out at a few dozen before the response is
+unwieldy, and produces rows that do not relate to one another. A total
+that ignores the item count beside it, a discount code that appears on
+every second sale. Incoherence is what makes invented data read as
+invented, and it is exactly what a spec fixes: totals scale with counts,
+codes appear at the rate the model said they should, and the same seed
+gives the same demo twice.
+
+Fields the model can ask for:
+
+  choice        one of a weighted list
+  int / money   a number in a range, optionally scaled by another field
+  sample_from   several values drawn from a pool, count taken from a field
+  text          one of a list of short phrases
+  bool          "true" or "false" at a given rate
+
+Everything lands in Helix as a string, because every Helix attribute is
+a string.
+"""
+
+from __future__ import annotations
+
+import random
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+
+# A batch is a demo, not a load test. Enough to make a timeline look
+# lived-in, few enough to post without babysitting.
+MAX_EVENTS = 500
+
+
+def _weighted(rng: random.Random, values: list[Any], weights: list[float] | None):
+    if not values:
+        return ""
+    if weights and len(weights) == len(values):
+        return rng.choices(values, weights=weights, k=1)[0]
+    return rng.choice(values)
+
+
+def _money(value: float) -> str:
+    return f"{value:.2f}"
+
+
+def _one_field(
+    rng: random.Random, spec: dict[str, Any], row: dict[str, Any]
+) -> str:
+    kind = str(spec.get("kind") or "choice")
+
+    if kind == "choice":
+        return str(_weighted(rng, spec.get("values") or [], spec.get("weights")))
+
+    if kind == "bool":
+        rate = float(spec.get("rate", 0.5))
+        return "true" if rng.random() < rate else "false"
+
+    if kind in ("int", "money"):
+        low = float(spec.get("min", 0))
+        high = float(spec.get("max", max(low, 1)))
+        # "scales_with" is what makes a row hang together: a total that
+        # tracks the number of items on it, rather than two numbers that
+        # happen to share a row and contradict each other.
+        driver = spec.get("scales_with")
+        if driver and driver in row:
+            try:
+                factor = float(str(row[driver]).replace(",", ""))
+            except ValueError:
+                factor = 1.0
+            per = (low + high) / 2 / max(1.0, float(spec.get("scale_base", 4)))
+            value = per * factor * rng.uniform(0.72, 1.35)
+            value = min(max(value, low), high)
+        elif str(spec.get("skew")) == "low":
+            # Most baskets are small. A flat distribution over 1..12 puts
+            # as many twelve-item sales on the timeline as one-item ones,
+            # which nobody's shop looks like.
+            value = low + (high - low) * (rng.random() ** 2.2)
+        else:
+            value = rng.uniform(low, high)
+        return _money(value) if kind == "money" else str(int(round(value)))
+
+    if kind == "sample_from":
+        pool = list(spec.get("pool") or [])
+        if not pool:
+            return ""
+        count_from = spec.get("count_from")
+        try:
+            count = int(float(row.get(count_from, 0))) if count_from else 0
+        except (TypeError, ValueError):
+            count = 0
+        if count <= 0:
+            count = rng.randint(1, min(3, len(pool)))
+        count = max(1, min(count, len(pool)))
+        return ", ".join(rng.sample(pool, count))
+
+    if kind == "text":
+        return str(_weighted(rng, spec.get("values") or [""], spec.get("weights")))
+
+    return ""
+
+
+def _order(fields: dict[str, Any]) -> list[str]:
+    """Fields that others scale from, first.
+
+    ``scales_with`` and ``count_from`` read a value that has to exist
+    already, so anything depended upon is generated before its dependents.
+    One pass is enough: the model is told not to write chains.
+    """
+    names = list(fields)
+    depended = {
+        str(spec.get("scales_with") or spec.get("count_from") or "")
+        for spec in fields.values()
+    }
+    return sorted(names, key=lambda n: 0 if n in depended else 1)
+
+
+def build_row(rng: random.Random, fields: dict[str, Any]) -> dict[str, str]:
+    row: dict[str, str] = {}
+    for name in _order(fields):
+        spec = fields.get(name) or {}
+        if not isinstance(spec, dict):
+            continue
+        row[name] = _one_field(rng, spec, row)
+    return row
+
+
+def build_times(
+    rng: random.Random,
+    count: int,
+    timing: dict[str, Any],
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    anchors: list[datetime] | None = None,
+) -> list[datetime]:
+    """When each event happened.
+
+    Three shapes, because the right answer depends on what is being
+    shown:
+
+    * ``anchors`` -- real moments, from detections on the camera. The
+      most convincing by a distance: a sale rung up at a second when
+      somebody actually walked through the door, so clicking the event
+      shows a person rather than an empty room.
+    * ``business`` -- shaped by hour, with peaks. What a shop looks like.
+    * anything else -- uniform. Honest, and obviously synthetic: a
+      timeline with as much activity at 4am as at noon is the first
+      thing that gives invented data away.
+    """
+    if anchors:
+        pool = [t for t in anchors if window_start <= t <= window_end]
+        if pool:
+            if len(pool) >= count:
+                return sorted(rng.sample(pool, count))
+            # Fewer real moments than events wanted: use them all, and
+            # scatter the rest within a couple of minutes of one, so the
+            # extras still land near something that happened.
+            out = list(pool)
+            while len(out) < count:
+                base = rng.choice(pool)
+                out.append(base + timedelta(seconds=rng.randint(-120, 120)))
+            return sorted(out)
+
+    span = max(1.0, (window_end - window_start).total_seconds())
+    if str(timing.get("shape")) == "business":
+        open_h, close_h = timing.get("open_hours") or [9, 21]
+        peaks = [int(h) for h in (timing.get("peaks") or [])]
+        out: list[datetime] = []
+        guard = 0
+        while len(out) < count and guard < count * 60:
+            guard += 1
+            when = window_start + timedelta(seconds=rng.uniform(0, span))
+            hour = when.hour
+            if hour < int(open_h) or hour >= int(close_h):
+                continue
+            # Rejection sampling against an hourly weight: near a peak,
+            # almost everything is kept; at the quiet end of the day most
+            # candidates are thrown back.
+            near = min((abs(hour - p) for p in peaks), default=99)
+            keep = 1.0 if near <= 1 else 0.55 if near <= 3 else 0.28
+            # Weekends are quieter unless the model said otherwise.
+            if when.weekday() >= 5 and not timing.get("weekends", True):
+                keep *= 0.3
+            if rng.random() < keep:
+                out.append(when)
+        while len(out) < count:
+            out.append(window_start + timedelta(seconds=rng.uniform(0, span)))
+        return sorted(out)
+
+    return sorted(
+        window_start + timedelta(seconds=rng.uniform(0, span))
+        for _ in range(count)
+    )
+
+
+def build_events(
+    spec: dict[str, Any],
+    *,
+    count: int,
+    window_days: int,
+    seed: int | None = None,
+    anchors: list[datetime] | None = None,
+    timing_shape: str | None = None,
+) -> list[dict[str, Any]]:
+    """(attributes, when) for each event, ready to post."""
+    rng = random.Random(seed)
+    fields = spec.get("fields") if isinstance(spec.get("fields"), dict) else {}
+    timing = dict(spec.get("timing") or {})
+    if timing_shape:
+        timing["shape"] = timing_shape
+
+    count = max(1, min(int(count), MAX_EVENTS))
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=max(1, int(window_days)))
+    times = build_times(
+        rng, count, timing, window_start=start, window_end=now, anchors=anchors
+    )
+    return [
+        {"attributes": build_row(rng, fields), "at": when}
+        for when in times
+    ]

@@ -9,10 +9,34 @@ import {
   HelixEventType,
 } from "../lib/api";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
+import { useCameras } from "../lib/cameras";
+
+
+/** What /api/helix-demo/compose returns: the event type an integration
+ *  would write, and the specification for generating events against it.
+ *  The model never returns rows -- see backend/app/helixdemo/generate.py
+ *  for why a spec beats a list. */
+interface ComposedDemo {
+  name: string;
+  summary: string;
+  model: string;
+  helix_event_type: { name: string; event_schema: Record<string, string> };
+  spec: Record<string, unknown>;
+  sample: { attributes: Record<string, string>; at: string }[];
+}
+
+interface SeedResult {
+  posted: number;
+  requested: number;
+  seed: number;
+  timing: string;
+  anchored_to_detections: boolean;
+  errors: string[];
+}
 
 
 /**
- * The Helix tab — event type CRUD.
+ * Helix — event types, and demo data to fill a timeline with.
  *
  * Lists every Helix event type for a chosen Verkada connection. The
  * editor itself lives in ``components/HelixEventTypeEditor`` so it can
@@ -43,9 +67,27 @@ export default function Helixr() {
   }
   const [editing, setEditing] = useState<HelixEventType | null>(null);
   const [creating, setCreating] = useState(false);
+  // Two things live here now: the types themselves, and a way to fill
+  // one with believable events so a customer can see Helix working
+  // before the integration that would feed it exists.
+  const [sub, setSub] = useState<"types" | "demo">("types");
 
   return (
     <div className="space-y-6">
+      {/* Its own page now rather than a Workbench tab. The header moved
+          with it — a destination without one reads as a fragment of
+          somewhere else. */}
+      <div className="max-w-3xl">
+        <h1 className="text-2xl font-semibold text-white">Helix</h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Verkada Helix attaches structured events to a camera's timeline, so
+          Command can search and filter footage by what happened rather than
+          only by when. This is where the event types those events are written
+          into are managed — and where a timeline can be filled with
+          believable sample data before the system that would feed it exists.
+        </p>
+      </div>
+
       {verkadaConns.length === 0 ? (
         <Card>
           <div className="text-sm text-amber-200">
@@ -75,6 +117,26 @@ export default function Helixr() {
             written with will break searches that rely on it.
           </div>
 
+          <div className="flex items-center gap-1 border-b border-white/10">
+            {([
+              ["types", "Event types"],
+              ["demo", "Demo data"],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSub(key)}
+                className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                  sub === key
+                    ? "border-sky-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <label className="flex items-center gap-2 text-sm">
               <span className="text-slate-300">Verkada org</span>
@@ -90,21 +152,24 @@ export default function Helixr() {
                 ))}
               </select>
             </label>
-            <button
-              onClick={() => setCreating(true)}
-              disabled={!connId}
-              className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
-            >
-              + Create event type
-            </button>
+            {sub === "types" && (
+              <button
+                onClick={() => setCreating(true)}
+                disabled={!connId}
+                className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+              >
+                + Create event type
+              </button>
+            )}
           </div>
 
-          {connId && (
+          {connId && sub === "types" && (
             <EventTypeList
               connId={connId}
               onEdit={(et) => setEditing(et)}
             />
           )}
+          {connId && sub === "demo" && <DemoPanel connId={connId} />}
 
           {creating && (
             <HelixEventTypeEditor
@@ -122,6 +187,331 @@ export default function Helixr() {
             />
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+
+/** Describe an integration, get a Helix type and a week of events.
+ *
+ *  Two steps rather than one button. Composing is cheap and reversible;
+ *  seeding writes to a live Verkada org. Running them together would
+ *  mean finding out the schema was wrong only after several hundred rows
+ *  had landed on it.
+ */
+function DemoPanel({ connId }: { connId: string }) {
+  const qc = useQueryClient();
+  const conns = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<Connection[]>("/api/connections"),
+  });
+  const cameras = useCameras();
+  const types = useQuery({
+    queryKey: ["helix-event-types", connId],
+    queryFn: () =>
+      apiGet<HelixEventType[]>(`/api/connections/${connId}/helix-event-types`),
+    enabled: !!connId,
+  });
+  const geminiConns = (conns.data ?? []).filter(
+    (c) => c.type === "gemini" && c.setup_complete,
+  );
+
+  const [intent, setIntent] = useState("");
+  const [geminiId, setGeminiId] = useState("");
+  const [cameraId, setCameraId] = useState("");
+  const [count, setCount] = useState(60);
+  const [windowDays, setWindowDays] = useState(7);
+  const [timing, setTiming] = useState<"business" | "random" | "detections">(
+    "business",
+  );
+  const [draft, setDraft] = useState<ComposedDemo | null>(null);
+  const [typeUid, setTypeUid] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  if (!geminiId && geminiConns.length > 0 && geminiConns[0]) {
+    setGeminiId(geminiConns[0].id);
+  }
+
+  const compose = useMutation({
+    mutationFn: () =>
+      apiPost<ComposedDemo>("/api/helix-demo/compose", {
+        gemini_connection_id: geminiId,
+        intent,
+      }),
+    onSuccess: (d) => {
+      setErr(null);
+      setDraft(d);
+      // If a type with this name already exists, seed into it rather
+      // than making a near-duplicate the customer then has to tell
+      // apart in Command.
+      const match = (types.data ?? []).find(
+        (t) => (t.name ?? "").trim() === d.helix_event_type.name.trim(),
+      );
+      setTypeUid(match?.event_type_uid ?? "");
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const createType = useMutation({
+    mutationFn: () =>
+      apiPost<HelixEventType>(`/api/connections/${connId}/helix-event-types`, {
+        name: draft!.helix_event_type.name,
+        event_schema: draft!.helix_event_type.event_schema,
+      }),
+    onSuccess: (row) => {
+      setTypeUid(row.event_type_uid);
+      qc.invalidateQueries({ queryKey: ["helix-event-types", connId] });
+    },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const seed = useMutation({
+    mutationFn: () =>
+      apiPost<SeedResult>("/api/helix-demo/seed", {
+        connection_id: connId,
+        camera_id: cameraId,
+        event_type_uid: typeUid,
+        spec: draft!.spec,
+        count,
+        window_days: windowDays,
+        timing,
+      }),
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const attrs = draft ? Object.keys(draft.helix_event_type.event_schema) : [];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+          Describe the integration
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">
+          What system would be writing to Helix if it were connected? vFusion
+          designs the event type it would use and fills a camera's timeline
+          with believable events, so the value is visible before anyone builds
+          the integration.
+        </p>
+        <textarea
+          value={intent}
+          onChange={(e) => setIntent(e.target.value)}
+          rows={3}
+          placeholder="e.g. our point-of-sale system — items bought, total, discount code, register number"
+          className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm placeholder:text-slate-500 placeholder:italic"
+        />
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <select
+            value={geminiId}
+            onChange={(e) => setGeminiId(e.target.value)}
+            className="px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs"
+          >
+            {geminiConns.length === 0 && <option value="">no Gemini key</option>}
+            {geminiConns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => compose.mutate()}
+            disabled={!intent.trim() || !geminiId || compose.isPending}
+            className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+          >
+            {compose.isPending ? "Designing…" : "Design it"}
+          </button>
+          <span className="text-[11px] text-slate-500">
+            Nothing is written to Verkada yet.
+          </span>
+        </div>
+      </Card>
+
+      {err && (
+        <div className="text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
+          {err}
+        </div>
+      )}
+
+      {draft && (
+        <Card>
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-medium text-slate-100">
+                {draft.helix_event_type.name}
+              </div>
+              <div className="text-[11px] text-slate-400">{draft.summary}</div>
+            </div>
+            <span className="text-[10px] text-slate-600">
+              written by {draft.model}
+            </span>
+          </div>
+
+          {/* Rows from the real generator, not a description of it. Five
+              is enough to judge whether the numbers agree with each
+              other and whether the values sound like a real business. */}
+          <div className="mt-3 border border-white/10 rounded overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead className="bg-white/5 text-slate-400">
+                <tr>
+                  {attrs.map((a) => (
+                    <th key={a} className="text-left px-2 py-1 font-medium">
+                      {a}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10 font-mono text-slate-300">
+                {draft.sample.map((row, i) => (
+                  <tr key={i}>
+                    {attrs.map((a) => (
+                      <td key={a} className="px-2 py-1 whitespace-nowrap">
+                        {row.attributes[a] || "—"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
+            A sample from the same generator that will fill the timeline.
+            Design it again if the values do not sound like your customer.
+          </p>
+        </Card>
+      )}
+
+      {draft && (
+        <Card>
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">
+            Fill a timeline
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block">
+              <div className="text-xs text-slate-300 mb-1">Camera</div>
+              <select
+                value={cameraId}
+                onChange={(e) => setCameraId(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                <option value="">— pick a camera —</option>
+                {(cameras.data ?? []).map((c) => (
+                  <option key={c.camera_id} value={c.camera_id}>
+                    {c.name ?? c.camera_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <div className="text-xs text-slate-300 mb-1">Event type</div>
+              <select
+                value={typeUid}
+                onChange={(e) => setTypeUid(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                <option value="">— not created yet —</option>
+                {(types.data ?? []).map((t) => (
+                  <option key={t.event_type_uid} value={t.event_type_uid}>
+                    {t.name ?? t.event_type_uid}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {!typeUid && (
+            <button
+              type="button"
+              onClick={() => createType.mutate()}
+              disabled={createType.isPending}
+              className="mt-2 text-sm px-3 py-1.5 rounded border border-emerald-700/60 bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/60 disabled:opacity-40"
+            >
+              {createType.isPending
+                ? "Creating…"
+                : `Create "${draft.helix_event_type.name}" on this org`}
+            </button>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+            <label className="block">
+              <div className="text-xs text-slate-300 mb-1">How many</div>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              />
+            </label>
+            <label className="block">
+              <div className="text-xs text-slate-300 mb-1">Over the last</div>
+              <select
+                value={windowDays}
+                onChange={(e) => setWindowDays(Number(e.target.value))}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                <option value={1}>day</option>
+                <option value={3}>3 days</option>
+                <option value={7}>week</option>
+                <option value={14}>2 weeks</option>
+                <option value={30}>30 days</option>
+              </select>
+            </label>
+            <label className="block">
+              <div className="text-xs text-slate-300 mb-1">When</div>
+              <select
+                value={timing}
+                onChange={(e) =>
+                  setTiming(e.target.value as "business" | "random" | "detections")
+                }
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                <option value="business">Business hours, with peaks</option>
+                <option value="detections">When the camera saw someone</option>
+                <option value="random">Spread at random</option>
+              </select>
+            </label>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
+            {timing === "detections"
+              ? "Stamps each event at a moment this camera really detected a person or vehicle, so clicking one in Command shows footage of something happening. Falls back to business hours if the camera has no detection history."
+              : timing === "business"
+                ? "Shaped by hour with a lunch and evening peak. A timeline as busy at 4am as at noon is the first thing that gives invented data away."
+                : "Evenly scattered across the window. Honest, and obviously synthetic."}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            <button
+              type="button"
+              onClick={() => seed.mutate()}
+              disabled={!cameraId || !typeUid || seed.isPending}
+              className="text-sm px-4 py-2 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+            >
+              {seed.isPending
+                ? "Posting…"
+                : seed.data
+                  ? "Run it again with fresh data"
+                  : "Fill the timeline"}
+            </button>
+            {seed.data && (
+              <span className="text-[11px] text-slate-400">
+                Posted {seed.data.posted} of {seed.data.requested}
+                {seed.data.anchored_to_detections
+                  ? ", anchored to real detections"
+                  : seed.data.timing !== timing
+                    ? " — no detection history, so business hours instead"
+                    : ""}
+                . Each run generates different data.
+              </span>
+            )}
+          </div>
+          {seed.data && seed.data.errors.length > 0 && (
+            <div className="mt-2 text-[11px] text-rose-300">
+              {seed.data.errors[0]}
+            </div>
+          )}
+        </Card>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import mqtt_config as mqtt_api
 from app.api import onvif as onvif_api
+from app.api import helix_demo as helix_demo_api
 from app.api import rtsp as rtsp_api
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
@@ -155,6 +156,7 @@ app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(mqtt_api.router)
 app.include_router(rtsp_api.router)
+app.include_router(helix_demo_api.router)
 app.include_router(onvif_api.router)
 app.include_router(settings_api.router)
 

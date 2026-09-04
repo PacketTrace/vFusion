@@ -17,6 +17,7 @@ import Mqtt from "./pages/Mqtt";
 import SettingsPage from "./pages/Settings";
 import Stats from "./pages/Stats";
 import Templates from "./pages/Templates";
+import Helix from "./pages/Helixr";
 import Rtsp from "./pages/Rtsp";
 import Workbench from "./pages/Workbench";
 
@@ -215,6 +216,15 @@ function AppShell() {
               Workbench
             </NavLink>
             <NavLink
+              to="/helix"
+              className={({ isActive }) =>
+                `${navItem} ${isActive ? navActive : navInactive}`
+              }
+              title="Verkada Helix event types — the schemas your results are written into, and demo data to fill a timeline with"
+            >
+              Helix
+            </NavLink>
+            <NavLink
               to="/virtual-camera"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
@@ -269,6 +279,7 @@ function AppShell() {
           <Route path="/templates" element={<Templates />} />
           {/* Keep /byoa as an alias so existing "Run it back" URLs work. */}
           <Route path="/workbench" element={<Workbench />} />
+          <Route path="/helix" element={<Helix />} />
           <Route path="/virtual-camera" element={<Rtsp />} />
           <Route path="/byoa" element={<Workbench />} />
           <Route path="/stats" element={<Stats />} />
