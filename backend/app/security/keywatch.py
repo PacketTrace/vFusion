@@ -32,9 +32,12 @@ than the question being asked.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import time
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -58,7 +61,22 @@ HEARTBEAT_PATH = "/cameras/v1/devices"
 ENABLED_KEY = "keywatch_enabled"
 CONNECTION_KEY = "keywatch_connection_id"
 INTERVAL_KEY = "keywatch_interval_hours"
+# The aggregate lives in a file, not in app_settings. That column is
+# varchar(255) and this state grows with every address observed, so it
+# outgrew the column on the first real check -- the write failed, the
+# check's result was thrown away, and the page kept reporting that
+# nothing had ever run. Same reasoning as rtsp/state.json: it is
+# operational state on the shared assets volume, and it is not worth a
+# migration.
 STATE_KEY = "keywatch_state"
+STATE_PATH = Path(
+    os.environ.get("KEYWATCH_STATE_FILE", "/app/data/keywatch/state.json")
+)
+_state_lock = asyncio.Lock()
+
+# A stack trace does not belong on a dashboard, and an unbounded one
+# used to be the thing that made saving fail a second time.
+MAX_ERROR_CHARS = 400
 
 DEFAULT_INTERVAL_HOURS = 1
 
@@ -125,7 +143,16 @@ def blank_state() -> dict[str, Any]:
 
 
 async def load_state() -> dict[str, Any]:
-    raw = await get_str(STATE_KEY)
+    raw: str | None = None
+    async with _state_lock:
+        try:
+            raw = STATE_PATH.read_text(encoding="utf-8")
+        except OSError:
+            raw = None
+    if not raw:
+        # Falls back to the old app_settings row once, so an install that
+        # stored a state small enough to fit keeps its expected IPs.
+        raw = await get_str(STATE_KEY)
     if not raw:
         return blank_state()
     try:
@@ -139,11 +166,22 @@ async def load_state() -> dict[str, Any]:
     return base
 
 
-async def save_state(session: AsyncSession, state: dict[str, Any]) -> None:
-    await set_value(session, STATE_KEY, json.dumps(state, separators=(",", ":")))
-    # The settings cache is 30s; without this a "check now" followed by a
-    # page load would render the state from before the check.
-    invalidate_cache()
+async def save_state(state: dict[str, Any]) -> None:
+    """Write the aggregate. Never raises — losing the record of a check
+    must not also lose the check."""
+    err = state.get("last_error")
+    if isinstance(err, str) and len(err) > MAX_ERROR_CHARS:
+        state["last_error"] = err[:MAX_ERROR_CHARS] + "…"
+    try:
+        async with _state_lock:
+            STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = STATE_PATH.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(state, separators=(",", ":")), encoding="utf-8"
+            )
+            tmp.replace(STATE_PATH)
+    except OSError:
+        logger.warning("could not persist keywatch state", exc_info=True)
 
 
 async def _fetch_window(
@@ -165,11 +203,11 @@ async def _fetch_window(
     seen_tokens: set[str] = set()
     requests = 0
     deadline = time.monotonic() + budget_sec
-    for page in range(MAX_PAGES):
+    for page_num in range(MAX_PAGES):
         if time.monotonic() > deadline:
             logger.warning(
                 "keywatch: stopping at page %s — %.0fs budget spent, %s rows so far",
-                page,
+                page_num,
                 budget_sec,
                 len(rows),
             )
@@ -191,17 +229,22 @@ async def _fetch_window(
         body = result.get("body")
         if not isinstance(body, dict):
             raise RuntimeError("audit log returned an unexpected body")
-        page = body.get("audit_logs")
-        rows.extend(r for r in (page or []) if isinstance(r, dict))
+        page_rows = body.get("audit_logs") or []
+        if not isinstance(page_rows, list):
+            page_rows = []
+        rows.extend(r for r in page_rows if isinstance(r, dict))
         logger.warning(
-            "keywatch: page %s -> %s rows (%s total)", page, len(page or []), len(rows)
+            "keywatch: page %s -> %s rows (%s total)",
+            page_num,
+            len(page_rows),
+            len(rows),
         )
         token = body.get("next_page_token") or None
         # Three ways to be done. A page shorter than the size asked for
         # is the end of the data; a repeated token means the API is not
         # advancing and looping on it would burn the whole page budget
         # re-reading one page.
-        if not token or len(page or []) < PAGE_SIZE or token in seen_tokens:
+        if not token or len(page_rows) < PAGE_SIZE or token in seen_tokens:
             return rows, requests, False, 0
         seen_tokens.add(token)
     return rows, requests, True, 0
@@ -222,7 +265,7 @@ async def run_check(
     conn_id = await get_str(CONNECTION_KEY)
     if not conn_id:
         state["last_error"] = "No Verkada connection selected to watch."
-        await save_state(session, state)
+        await save_state(state)
         return state
 
     try:
@@ -231,26 +274,26 @@ async def run_check(
         conn = None
     if conn is None or conn.type != "verkada":
         state["last_error"] = "The watched connection no longer exists."
-        await save_state(session, state)
+        await save_state(state)
         return state
 
     try:
         secret = decrypt_secret(conn.encrypted_secret) or {}
     except ValueError as e:
         state["last_error"] = f"Could not read that connection's key: {e}"
-        await save_state(session, state)
+        await save_state(state)
         return state
     api_key = secret.get("api_key") or ""
     if not api_key:
         state["last_error"] = "That connection has no API key."
-        await save_state(session, state)
+        await save_state(state)
         return state
 
     try:
         client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
     except Exception as e:  # noqa: BLE001
         state["last_error"] = f"Could not build a Verkada client: {e}"
-        await save_state(session, state)
+        await save_state(state)
         return state
 
     now_s = int(_now().timestamp())
@@ -289,7 +332,7 @@ async def run_check(
     except Exception as e:  # noqa: BLE001
         state["last_error"] = str(e)
         state["requests_used"] = requests_used
-        await save_state(session, state)
+        await save_state(state)
         return state
 
     observed: dict[str, Any] = dict(state.get("observed") or {})
@@ -391,7 +434,7 @@ async def run_check(
             ),
         }
     )
-    await save_state(session, state)
+    await save_state(state)
     return state
 
 

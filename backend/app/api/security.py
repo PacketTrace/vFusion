@@ -344,7 +344,7 @@ async def keywatch_check(
         state = await keywatch.load_state()
         state["last_check"] = datetime.now(timezone.utc).isoformat()
         state["last_error"] = f"{type(e).__name__}: {e}"
-        await keywatch.save_state(session, state)
+        await keywatch.save_state(state)
         await session.commit()
         return state
 
@@ -359,7 +359,7 @@ async def set_expected_ips(
     state["expected_ips"] = cleaned
     # An address that is now expected is no longer an alert.
     state["alerts"] = [a for a in state.get("alerts", []) if a.get("ip") not in cleaned]
-    await keywatch.save_state(session, state)
+    await keywatch.save_state(state)
     await session.commit()
     invalidate_cache()
     return state
@@ -384,7 +384,7 @@ async def resolve_alert(
         observed = dict(state.get("observed") or {})
         observed.pop(body.ip, None)
         state["observed"] = observed
-    await keywatch.save_state(session, state)
+    await keywatch.save_state(state)
     await session.commit()
     invalidate_cache()
     return state
