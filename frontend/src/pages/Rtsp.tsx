@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { API_BASE, apiDelete, apiGet, apiPost, apiPut } from "../lib/api";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { copyToClipboard } from "../lib/clipboard";
 
 /**
  * A camera that does not exist, for Verkada's Command Connector.
@@ -806,6 +807,10 @@ function CopyRow({
 }) {
   const [shown, setShown] = useState(!secret);
   const [copied, setCopied] = useState(false);
+  // A copy that fails should say so. Silently doing nothing is what
+  // this looked like, and it reads as a broken button rather than as a
+  // browser refusing on an insecure origin.
+  const [failed, setFailed] = useState(false);
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">
@@ -826,14 +831,21 @@ function CopyRow({
         )}
         <button
           type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(value);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1200);
+          // Via the helper, not navigator.clipboard directly: this page
+          // is reached over plain LAN HTTP, which is not a secure
+          // context, so the modern API is not there to call.
+          onClick={async () => {
+            const ok = await copyToClipboard(value);
+            setCopied(ok);
+            if (!ok) setFailed(true);
+            window.setTimeout(() => {
+              setCopied(false);
+              setFailed(false);
+            }, 1400);
           }}
           className="text-xs px-2 py-1.5 rounded border border-white/15 text-slate-200 hover:border-sky-600"
         >
-          {copied ? "Copied" : "Copy"}
+          {failed ? "Select it" : copied ? "Copied" : "Copy"}
         </button>
       </div>
     </div>
