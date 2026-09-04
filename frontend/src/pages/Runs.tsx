@@ -215,12 +215,12 @@ function RunDetailView({ run }: { run: RunDetail }) {
             // This is the "it worked, now keep it running" moment — you
             // are looking at a result you like. Rather than rebuilding
             // the flow assembler here, it reopens the Workbench with
-            // this run's config and the automation panel already open,
-            // so there is one implementation of the wiring.
+            // this run's config, so there is one implementation of the
+            // wiring. No automate=1 any more: the panel that param used
+            // to open is gone, replaced by a button that is on screen
+            // without scrolling to it.
             <button
-              onClick={() =>
-                navigate(`/workbench?from_run=${run.id}&automate=1`)
-              }
+              onClick={() => navigate(`/workbench?from_run=${run.id}`)}
               className="text-xs px-2 py-1 rounded-md border border-white/15 text-slate-200 hover:border-sky-500"
               title="Turn this run into a flow that runs on its own"
             >

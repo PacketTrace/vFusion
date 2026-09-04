@@ -1458,7 +1458,6 @@ export default function Byoa() {
 
         {source === "camera" && (
           <MakeItRun
-            defaultOpen={searchParams.get("automate") === "1"}
             analyticName={pickedTemplate?.name ?? "Analytic"}
             prompt={prompt}
             model={model}
@@ -2023,7 +2022,6 @@ function AnalyticComposer({
  *  and assembles the rest.
  */
 function MakeItRun({
-  defaultOpen = false,
   analyticName,
   prompt,
   model,
@@ -2036,7 +2034,6 @@ function MakeItRun({
   helixMapping,
   durationSec,
 }: {
-  defaultOpen?: boolean;
   analyticName: string;
   prompt: string;
   model: string;
@@ -2050,9 +2047,6 @@ function MakeItRun({
   durationSec: number;
 }) {
   const navigate = useNavigate();
-  const [when, setWhen] = useState<"camera" | "schedule">("camera");
-  const [objects, setObjects] = useState("person");
-  const [everyMinutes, setEveryMinutes] = useState(15);
   // Naming what is missing beats a greyed button with no explanation.
   // The Helix type matters most: a flow built before it exists writes to
   // an event type that is not there, and the failure only shows up on
@@ -2068,18 +2062,21 @@ function MakeItRun({
 
   const create = useMutation({
     mutationFn: () => {
-      // A camera-triggered run analyses the event that fired it; a
-      // scheduled one has no event, so it looks at the camera now.
-      const byEvent = when === "camera";
+      // The camera is written in literally rather than as
+      // {{ trigger.data.camera_id }}. The trigger is filtered to this one
+      // camera, so the two resolve identically today -- but the next
+      // screen lets the trigger be changed to a schedule, and a schedule
+      // has no trigger.data to read a camera out of. A literal id
+      // survives that; a template ref quietly resolves to nothing.
       const analyzeConfig: Record<string, unknown> = {
         connection_id: verkadaConnId,
         gemini_connection_id: geminiConnId,
-        camera_id: byEvent ? "{{ trigger.data.camera_id }}" : cameraId,
+        camera_id: cameraId,
         model,
         prompt,
       };
       if (mode === "historical") {
-        analyzeConfig.start_epoch = byEvent ? "{{ trigger.data.created }}" : "";
+        analyzeConfig.start_epoch = "{{ trigger.data.created }}";
         analyzeConfig.duration_sec = String(durationSec);
         analyzeConfig.pre_roll_sec = "2";
       }
@@ -2117,7 +2114,7 @@ function MakeItRun({
           action_type: "verkada_helix_event",
           config: {
             connection_id: verkadaConnId,
-            camera_id: byEvent ? "{{ trigger.data.camera_id }}" : cameraId,
+            camera_id: cameraId,
             event_type_uid: helixEventTypeUid,
             attributes: Object.keys(attributes).length
               ? attributes
@@ -2133,14 +2130,18 @@ function MakeItRun({
         // motion event the moment a button is pressed is a surprise bill
         // and a surprise write to someone's Helix log.
         enabled: false,
-        trigger_type: byEvent ? "verkada_webhook" : "schedule",
-        trigger_config: byEvent
-          ? {
-              family: "camera",
-              notification_type: "alert_rule_motion",
-              filters: { camera_id: cameraId, ...(objects ? { objects } : {}) },
-            }
-          : { kind: "interval", every_minutes: everyMinutes },
+        // Motion on this camera, unfiltered by object. A starting point
+        // rather than an answer: the editor this opens into asks the
+        // same question with more of it -- schedule as well as webhook,
+        // any filter field rather than three object types, daily and
+        // weekly as well as intervals -- and opens with the trigger
+        // already selected.
+        trigger_type: "verkada_webhook",
+        trigger_config: {
+          family: "camera",
+          notification_type: "alert_rule_motion",
+          filters: { camera_id: cameraId },
+        },
         nodes,
         edges,
       });
@@ -2148,144 +2149,34 @@ function MakeItRun({
     onSuccess: (flow) => navigate(`/flows/${flow.id}/edit`),
   });
 
-  // A second full-size card under the run button read as a competing
-  // call to action — first time through, it is not obvious whether to
-  // press Brew it or Build the flow. Brewing comes first; this is what
-  // you do once it works, so it is a line until asked for.
-  const [open, setOpen] = useState(defaultOpen);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  // Arriving from a run means the intent is already "automate this", so
-  // put it on screen rather than leaving it below the fold.
-  //
-  // Aligned to the bottom, not the centre: this panel is the last thing
-  // on the page, so centring it can only ever leave its lower half off
-  // screen — including the button the whole trip was for.
-  //
-  // And scrolled more than once. Everything above here — cameras,
-  // templates, connections — is still loading when this first fires, so
-  // the page grows underneath the scroll and the panel ends up below
-  // where the browser just went. That is why it landed part way. A
-  // repeat on the next frame and again once the queries have had time
-  // to land costs nothing and is what makes it arrive.
-  useEffect(() => {
-    if (!defaultOpen) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const bring = () =>
-      panelRef.current?.scrollIntoView({
-        behavior: reduced ? "auto" : "smooth",
-        block: "end",
-      });
-    bring();
-    const frame = requestAnimationFrame(bring);
-    const settled = window.setTimeout(bring, 450);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.clearTimeout(settled);
-    };
-  }, [defaultOpen]);
-
-  if (!open) {
-    return (
-      <div className="border-t border-white/10 mt-4 pt-3">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-[11px] text-slate-500 hover:text-slate-300"
-        >
-          Once it works, you can{" "}
-          <span className="underline underline-offset-2">
-            set it to run automatically
-          </span>{" "}
-          →
-        </button>
-      </div>
-    );
-  }
-
+  // One button, no panel. Everything the panel asked -- webhook or
+  // schedule, which objects, how often -- the flow editor asks better on
+  // the very next screen: any filter field rather than three object
+  // types, daily and weekly as well as intervals, and it opens with the
+  // trigger already selected. Asking here first was a worse copy of a
+  // form the operator was about to be shown anyway, and putting it at
+  // the bottom of a long page meant half the trouble was getting to it.
   return (
-    <div ref={panelRef} className="border-t border-white/10 mt-4 pt-4">
-      <div>
-        <div className="flex items-baseline justify-between gap-3 mb-1">
-          <div className="text-sm text-slate-100">Make this run on its own</div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="text-[11px] text-slate-500 hover:text-slate-300"
-          >
-            Hide
-          </button>
-        </div>
-        <p className="text-[11px] text-slate-400 mt-0.5 mb-3">
-          Everything above carries over — camera, prompt, model and the Helix
-          mapping. The only open question is what starts it.
-        </p>
-
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <ModeBtn active={when === "camera"} onClick={() => setWhen("camera")}>
-          When this camera sees something
-        </ModeBtn>
-        <ModeBtn active={when === "schedule"} onClick={() => setWhen("schedule")}>
-          On a schedule
-        </ModeBtn>
-      </div>
-
-      {when === "camera" ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-[11px] text-slate-400">Run when it detects</span>
-          <select
-            value={objects}
-            onChange={(e) => setObjects(e.target.value)}
-            className="px-2 py-1 rounded bg-white/5 border border-white/15 text-sm"
-          >
-            <option value="person">a person</option>
-            <option value="vehicle">a vehicle</option>
-            <option value="animal">an animal</option>
-            <option value="">anything moving</option>
-          </select>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-[11px] text-slate-400">Run every</span>
-          <select
-            value={everyMinutes}
-            onChange={(e) => setEveryMinutes(Number(e.target.value))}
-            className="px-2 py-1 rounded bg-white/5 border border-white/15 text-sm"
-          >
-            <option value={15}>15 minutes</option>
-            <option value={30}>30 minutes</option>
-            <option value={60}>hour</option>
-            <option value={360}>6 hours</option>
-            <option value={1440}>day</option>
-          </select>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3 mt-4">
-        <button
-          type="button"
-          onClick={() => create.mutate()}
-          disabled={!ready || create.isPending}
-          className="text-sm px-4 py-2 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
-        >
-          {create.isPending ? "Building…" : "Build the flow"}
-        </button>
-        <span className="text-[11px] text-slate-500">
-          Opens in the flow editor, switched off. Nothing runs until you enable
-          and save it.
-        </span>
-      </div>
-      {!ready && (
-        <p className="text-[11px] text-amber-400/80 mt-2">
-          Still needs {missing.join(", ")}.
+    <div className="border-t border-white/10 mt-4 pt-3 flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={() => create.mutate()}
+        disabled={!ready || create.isPending}
+        className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+      >
+        {create.isPending ? "Building…" : "Set it to run automatically →"}
+      </button>
+      <span className="text-[11px] text-slate-500">
+        {ready
+          ? "Carries over the camera, prompt, model and Helix mapping, then opens the flow editor so you can say what starts it. Switched off until you enable it."
+          : `Still needs ${missing.join(", ")}.`}
+      </span>
+      {create.isError && (
+        <p className="text-xs text-rose-300 basis-full">
+          {(create.error as Error).message}
         </p>
       )}
-        {create.isError && (
-          <p className="text-xs text-rose-300 mt-2">
-            {(create.error as Error).message}
-          </p>
-        )}
-      </div>
     </div>
   );
 }
+
