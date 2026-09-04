@@ -367,9 +367,12 @@ button:not(:disabled):active {
    leave the bar. A compact glyph sidesteps that entirely. */
 
 .brand-atom {
+  display: block;
   width: 24px;
   height: 24px;
   flex: none;
+  /* The glow reaches past the box on purpose; a 24px clip would cut it
+     into a square. */
   overflow: visible;
 }
 

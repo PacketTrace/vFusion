@@ -118,9 +118,9 @@ const RINGS: Ring[] = Array.from({ length: CONFIG.orbits }, (_, i) => {
 
 export default function VfusionAtom() {
   return (
-    <>
+    <span className="brand-atom">
       <style>{CSS}</style>
-      <svg className="vfa brand-atom" viewBox="0 0 200 200" aria-hidden="true">
+      <svg className="vfa" viewBox="0 0 200 200" aria-hidden="true">
         {RINGS.map((ring, i) => (
           <g
             key={i}
@@ -155,6 +155,6 @@ export default function VfusionAtom() {
           r={CONFIG.nucleusRadius}
         />
       </svg>
-    </>
+    </span>
   );
 }
