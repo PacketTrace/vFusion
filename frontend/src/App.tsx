@@ -64,9 +64,15 @@ function AppShell() {
   // the path. updatePlaybackRate changes speed while keeping the current
   // position, which is the difference between throttling up and
   // restarting.
+  //
+  // The selector matters: this was still looking for ``.brand-dot``,
+  // which the atom replaced, so hovering had done nothing for a while.
+  // Everything animated in the glyph speeds up together, or the parts
+  // that did not would drift out of the relationship they were tuned to.
   const markRef = useRef<HTMLDivElement>(null);
+  const ANIMATED = ".atom-ring, .atom-arc, .atom-particle, .atom-core, .atom-halo";
   const setOrbitRate = (rate: number) => {
-    markRef.current?.querySelectorAll(".brand-dot").forEach((el) => {
+    markRef.current?.querySelectorAll(ANIMATED).forEach((el) => {
       for (const anim of el.getAnimations()) {
         if (typeof anim.updatePlaybackRate === "function") {
           anim.updatePlaybackRate(rate);
@@ -104,24 +110,76 @@ function AppShell() {
               aria-hidden="true"
               focusable="false"
             >
+              {/* Each orbit is a tilt group holding a ring and a
+                  particle. The particle rides the ring's own rotation,
+                  and dims and shrinks on the half of the orbit that
+                  reads as behind the core — phase-locked because the two
+                  animations share a duration and a start. That depth cue
+                  is what stops three ellipses reading as three flat
+                  loops. The second, dashed ellipse is a bright arc that
+                  travels the ring: the trace of something moving, on a
+                  ring that is otherwise just geometry. */}
               <g transform="rotate(0 20 20)">
                 <g className="atom-ring atom-ring-a">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                  <ellipse
+                    className="atom-arc"
+                    cx="20"
+                    cy="20"
+                    rx="17"
+                    ry="6.5"
+                    pathLength={100}
+                  />
+                  <circle
+                    className="atom-particle atom-particle-a"
+                    cx="37"
+                    cy="20"
+                    r="1.5"
+                  />
                 </g>
               </g>
               <g transform="rotate(60 20 20)">
                 <g className="atom-ring atom-ring-b">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                  <ellipse
+                    className="atom-arc"
+                    cx="20"
+                    cy="20"
+                    rx="17"
+                    ry="6.5"
+                    pathLength={100}
+                  />
+                  <circle
+                    className="atom-particle atom-particle-b"
+                    cx="37"
+                    cy="20"
+                    r="1.5"
+                  />
                 </g>
               </g>
               <g transform="rotate(120 20 20)">
                 <g className="atom-ring atom-ring-c">
                   <ellipse cx="20" cy="20" rx="17" ry="6.5" />
-                  <circle className="atom-particle" cx="37" cy="20" r="1.5" />
+                  <ellipse
+                    className="atom-arc"
+                    cx="20"
+                    cy="20"
+                    rx="17"
+                    ry="6.5"
+                    pathLength={100}
+                  />
+                  <circle
+                    className="atom-particle atom-particle-c"
+                    cx="37"
+                    cy="20"
+                    r="1.5"
+                  />
                 </g>
               </g>
+              {/* Drawn after the rings so the core sits in front of the
+                  far halves and behind nothing — the one place a flat
+                  SVG can cheat depth for free. */}
+              <circle className="atom-halo" cx="20" cy="20" r="2.4" />
               <circle className="atom-core" cx="20" cy="20" r="2.4" />
             </svg>
             <span>{brand}</span>

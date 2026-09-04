@@ -383,7 +383,12 @@ button:not(:disabled):active {
 }
 
 /* Each ring keeps its tilt from the wrapping <g> and spins about the
-   centre, so the trio reads as a sphere rather than three flat loops. */
+   centre, so the trio reads as a sphere rather than three flat loops.
+
+   The three periods are deliberately not in simple ratio -- 6, 8.5 and
+   7.2 seconds share no small common multiple, so the figure never
+   settles into a pose it has held before. A repeating arrangement is
+   the thing that makes a loop look like a loop. */
 .atom-ring {
   /* transform-box: view-box is load-bearing. transform-origin lengths are
      CSS pixels, but 20 is a viewBox user unit — they coincide only at
@@ -393,6 +398,27 @@ button:not(:disabled):active {
   transform-box: view-box;
   transform-origin: 50% 50%;
   animation: atom-spin 6s linear infinite;
+}
+
+/* The bright arc travelling each ring.
+ *
+ * A long dash and a long gap, slid around the path by animating the
+ * offset: what you see is a segment of light running the orbit. It is
+ * the one paint-level animation here rather than a composited one, which
+ * would matter on something large and does not on a 22px glyph that
+ * repaints a handful of pixels.
+ *
+ * pathLength normalises the geometry to 100 units, so the dash numbers
+ * mean percentages of the orbit rather than user units that would need
+ * recomputing if the ellipse ever changed. */
+.atom-arc {
+  stroke: currentColor;
+  stroke-width: 1.6;
+  /* 18 units of light, 82 of gap, on a path normalised to 100. */
+  stroke-dasharray: 18 82;
+  stroke-linecap: round;
+  opacity: 0.9;
+  animation: atom-arc-travel 2.4s linear infinite;
 }
 
 .atom-ring-a {
@@ -407,23 +433,74 @@ button:not(:disabled):active {
   filter: drop-shadow(0 0 1.5px rgb(168 85 247 / 0.9));
 }
 
+.atom-ring-b .atom-arc {
+  animation-duration: 3.1s;
+  animation-direction: reverse;
+}
+
 .atom-ring-c {
   color: rgb(96 165 250);
   animation-duration: 7.2s;
   filter: drop-shadow(0 0 1.5px rgb(96 165 250 / 0.9));
 }
 
+.atom-ring-c .atom-arc {
+  animation-duration: 2.7s;
+}
+
 /* Particles are brighter than their ring — in the reference they are
-   the part that catches the eye, with the rings as the trace behind. */
+   the part that catches the eye, with the rings as the trace behind.
+ *
+ * Each also breathes in size and brightness once per revolution of its
+ * own ring, and the durations match exactly for that reason: both
+ * animations start on the same frame and share a period, so the dimming
+ * stays pinned to the same point of the orbit forever. A particle that
+ * fades as it rounds the back and brightens as it comes past the front
+ * is the entire difference between a sphere and three overlapping
+ * ellipses -- and it costs one opacity and one scale. */
 .atom-particle {
   fill: rgb(255 255 255);
   filter: drop-shadow(0 0 2px currentColor);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: atom-depth 6s linear infinite;
 }
 
+.atom-particle-b {
+  animation-duration: 8.5s;
+  animation-direction: reverse;
+}
+
+.atom-particle-c {
+  animation-duration: 7.2s;
+}
+
+/* The core, and the discharge that leaves it.
+ *
+ * Two things rather than one pulse. The core flickers on uneven stops --
+ * 8%, 12%, 41% -- because equal spacing reads as a sine wave, and a sine
+ * wave reads as a decoration. Unequal stops read as something running.
+ *
+ * The halo is a second circle that swells out of the core and fades,
+ * once every few seconds, on a schedule that shares no factor with the
+ * flicker. It is the only element here that moves rarely, and rare
+ * movement is what makes the rest look continuous rather than looped. */
 .atom-core {
   fill: rgb(255 237 213);
   filter: drop-shadow(0 0 3px rgb(249 115 22 / 0.95));
-  animation: atom-core-pulse 3.2s var(--ease-in-out) infinite;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: atom-core-flicker 4.3s linear infinite;
+}
+
+.atom-halo {
+  fill: none;
+  stroke: rgb(249 115 22);
+  stroke-width: 1;
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: atom-discharge 5.6s var(--ease-out) infinite;
 }
 
 @keyframes atom-spin {
@@ -431,14 +508,50 @@ button:not(:disabled):active {
   to { transform: rotate(360deg); }
 }
 
-@keyframes atom-core-pulse {
-  0%, 100% { opacity: 0.75; }
-  50% { opacity: 1; }
+@keyframes atom-arc-travel {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -100; }
 }
 
+/* Small and dim through the far half of the orbit, large and bright
+   through the near half. The extremes sit at 25% and 75% because those
+   are the top and bottom of the ellipse -- the two points furthest from
+   the plane of the screen. */
+@keyframes atom-depth {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  25% { transform: scale(0.6); opacity: 0.45; }
+  50% { transform: scale(1); opacity: 0.9; }
+  75% { transform: scale(1.25); opacity: 1; }
+}
+
+@keyframes atom-core-flicker {
+  0% { opacity: 0.78; transform: scale(1); }
+  8% { opacity: 1; transform: scale(1.08); }
+  12% { opacity: 0.85; transform: scale(1.02); }
+  41% { opacity: 1; transform: scale(1.06); }
+  55% { opacity: 0.8; transform: scale(1); }
+  78% { opacity: 0.97; transform: scale(1.04); }
+  100% { opacity: 0.78; transform: scale(1); }
+}
+
+@keyframes atom-discharge {
+  0%, 62% { opacity: 0; transform: scale(1); }
+  70% { opacity: 0.55; }
+  100% { opacity: 0; transform: scale(3.4); }
+}
+
+/* Movement goes, colour stays. The glyph still reads as an atom rather
+   than as something that failed to load. */
 @media (prefers-reduced-motion: reduce) {
   .atom-ring,
-  .atom-core {
+  .atom-arc,
+  .atom-particle,
+  .atom-core,
+  .atom-halo {
     animation: none;
   }
+  .atom-halo {
+    display: none;
+  }
 }
+
