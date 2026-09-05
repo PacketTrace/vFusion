@@ -9,6 +9,7 @@ import {
   HelixEventType,
 } from "../lib/api";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
+import LiveDemoPanel from "../components/LiveDemoPanel";
 import { useCameras } from "../lib/cameras";
 
 
@@ -746,6 +747,15 @@ function DemoPanel({ connId }: { connId: string }) {
             </div>
           )}
         </Card>
+      )}
+
+      {draft && typeUid && cameraId && (
+        <LiveDemoPanel
+          connId={connId}
+          cameraId={cameraId}
+          eventTypeUid={typeUid}
+          spec={(draft.spec ?? null) as Record<string, unknown> | null}
+        />
       )}
 
       {(runs.data ?? []).length > 0 && (

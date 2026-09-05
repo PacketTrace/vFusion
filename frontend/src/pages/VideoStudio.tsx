@@ -116,6 +116,14 @@ export default function VideoStudio() {
     onError: (e: Error) => setErr(e.message),
   });
 
+  // Registers the clip with the virtual camera so the live demo can
+  // play it. The pump only plays what is in its own queue.
+  const useInCamera = useMutation({
+    mutationFn: (id: string) => apiPost(`/api/video/jobs/${id}/use`, {}),
+    onSuccess: () => setErr(null),
+    onError: (e: Error) => setErr(e.message),
+  });
+
   const remove = useMutation({
     mutationFn: (id: string) => apiDelete(`/api/video/jobs/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["video-jobs"] }),
@@ -357,6 +365,19 @@ export default function VideoStudio() {
                 <div className="text-xs text-rose-300">{j.error}</div>
               )}
 
+              {j.status === "done" && (
+                <button
+                  type="button"
+                  onClick={() => useInCamera.mutate(j.id)}
+                  disabled={useInCamera.isPending}
+                  className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-slate-200 disabled:opacity-40"
+                  title="Add to the virtual camera's queue so a live demo can play it"
+                >
+                  {useInCamera.isPending && useInCamera.variables === j.id
+                    ? "Adding…"
+                    : "Use in virtual camera"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setOpenPrompt(openPrompt === j.id ? null : j.id)}

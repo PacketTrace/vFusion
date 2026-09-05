@@ -107,3 +107,26 @@ async def get_clip(job_id: str) -> FileResponse:
 @router.delete("/jobs/{job_id}")
 async def delete_job(job_id: str) -> dict[str, bool]:
     return {"removed": await video_jobs.remove(job_id)}
+
+
+@router.post("/jobs/{job_id}/use")
+async def use_in_camera(job_id: str) -> dict[str, Any]:
+    """Put a generated clip into the virtual camera's queue.
+
+    The pump plays items from its own queue, and a generated clip is a
+    file sitting somewhere else. ``adopt`` registers it in place rather
+    than copying — the sequencer then has an item id it can jump the
+    queue with.
+    """
+    from app.rtsp import queue as rtsp_queue
+
+    path = video_jobs.clip_path(job_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No clip for that job.")
+    jobs = await video_jobs.load()
+    job = next((j for j in jobs if j.get("id") == job_id), None)
+    name = (job or {}).get("scene") or "Generated clip"
+    for existing in rtsp_queue.list_all():
+        if existing.get("id") == path.stem:
+            return existing
+    return await rtsp_queue.adopt(path, f"{name[:60]}.mp4")

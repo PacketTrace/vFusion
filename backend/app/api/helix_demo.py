@@ -39,6 +39,7 @@ from app.helixdemo import compose as composer
 from app.helixdemo import generate
 from app.helixdemo import history
 from app.helixdemo import templates as demo_templates
+from app.video import sequencer as live
 from app.models import Connection, VerkadaCamera
 from app.models.verkada_api import VerkadaApiEndpoint
 from app.pricing import ledger
@@ -464,3 +465,90 @@ async def delete_history(entry_id: str) -> dict[str, bool]:
 async def list_demo_templates() -> list[dict[str, Any]]:
     """Ready-made scenarios. No model call — these load instantly."""
     return demo_templates.load_all()
+
+
+class LiveStartRequest(BaseModel):
+    connection_id: UUID
+    camera_id: str
+    event_type_uid: str
+    spec: dict[str, Any]
+    # Queue item ids from the virtual camera, not video-job ids — the
+    # pump plays what is in its queue.
+    event_clip_id: str
+    ambient_clip_id: str | None = None
+    count: int = 10
+    interval_sec: int = 120
+    # Seconds the recording lags the encoder. Exposed because it is the
+    # difference between an event that shows the transaction and one
+    # that shows an empty counter.
+    offset_sec: float = live.DEFAULT_OFFSET_SEC
+
+
+@router.get("/live")
+async def live_state() -> dict[str, Any]:
+    run = live.current()
+    return run.state() if run else {"status": "idle"}
+
+
+@router.post("/live/stop")
+async def live_stop() -> dict[str, Any]:
+    run = live.current()
+    if run is None:
+        return {"status": "idle"}
+    run.stop()
+    return run.state()
+
+
+@router.post("/live/start")
+async def live_start(
+    body: LiveStartRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Start a run that streams footage and posts events that match it."""
+    from app.rtsp import pump as rtsp_pump
+    from app.rtsp import queue as rtsp_queue
+    from app.rtsp import settings as rtsp_settings
+
+    existing = live.current()
+    if existing is not None and existing.status == "running":
+        raise HTTPException(
+            status_code=409,
+            detail="A live demo is already running. Stop it first.",
+        )
+    if not rtsp_settings.get().get("enabled"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The virtual camera is off, so nothing would be recording. "
+                "Turn it on from the Virtual camera page first."
+            ),
+        )
+
+    items = {i["id"]: i for i in rtsp_queue.list_all()}
+    event_clip = items.get(body.event_clip_id)
+    if event_clip is None:
+        raise HTTPException(status_code=400, detail="That clip is not in the camera's queue.")
+
+    secret = await _secret(session, body.connection_id, "verkada")
+    api_key = secret.get("api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="That Verkada connection has no API key.")
+
+    seconds = await rtsp_queue.ensure_duration(event_clip) or 8.0
+    run = live.Run(
+        client=VerkadaClient(api_key=api_key, base_url=secret.get("region") or None),
+        org_id=secret.get("org_id"),
+        camera_id=body.camera_id,
+        event_type_uid=body.event_type_uid,
+        spec=body.spec,
+        event_clip=event_clip,
+        ambient_clip=items.get(body.ambient_clip_id or ""),
+        interval_sec=body.interval_sec,
+        count=body.count,
+        offset_sec=body.offset_sec,
+        clip_seconds=seconds,
+        pump=rtsp_pump.pump,
+    )
+    live.set_current(run)
+    run.start()
+    return run.state()
