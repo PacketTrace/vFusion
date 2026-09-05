@@ -104,7 +104,10 @@ class Pump:
     # them from construction rather than growing attributes later.
     _priority: dict[str, Any] | None = None
     _on_start: Any = None
-    started_at: float | None = None
+    # When the current source began, in wall-clock seconds. Distinct
+    # from ``started_at``, which is the pump's own monotonic start and
+    # is what uptime is measured against — conflating them broke uptime.
+    source_started_at: float | None = None
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -135,8 +138,11 @@ class Pump:
             "publishing": self._encoder is not None and self._encoder.returncode is None,
             "now_playing": self.now_playing,
             "uptime_sec": (
-                round(time.monotonic() - self.started_at, 1) if self.started_at else None
+                round(time.monotonic() - self.started_at, 1)
+                if self.started_at and time.monotonic() >= self.started_at
+                else None
             ),
+            "source_started_at": self.source_started_at,
             "encoder_starts": self.encoder_starts,
             "last_error": self.last_error,
             "log": list(self.log),
@@ -336,10 +342,10 @@ class Pump:
         # Wall clock, not monotonic: this is the number a Helix event
         # timestamp is derived from, and the two have to be in the same
         # frame of reference as Verkada's.
-        self.started_at = time.time()
+        self.source_started_at = time.time()
         if self._on_start is not None:
             try:
-                self._on_start(self.now_playing, self.started_at)
+                self._on_start(self.now_playing, self.source_started_at)
             except Exception:  # noqa: BLE001 — a listener must never
                 # take the stream down with it.
                 logger.warning("source-start listener failed", exc_info=True)
