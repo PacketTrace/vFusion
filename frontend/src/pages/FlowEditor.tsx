@@ -397,7 +397,10 @@ function FlowEditorInner() {
     } else {
       setTrigger(triggerStateFromConfig(flow.trigger_config ?? {}));
     }
-    setNodes(flow.nodes ?? []);
+    // Positions stripped so the editor lays it out. Defensive: the
+    // builder strips them too, but a template applied from elsewhere
+    // carries authored coordinates written for other nodes.
+    setNodes((flow.nodes ?? []).map((n) => ({ ...n, position: null })));
     setEdges(flow.edges ?? []);
     setSelected({ kind: "trigger" });
     setDescribing(false);

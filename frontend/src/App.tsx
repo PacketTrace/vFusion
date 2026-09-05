@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 
 import AuthGate from "./components/AuthGate";
+import BuildStamp from "./components/BuildStamp";
 import VfusionAtom from "./components/VfusionAtom";
 import OnboardingGate from "./components/OnboardingGate";
 import { apiPost } from "./lib/api";
@@ -178,7 +179,8 @@ function AppShell() {
               Settings
             </NavLink>
           </nav>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <BuildStamp />
             <LogoutButton />
           </div>
         </div>

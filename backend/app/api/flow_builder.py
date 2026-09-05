@@ -202,6 +202,23 @@ def _warnings(flow: dict[str, Any]) -> list[str]:
     return out
 
 
+def _strip_positions(candidate: Any) -> None:
+    """Drop any node ``position`` the model copied from an example.
+
+    The worked examples are real templates and carry authored positions,
+    so a draft arrives with coordinates written for a different set of
+    nodes — and lands with the trigger on top of the first step. Layout
+    is the editor's job; a draft has no business having an opinion about
+    it.
+    """
+    if not isinstance(candidate, dict):
+        return
+    flow = candidate.get("flow")
+    for node in (flow or {}).get("nodes") or []:
+        if isinstance(node, dict):
+            node.pop("position", None)
+
+
 def _validate(tpl: dict[str, Any]) -> list[str]:
     """Check a proposed template against the live system. Returns errors."""
     errors: list[str] = []
@@ -776,6 +793,7 @@ async def propose(
                 yield line(stage="error", detail=str(e)[:300])
                 continue
             yield line(stage="validating", detail=f"{used_model} answered")
+            _strip_positions(candidate)
             errors = _validate(candidate)
             attempts.append({"attempt": attempt + 1, "errors": errors})
             tpl = candidate

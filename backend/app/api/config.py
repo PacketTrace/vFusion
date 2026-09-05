@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import settings_store
 from app.brand import BRAND_NAME
 from app.config import settings
+from app import build_info
 from app.db import get_session
 from app.models import Connection, WebhookEvent
 
@@ -61,6 +62,12 @@ class PublicConfig(BaseModel):
     # True when the user dismissed the gate via "Skip for now". Lets the
     # Settings page offer a "Relaunch onboarding" control.
     onboarding_skipped: bool = False
+    # What is running. Public because the login screen reads this
+    # endpoint, and knowing which build answered is useful before you
+    # are signed in — a stale container is exactly the thing you want to
+    # spot without first getting past it.
+    build: str = "unknown"
+    started_at: str | None = None
     # True once at least one Verkada Connection exists — onboarding is
     # then genuinely complete and relaunching it is a no-op.
     verkada_connected: bool = False
@@ -149,6 +156,8 @@ async def public_config(
             tunnel_mode="quick",
             public_webhook_base=quick_url,
             ephemeral=True,
+            build=build_info.build_id(),
+            started_at=build_info.STARTED_AT.isoformat(),
             **onboarding,
         )
     if settings.public_webhook_base:
@@ -156,12 +165,16 @@ async def public_config(
             tunnel_mode="named",
             public_webhook_base=settings.public_webhook_base,
             ephemeral=False,
+            build=build_info.build_id(),
+            started_at=build_info.STARTED_AT.isoformat(),
             **onboarding,
         )
     return PublicConfig(
         tunnel_mode="lan",
         public_webhook_base=None,
         ephemeral=False,
+        build=build_info.build_id(),
+        started_at=build_info.STARTED_AT.isoformat(),
         **onboarding,
     )
 

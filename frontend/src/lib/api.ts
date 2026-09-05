@@ -73,6 +73,10 @@ export interface PublicConfig {
   // Product brand the dashboard renders in its header / modal / copy.
   // Source-of-truth lives in backend/app/brand.py.
   brand_name: string;
+  // Which backend build answered, and when that process started.
+  // See backend/app/build_info.py for how the id is derived.
+  build?: string;
+  started_at?: string | null;
 }
 
 // ---- Settings ----
