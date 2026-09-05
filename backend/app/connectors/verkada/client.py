@@ -84,7 +84,20 @@ def _build_error(method: str, path: str, res: httpx.Response) -> VerkadaApiError
 
 
 class VerkadaClient:
-    def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 15.0):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str | None = None,
+        timeout: float = 15.0,
+        token: str | None = None,
+    ):
+        """``token`` skips the exchange and uses one you already hold.
+
+        Every path through here normally trades the key for a token
+        without saying so, which is right for a flow step and wrong for
+        the API runner: seeing the two calls separately is how you tell
+        an auth problem from a call problem.
+        """
         self.api_key = api_key
         # normalize_base_url accepts bare hostnames + adds the scheme +
         # strips trailing slashes, so an EU operator pasting
@@ -92,7 +105,7 @@ class VerkadaClient:
         # works the same as "https://api.eu.verkada.com".
         self.base_url = normalize_base_url(base_url)
         self.timeout = timeout
-        self._token: str | None = None
+        self._token: str | None = token
 
     # ---- auth ----
 

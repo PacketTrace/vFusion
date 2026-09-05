@@ -35,6 +35,17 @@ interface RunResult {
   error?: string;
 }
 
+interface TokenResult {
+  ok: boolean;
+  elapsed_ms: number;
+  endpoint?: string;
+  sent_header?: string;
+  use_header?: string;
+  token?: string;
+  connection?: string;
+  error?: string;
+}
+
 interface Param {
   name: string;
   in: string;
@@ -180,6 +191,10 @@ export default function ApiRunner() {
   // Which categories are expanded. Nothing is open on arrival: a wall of
   // 121 endpoints is the thing the categories exist to prevent.
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // The token from the exchange, held here so the next call visibly
+  // uses the thing you just watched arrive.
+  const [token, setToken] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
   const conns = useQuery({
     queryKey: ["connections"],
@@ -250,10 +265,22 @@ export default function ApiRunner() {
   const isWrite = WRITE.has(method);
   const missing = pathParams.filter((p) => !pathValues[p.name]?.trim());
 
+  const auth = useMutation({
+    mutationFn: () =>
+      apiPost<TokenResult>("/api/api-runner/token", {
+        connection_id: connId || null,
+      }),
+    onSuccess: (r) => {
+      setToken(r.ok && r.token ? r.token : null);
+      setShowToken(false);
+    },
+  });
+
   const run = useMutation({
     mutationFn: () =>
       apiPost<RunResult>("/api/api-runner/run", {
         connection_id: connId || null,
+        token,
         method,
         path: picked?.path,
         path_params: pathValues,
@@ -396,6 +423,91 @@ export default function ApiRunner() {
       </div>
 
       <div className="flex-1 min-w-0 space-y-3">
+        <div className="rounded-lg border border-white/15 bg-white/5 p-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => auth.mutate()}
+              disabled={auth.isPending}
+              className="text-sm px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-slate-200 disabled:opacity-40"
+            >
+              {auth.isPending
+                ? "Exchanging…"
+                : token
+                  ? "Get a new token"
+                  : "Get a token"}
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Verkada&rsquo;s API is two calls: <code>POST /token</code> with
+              your API key, then every request carrying it in{" "}
+              <code>x-verkada-auth</code>. vFusion normally does the first
+              invisibly — here you can watch it.
+            </span>
+          </div>
+
+          {auth.data && !auth.data.ok && (
+            <div className="mt-2 text-xs text-rose-300">
+              The exchange failed: {auth.data.error}
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                An auth problem, not an endpoint problem — the key was
+                rejected before any call was made.
+              </div>
+            </div>
+          )}
+
+          {auth.data?.ok && (
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                <span className="font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
+                  200
+                </span>
+                <span className="text-slate-400 font-mono">
+                  POST {auth.data.endpoint}
+                </span>
+                <span className="text-slate-500">
+                  {auth.data.elapsed_ms} ms · {auth.data.connection}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="text-[11px] text-slate-300 bg-black/30 border border-white/10 rounded px-2 py-1 break-all max-w-full">
+                  {showToken
+                    ? auth.data.token
+                    : `${(auth.data.token ?? "").slice(0, 8)}${"\u2022".repeat(24)}`}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => setShowToken((v) => !v)}
+                  className="text-[11px] text-sky-400 hover:text-sky-300"
+                >
+                  {showToken ? "hide" : "reveal"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void copyToClipboard(auth.data?.token ?? "");
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-slate-200"
+                >
+                  copy
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Short-lived, and grants exactly what the key already does.
+                Calls below now send this one instead of exchanging again, so
+                a 401 on a call means the endpoint refused you rather than
+                the key being wrong.
+              </p>
+            </div>
+          )}
+
+          {!auth.data && (
+            <p className="text-[11px] text-slate-600 mt-2">
+              Optional — running a call without one exchanges a token behind
+              the scenes, exactly as a flow step does.
+            </p>
+          )}
+        </div>
+
       {!picked && (
         <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-500">
           Pick an endpoint on the left. Categories come from Verkada&rsquo;s own

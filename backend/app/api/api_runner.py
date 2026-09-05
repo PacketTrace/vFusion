@@ -47,8 +47,16 @@ WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _PLACEHOLDER = re.compile(r"\{([^}]+)\}")
 
 
+class TokenRequest(BaseModel):
+    connection_id: UUID | None = None
+
+
 class RunRequest(BaseModel):
     connection_id: UUID | None = None
+    # A token from /token. When present the call uses it directly
+    # instead of exchanging the key again, so what the runner shows and
+    # what it sends are the same thing.
+    token: str | None = None
     method: str = "GET"
     path: str
     # Values for {placeholders} in the path.
@@ -75,6 +83,74 @@ def resolve_path(path: str, params: dict[str, str]) -> tuple[str, list[str]]:
         return str(value)
 
     return _PLACEHOLDER.sub(sub, path), missing
+
+
+async def _connection(session: AsyncSession, conn_id: UUID | None) -> Connection:
+    conn = None
+    if conn_id:
+        conn = await session.get(Connection, conn_id)
+    if conn is None:
+        conn = (
+            await session.execute(
+                select(Connection)
+                .where(Connection.type == "verkada")
+                .order_by(Connection.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    if conn is None or conn.type != "verkada":
+        raise HTTPException(
+            status_code=400,
+            detail="No Verkada connection configured — add one on the Connections page.",
+        )
+    return conn
+
+
+@router.post("/token")
+async def get_token(
+    body: TokenRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Trade the org's API key for a short-lived token.
+
+    Verkada's API is two calls: POST /token with the key, then every
+    request carrying the token in x-verkada-auth. vFusion normally does
+    the first one invisibly, which is right everywhere except here — on
+    a page for understanding the API, a hidden step is the one you
+    cannot debug. A 401 on the exchange and a 401 on the call mean
+    completely different things.
+    """
+    conn = await _connection(session, body.connection_id)
+    try:
+        secret = decrypt_secret(conn.encrypted_secret) or {}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"could not decrypt secret: {e}") from e
+    api_key = secret.get("api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="That connection has no API key.")
+
+    client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
+    started = time.monotonic()
+    try:
+        token = await client.login()
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "elapsed_ms": round((time.monotonic() - started) * 1000),
+            "error": str(e),
+        }
+    return {
+        "ok": True,
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
+        "endpoint": f"{client.base_url}/token",
+        "sent_header": "x-api-key",
+        "use_header": "x-verkada-auth",
+        # Short-lived and scoped to the same access the key already has.
+        # Returned because the point of this page is to show the
+        # exchange; the UI keeps it masked until asked.
+        "token": token,
+        "connection": conn.name,
+    }
 
 
 @router.post("/run")
@@ -114,7 +190,13 @@ async def run(
         )
 
     method = body.method.upper()
-    client = VerkadaClient(api_key=api_key, base_url=(decrypt_secret(conn.encrypted_secret) or {}).get("region") or None)
+    client = VerkadaClient(
+        api_key=api_key,
+        base_url=(decrypt_secret(conn.encrypted_secret) or {}).get("region") or None,
+        # Reuses the token the page is showing when there is one, so the
+        # request the runner describes is the request it makes.
+        token=body.token or None,
+    )
 
     # Empty query values are dropped rather than sent blank. An empty
     # string is a filter that matches nothing on most endpoints, which
