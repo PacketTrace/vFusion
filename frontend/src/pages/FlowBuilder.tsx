@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import FlowAssistant from "../components/FlowAssistant";
+import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE, apiGet } from "../lib/api";
+import { API_BASE, apiGet, apiPost, Connection } from "../lib/api";
 
 type EventKind = {
   family: string | null;
@@ -77,7 +78,7 @@ const EXAMPLES = [
   "When someone badges in after midnight, grab a still and log it",
 ];
 
-export default function FlowBuilder() {
+export default function FlowBuilder({ embedded = false }: { embedded?: boolean }) {
   const [intent, setIntent] = useState("");
   // Answers to the questions asked before drafting.
   const [runMode, setRunMode] = useState<"webhook" | "schedule" | null>(null);
@@ -92,6 +93,73 @@ export default function FlowBuilder() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const navigate = useNavigate();
+  const conns = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<Connection[]>("/api/connections"),
+  });
+  // Only when there is exactly one. Bootstrapping Helix types needs a
+  // specific org, and guessing between two would provision event types
+  // in the wrong one — a side effect on real infrastructure that is
+  // tedious to undo. With none or several, the import still lands and
+  // the type gets picked in the editor, exactly as templates behave.
+  const verkadaConns = (conns.data ?? []).filter((c) => c.type === "verkada");
+  const soleVerkadaId =
+    verkadaConns.length === 1 ? verkadaConns[0]!.id : null;
+
+  /**
+   * Turn a proposal into a real flow.
+   *
+   * Composed from the two endpoints that already exist rather than a
+   * third one: /helix-bootstrap provisions any event types the draft
+   * invented and hands back a uid rewrite map, and /flows/import takes
+   * the graph plus that map. Import also rebinds connections when there
+   * is exactly one candidate, so a single-org install lands in the
+   * editor with nothing left to pick.
+   *
+   * Created disabled, like every other route into a flow. A draft that
+   * turned itself on would be the one irreversible thing on a page whose
+   * whole promise is that nothing is saved until you say so.
+   */
+  async function install() {
+    const tpl = proposal?.template;
+    if (!tpl?.flow) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      const declared = tpl.flow.helix_event_types ?? [];
+      let uidMap: Record<string, string> = {};
+      const verkadaId = soleVerkadaId;
+      if (declared.length > 0 && verkadaId) {
+        const boot = await apiPost<{ uid_map: Record<string, string> }>(
+          "/api/flows/helix-bootstrap",
+          {
+            target_connection_id: verkadaId,
+            event_types: declared,
+          },
+        );
+        uidMap = boot.uid_map ?? {};
+      }
+      const created = await apiPost<{ id: string }>("/api/flows/import", {
+        format: "vfusion-flow",
+        version: 1,
+        name: tpl.name || "Drafted flow",
+        trigger_type: tpl.flow.trigger_type ?? "verkada_webhook",
+        trigger_config: tpl.flow.trigger_config ?? {},
+        nodes: tpl.flow.nodes ?? [],
+        edges: tpl.flow.edges ?? [],
+        helix_event_types: declared,
+        helix_uid_map: uidMap,
+        verkada_connection_id: verkadaId,
+      });
+      navigate(`/flows/${created.id}/edit`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setInstalling(false);
+    }
+  }
   const abort = useRef<AbortController | null>(null);
 
   // Reads the newline-delimited progress stream. Building runs two model
@@ -184,13 +252,17 @@ export default function FlowBuilder() {
   const nodes = flow?.nodes ?? [];
 
   return (
-    <div className="max-w-[1100px]">
-      <h1 className="text-2xl font-semibold text-white">Build a flow</h1>
-      <p className="text-slate-400 text-sm mt-1 max-w-3xl">
-        Describe what you want to happen and this drafts a flow for it —
-        trigger, steps, and any Helix event type it needs. Nothing is saved;
-        this is a proposal you read before deciding.
-      </p>
+    <div className={embedded ? "" : "max-w-[1100px]"}>
+      {!embedded && (
+        <>
+          <h1 className="text-2xl font-semibold text-white">Build a flow</h1>
+          <p className="text-slate-400 text-sm mt-1 max-w-3xl">
+            Describe what you want to happen and this drafts a flow for it —
+            trigger, steps, and any Helix event type it needs. Nothing is
+            saved; this is a proposal you read before deciding.
+          </p>
+        </>
+      )}
 
       <form
         className="mt-5"
@@ -355,17 +427,6 @@ export default function FlowBuilder() {
           </button>
         </div>
       </form>
-
-      <FlowAssistant
-        currentFlow={proposal?.template?.flow ?? null}
-        onUseSuggestion={(text) => {
-          setIntent(text);
-          // Scrolls the description back into view, because the panel
-          // sits below it and a silent prefill above the fold reads as
-          // nothing having happened.
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-      />
 
       {stages.length > 0 && (
         <div className="mt-5 rounded-lg border border-white/10 bg-black/25 p-3 font-mono text-[11.5px] space-y-0.5">
@@ -640,11 +701,21 @@ export default function FlowBuilder() {
             </pre>
           </details>
 
-          <p className="text-[12px] text-slate-500">
-            Nothing here has been saved. Installing a proposal — binding
-            connections and provisioning the Helix types — is the next piece to
-            build.
-          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={install}
+              disabled={installing || !proposal.template?.flow}
+              className="px-4 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-sm disabled:opacity-40"
+            >
+              {installing ? "Creating…" : "Create this flow"}
+            </button>
+            <span className="text-[12px] text-slate-500">
+              Creates it disabled and opens it in the editor. Any Helix event
+              types it invented are provisioned first. Nothing runs until you
+              enable it.
+            </span>
+          </div>
         </div>
       )}
     </div>
