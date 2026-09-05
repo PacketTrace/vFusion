@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 
+import FlowAssistant from "../components/FlowAssistant";
+
 import { API_BASE, apiGet } from "../lib/api";
 
 type EventKind = {
@@ -353,6 +355,17 @@ export default function FlowBuilder() {
           </button>
         </div>
       </form>
+
+      <FlowAssistant
+        currentFlow={proposal?.template?.flow ?? null}
+        onUseSuggestion={(text) => {
+          setIntent(text);
+          // Scrolls the description back into view, because the panel
+          // sits below it and a silent prefill above the fold reads as
+          // nothing having happened.
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
 
       {stages.length > 0 && (
         <div className="mt-5 rounded-lg border border-white/10 bg-black/25 p-3 font-mono text-[11.5px] space-y-0.5">

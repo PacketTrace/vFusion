@@ -43,6 +43,7 @@ from app.connectors.verkada.schemas import TAXONOMY
 from app.crypto import decrypt_secret
 from app.db import get_session
 from app.engine.actions import ACTIONS
+from app.flows import context as flow_context
 from app.engine.triggers import matches as trigger_matches
 from app.pricing import ledger
 from app.pricing.gemini import cost_for
@@ -88,36 +89,7 @@ class ProposeRequest(BaseModel):
     example_epoch: int | None = None
 
 
-def _action_catalog() -> list[dict[str, Any]]:
-    """The actions a flow may use, with their real config fields.
-
-    Sourced from the live registry rather than a hand-maintained list, so
-    a newly added action is immediately available to the builder and a
-    removed one can't be proposed.
-    """
-    out: list[dict[str, Any]] = []
-    for spec in ACTIONS.values():
-        fields = []
-        for f in (spec.schema or {}).get("fields", []):
-            fields.append(
-                {
-                    "name": f.get("name"),
-                    "type": f.get("type"),
-                    "required": bool(f.get("required")),
-                    "help": f.get("help"),
-                    "options": f.get("options"),
-                }
-            )
-        out.append(
-            {
-                "action_type": spec.type,
-                "label": spec.label,
-                "description": spec.description,
-                "default_step_name": spec.default_step_name,
-                "config_fields": fields,
-            }
-        )
-    return out
+_action_catalog = flow_context.action_catalog
 
 
 def _examples() -> list[dict[str, Any]]:
@@ -141,43 +113,7 @@ def _examples() -> list[dict[str, Any]]:
     return examples
 
 
-async def _org_context(
-    session: AsyncSession, conn_id: UUID | None
-) -> dict[str, Any]:
-    """Real devices from this org, so the model resolves names to IDs
-    instead of inventing them."""
-    cam_q = select(VerkadaCamera).order_by(VerkadaCamera.name.asc().nullslast())
-    door_q = select(VerkadaDoor)
-    helix_q = select(VerkadaHelixEventType)
-    if conn_id is not None:
-        cam_q = cam_q.where(VerkadaCamera.connection_id == conn_id)
-        door_q = door_q.where(VerkadaDoor.connection_id == conn_id)
-        helix_q = helix_q.where(VerkadaHelixEventType.connection_id == conn_id)
-    cams = (await session.execute(cam_q)).scalars().all()
-    doors = (await session.execute(door_q)).scalars().all()
-    helix = (await session.execute(helix_q)).scalars().all()
-    return {
-        "cameras": [
-            {
-                "camera_id": c.camera_id,
-                "name": c.name,
-                "site": c.site,
-                "status": c.status,
-            }
-            for c in cams
-        ],
-        "doors": [
-            {"door_id": d.door_id, "name": d.name, "site": d.site} for d in doors
-        ],
-        "existing_helix_event_types": [
-            {
-                "event_type_uid": h.event_type_uid,
-                "name": h.name,
-                "schema": h.event_schema,
-            }
-            for h in helix
-        ],
-    }
+_org_context = flow_context.org_context
 
 
 PROMPT = """You design automation flows for vFusion, a tool that reacts to \
