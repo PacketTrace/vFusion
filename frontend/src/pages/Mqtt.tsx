@@ -953,14 +953,24 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
   // Narrows the table without touching the page-level camera choice,
   // which also drives the live view and the noise filter. Reading
   // history for one camera should not tear down the stream for another.
-  const [only, setOnly] = useState<string | null>(null);
+  // Seeded from the camera picked on the Server tab, so arriving here
+  // after choosing one keeps the intent — but it is a starting point,
+  // not a cage. Previously the page-level camera was passed to the
+  // *query*, which meant history could only ever contain one camera and
+  // the chips had nothing to filter between.
+  const [only, setOnly] = useState<string | null>(cameraId || null);
   const [showAll, setShowAll] = useState(false);
   const cams = useCameraLookup();
+  // The chip drives the query, not the other page. Filtering server
+  // side as well as locally matters at scale: 200 newest tracks across
+  // twenty cameras can contain almost none from a quiet one, so asking
+  // for a specific camera gets 200 of *that* camera rather than
+  // whatever survived the mix.
   const history = useQuery({
-    queryKey: ["mqtt-history", cameraId],
+    queryKey: ["mqtt-history", only],
     queryFn: () =>
       apiGet<{ tracks: TrackRecord[]; summary: Record<string, unknown> }>(
-        `/api/mqtt/history?limit=200${cameraId ? `&camera_id=${cameraId}` : ""}`,
+        `/api/mqtt/history?limit=200${only ? `&camera_id=${only}` : ""}`,
       ),
     refetchInterval: 15000,
   });
@@ -969,22 +979,30 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
   // Which cameras actually appear, busiest first. Built from the data
   // rather than the camera list: twenty configured cameras of which
   // three are publishing should offer three chips, not twenty.
+  // Always unfiltered, and cached separately, so narrowing to one
+  // camera does not remove the chips you need to get back out.
+  const all = useQuery({
+    queryKey: ["mqtt-history", null],
+    queryFn: () =>
+      apiGet<{ tracks: TrackRecord[]; summary: Record<string, unknown> }>(
+        "/api/mqtt/history?limit=200",
+      ),
+    refetchInterval: 30000,
+  });
   const byCamera = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const t of allTracks) {
+    for (const t of all.data?.tracks ?? []) {
       counts.set(t.camera_id, (counts.get(t.camera_id) ?? 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [allTracks]);
-  const tracks = only
-    ? allTracks.filter((t) => t.camera_id === only)
-    : allTracks;
+  }, [all.data]);
+  const tracks = allTracks;
   const shown = showAll ? tracks : tracks.slice(0, 50);
   const summary = history.data?.summary as
     | { total: number; by_type: Record<string, number>; median_duration_sec: number | null }
     | undefined;
 
-  if (allTracks.length === 0) {
+  if (allTracks.length === 0 && (all.data?.tracks ?? []).length === 0) {
     return (
       <div className="text-sm text-slate-500">
         No completed tracks yet — an object is recorded once it leaves view.
