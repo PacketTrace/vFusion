@@ -318,24 +318,46 @@ class VerkadaClient:
         resolution enum here is hyphenated (``hi-res``) while the live
         stream uses underscores (``high_res``) -- the same word, spelled
         two ways in one API, and the wrong one is a 400.
+
+        Falls back to low-res on a 404, which is the whole reason this
+        is not one request. The spec's own default is ``low-res``, and a
+        camera that has no *high* resolution still at a moment 404s
+        exactly as one with no still at all does -- so asking only for
+        hi-res reported "no footage" for cameras that had footage, while
+        the live view of the same camera worked and made it look like
+        nonsense. A low-res still behind a track overlay is
+        indistinguishable at the size it renders; no still is not.
         """
         token = await self._ensure_token()
+        last: int = 0
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            res = await client.get(
-                f"{self.base_url}/cameras/v1/footage/thumbnails",
-                headers={"x-verkada-auth": token},
-                params={
-                    "camera_id": camera_id,
-                    "timestamp": timestamp,
-                    "resolution": "hi-res",
-                },
-            )
-        if res.status_code != 200:
-            raise VerkadaApiError(
-                f"thumbnail fetch failed: HTTP {res.status_code}",
-                status_code=res.status_code,
-            )
-        return res.content
+            for resolution in ("hi-res", "low-res"):
+                res = await client.get(
+                    f"{self.base_url}/cameras/v1/footage/thumbnails",
+                    headers={"x-verkada-auth": token},
+                    params={
+                        "camera_id": camera_id,
+                        "timestamp": timestamp,
+                        "resolution": resolution,
+                    },
+                )
+                if res.status_code == 200:
+                    return res.content
+                last = res.status_code
+                # Only a 404 is worth retrying smaller. A 403 is a scope
+                # problem and a 400 is a bad request; both would answer
+                # the same way twice and just double the wait.
+                if res.status_code != 404:
+                    break
+        raise VerkadaApiError(
+            f"thumbnail fetch failed: HTTP {last}"
+            + (
+                " — no still stored at that moment, at either resolution"
+                if last == 404
+                else ""
+            ),
+            status_code=last,
+        )
 
     async def list_occupancy_trend_cameras(self) -> list[dict[str, Any]]:
         """Cameras that support Occupancy Trends, with their line preset ids.
