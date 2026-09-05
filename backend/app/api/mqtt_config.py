@@ -1154,409 +1154,52 @@ async def frame(
     connection_id: UUID | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """A single live frame, pulled from the HLS stream with ffmpeg.
+    """A single frame, live or from a moment, decoded from the HLS stream.
 
     The thumbnail endpoint is cheaper but lags — it serves the camera's
     last stored still, which can be a minute old and makes the boxes look
-    wrong against it. This decodes one frame from the live stream, which
-    is what the rest of the codebase already does for the same reason.
+    wrong against it. This decodes one frame from the stream, which is
+    what the rest of the codebase already does for the same reason.
+
+    That applies to the past too. The replay used to fall back to stored
+    thumbnails on the premise that the stream only serves now; it does
+    not, and that archive has its own retention — so one camera 404'd in
+    replay while its live view worked, which reads as nonsense.
 
     Proxied as bytes so the signed stream URL never reaches the browser.
     """
     base, org_id, jwt = await _stream_context(session, connection_id)
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        res = await client.get(
-            f"{base}{STREAM_BASE}/stream.m3u8",
-            params=_stream_query(org_id, camera_id, jwt),
-        )
-    if res.status_code != 200:
-        raise HTTPException(
-            status_code=502, detail=f"stream playlist failed: HTTP {res.status_code}"
-        )
-
-    header: list[str] = []
-    fresh: list[tuple[str, list[str]]] = []
-    pending: list[str] = []
-    upstream_seq = 0
-    for line in res.text.splitlines():
-        if line.startswith("#EXT-X-MAP:"):
-            m = re.search(r'URI="([^"?]+)', line)
-            if m:
-                header.append(f'#EXT-X-MAP:URI="seg/{m.group(1)}"')
-            continue
-        if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
-            try:
-                upstream_seq = int(line.split(":", 1)[1])
-            except ValueError:
-                upstream_seq = 0
-            continue
-        if line.startswith("#EXTINF") or line.startswith("#EXT-X-PROGRAM-DATE-TIME"):
-            pending.append(line)
-            continue
-        if line.startswith("#"):
-            header.append(line)
-            continue
-        if line:
-            fresh.append((line.split("?", 1)[0], pending))
-            pending = []
-
-    window = _WINDOW.setdefault(camera_id, deque(maxlen=_WINDOW_SEGMENTS))
-    known = {name for name, _ in window}
-    for name, tags in fresh:
-        if name not in known:
-            window.append((name, tags))
-
-    names = [name for name, _ in window]
-    # MEDIA-SEQUENCE must number the first segment we publish, which is
-    # older than the first one upstream is currently advertising.
-    older = 0
-    if fresh:
-        first_upstream = fresh[0][0]
-        older = names.index(first_upstream) if first_upstream in names else 0
-    body = header + [f"#EXT-X-MEDIA-SEQUENCE:{max(0, upstream_seq - older)}"]
-    for name, tags in window:
-        body.extend(tags)
-        body.append(f"seg/{name}")
-
-    return Response(
-        content="\n".join(body) + "\n",
-        media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-# Recently fetched segments, so a range probe followed by the real read
-# does not pull the same ~700 KB twice. Small on purpose: this is a live
-# stream, and anything more than a few seconds back is never asked for.
-_SEG_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
-_SEG_CACHE_MAX = 8
-
-
-def _parse_range(header: str, size: int) -> tuple[int, int] | None:
-    """Resolve a single-range header to inclusive (start, end) offsets."""
-    if not header.startswith("bytes="):
-        return None
-    spec = header[6:].split(",", 1)[0].strip()
-    try:
-        if spec.startswith("-"):
-            length = int(spec[1:])
-            if length <= 0:
-                return None
-            return max(0, size - length), size - 1
-        first, _, last = spec.partition("-")
-        begin = int(first)
-        finish = int(last) if last else size - 1
-    except ValueError:
-        return None
-    finish = min(finish, size - 1)
-    if begin > finish or begin >= size:
-        return None
-    return begin, finish
-
-
-@router.get("/stream/{camera_id}/seg/{name}")
-async def stream_segment(
-    camera_id: str,
-    name: str,
-    request: Request,
-    connection_id: UUID | None = Query(default=None),
-    session: AsyncSession = Depends(get_session),
-) -> Response:
-    """Proxy one media segment, re-attaching the credentials server-side.
-
-    Ranges are satisfied here rather than upstream, because Verkada
-    ignores the header and answers every request with the whole object.
-    Forwarding it and passing the 200 back meant advertising range
-    support we did not provide -- which is worse than not advertising it:
-    hls.js does not care, but Safari's native player probes with a Range,
-    expects a 206, and on getting a 200 fetches the init segment and then
-    silently stops asking for media.
-    """
-    if not _SEGMENT_RE.match(name):
-        raise HTTPException(status_code=400, detail="bad segment name")
-
-    key = f"{camera_id}/{name}"
-    cached = _SEG_CACHE.get(key)
-    if cached is None:
-        base, org_id, jwt = await _stream_context(session, connection_id)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.get(
-                f"{base}{STREAM_BASE}/{name}",
-                params=_stream_query(org_id, camera_id, jwt),
-            )
-        if res.status_code != 200:
-            raise HTTPException(
-                status_code=502, detail=f"segment failed: HTTP {res.status_code}"
-            )
-        cached = res.content
-        _SEG_CACHE[key] = cached
-        while len(_SEG_CACHE) > _SEG_CACHE_MAX:
-            _SEG_CACHE.popitem(last=False)
-    else:
-        _SEG_CACHE.move_to_end(key)
-
-    size = len(cached)
-    headers = {
-        "Cache-Control": "no-store",
-        "Accept-Ranges": "bytes",
-    }
-    rng = request.headers.get("range")
-    if rng:
-        span = _parse_range(rng, size)
-        if span is None:
-            return Response(
-                status_code=416,
-                headers={**headers, "Content-Range": f"bytes */{size}"},
-            )
-        begin, finish = span
-        body = cached[begin : finish + 1]
-        headers["Content-Range"] = f"bytes {begin}-{finish}/{size}"
-        return Response(
-            content=body,
-            status_code=206,
-            media_type="video/mp4",
-            headers=headers,
-        )
-
-    return Response(
-        content=cached,
-        media_type="video/mp4",
-        headers=headers,
-    )
-
-
-class ClipRequest(BaseModel):
-    camera_id: str
-    # Epoch seconds, from a recorded track's started_at.
-    start_epoch: int
-    duration_sec: float = 10.0
-    connection_id: UUID | None = None
-
-
-@router.post("/clip")
-async def make_clip(
-    body: ClipRequest,
-    session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    """Cut the footage a recorded track happened in.
-
-    Same route the flow actions take: ffmpeg pulls the window out of the
-    HLS stream and writes H.264 to CLIP_ROOT, which plays in any browser
-    without a JS player. Clips are named from what they contain, so
-    replaying the same track twice reuses the file instead of paying for
-    another encode.
-    """
-    conn = await _connection_for(session, body.connection_id)
+    conn = await _connection_for(session, connection_id)
     secret = decrypt_secret(conn.encrypted_secret)
-    org_id = conn.external_id
-    if not secret.get("api_key") or not org_id:
-        raise HTTPException(status_code=400, detail="connection is missing an API key or org id")
 
-    duration = max(1.0, min(float(body.duration_sec), 120.0))
-    # A little either side: tracks start when the camera first reports a
-    # box, which is usually already mid-approach.
-    pad = 2.0
-    start = int(body.start_epoch - pad)
-    total = duration + (pad * 2)
-
-    clip_id = f"{body.camera_id}_{start}_{int(total)}"
-    out_path = CLIP_ROOT / f"{clip_id}.mp4"
-    if not out_path.exists():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "frame.jpg"
         try:
-            await grab_video_clip(
+            await grab_still_frame(
                 api_key=secret["api_key"],
                 org_id=org_id,
-                camera_id=body.camera_id,
-                start_epoch=start,
-                duration_sec=total,
-                out_path=out_path,
-                base_url=(secret.get("region") or "https://api.verkada.com").rstrip("/"),
+                camera_id=camera_id,
+                out_path=out,
+                base_url=base,
+                # None means now. A moment asks the same stream for a
+                # short window at that time, which is the archive a clip
+                # comes from and demonstrably has the footage.
+                start_epoch=epoch,
             )
+            image = out.read_bytes()
         except FootageError as e:
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Could not cut the clip: {e}. Verkada backfills footage for "
-                    "a minute or so after an event, so very recent tracks may "
-                    "not be retrievable yet."
-                ),
-            ) from e
+            raise HTTPException(status_code=502, detail=f"frame grab failed: {e}") from e
 
-    return {
-        "clip_id": clip_id,
-        "url": f"/api/mqtt/clip/{clip_id}.mp4",
-        "duration_sec": total,
-        # The client needs this to line the two panels up: video time
-        # pad_sec corresponds to track time zero.
-        "pad_sec": pad,
-    }
-
-
-@router.get("/clip/{clip_name}")
-async def get_clip(clip_name: str) -> FileResponse:
-    """Serve a cut clip. FileResponse handles Range, which video needs."""
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.mp4", clip_name):
-        raise HTTPException(status_code=400, detail="bad clip name")
-    path = CLIP_ROOT / clip_name
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="clip not found")
-    return FileResponse(path, media_type="video/mp4")
-
-
-class FiltersRequest(BaseModel):
-    # Fraction of the frame, both of them.
-    min_area: float
-    min_movement: float
-
-
-class BrokerModeRequest(BaseModel):
-    mode: str
-    host: str = ""
-    port: int = 443
-    username: str = ""
-    # Blank means "leave as is" — the UI never receives these back.
-    password: str = ""
-    broker_cert: str = ""
-
-
-@router.get("/broker-requirements")
-async def broker_requirements() -> dict[str, Any]:
-    """What a broker must do before a camera will publish to it.
-
-    None of this is discoverable from the API — a camera accepts a
-    configuration it cannot use and then reports nothing — so it is
-    surfaced next to the form where someone is entering their own
-    broker details.
-    """
-    return requirements.describe()
-
-
-@router.get("/broker-mode")
-async def get_broker_mode() -> dict[str, Any]:
-    return broker_mode.public()
-
-
-@router.put("/broker-mode")
-async def set_broker_mode(body: BrokerModeRequest) -> dict[str, Any]:
-    if body.mode not in ("builtin", "external"):
-        raise HTTPException(status_code=400, detail="mode must be builtin or external")
-    if body.mode == "external":
-        if not body.host.strip():
-            raise HTTPException(status_code=400, detail="an external broker needs a host")
-        if body.port not in (443, 123, 53):
-            raise HTTPException(
-                status_code=400,
-                detail="Verkada only accepts port 443, 123 or 53 in broker_host_port",
+    return Response(
+        content=image,
+        media_type="image/jpeg",
+        # A past moment cannot change; "now" always can.
+        headers={
+            "Cache-Control": (
+                "private, max-age=3600" if epoch is not None else "no-store"
             )
-        existing = broker_mode.get()
-        if not (body.broker_cert.strip() or existing.get("broker_cert")):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "an external broker needs its CA certificate — the camera "
-                    "validates against it and rejects anything else"
-                ),
-            )
-    return await broker_mode.put(body.model_dump())
-
-
-@router.get("/filters")
-async def get_filters() -> dict[str, Any]:
-    """Thresholds a detection must clear before it is reported."""
-    return filters.describe()
-
-
-@router.put("/filters")
-async def set_filters(body: FiltersRequest) -> dict[str, Any]:
-    await filters.put(body.min_area, body.min_movement)
-    return filters.describe()
-
-
-@router.get("/filters/preview")
-async def preview_filters(
-    min_area: float = Query(default=0.01),
-    min_movement: float = Query(default=0.0),
-    camera_id: str | None = Query(default=None),
-) -> dict[str, Any]:
-    """What these thresholds would have done to the tracks on record.
-
-    Chosen thresholds are guesses until they are checked against real
-    detections, and the history already holds several hundred of them —
-    so the slider can say "keeps 6, drops 221" instead of leaving
-    someone to find out over the following week.
-    """
-    tracks = history.read(camera_id=camera_id, limit=2000)
-    kept: list[dict[str, Any]] = []
-    dropped: list[dict[str, Any]] = []
-    for t in tracks:
-        area, travelled = history.measure(t)
-        row = {**t, "area": round(area, 4), "travelled": round(travelled, 4)}
-        if area >= min_area and (min_movement <= 0 or travelled >= min_movement):
-            kept.append(row)
-        else:
-            dropped.append(row)
-
-    by_type: dict[str, int] = {}
-    for t in kept:
-        by_type[t.get("type", "unknown")] = by_type.get(t.get("type", "unknown"), 0) + 1
-
-    # The survivors closest to being cut. A count of what a threshold
-    # removes says nothing about whether it is about to remove something
-    # real — these are the rows to look at for that.
-    def margin(row: dict[str, Any]) -> float:
-        m = row["area"] - min_area
-        if min_movement > 0:
-            m = min(m, row["travelled"] - min_movement)
-        return m
-
-    marginal = sorted(kept, key=margin)[:8]
-
-    return {
-        "considered": len(tracks),
-        "kept": len(kept),
-        "dropped": len(dropped),
-        "kept_by_type": by_type,
-        # Capped: this is for eyeballing, and the whole set is on record.
-        "would_drop": dropped[:60],
-        "closest_kept": marginal,
-    }
-
-
-class PurgeRequest(BaseModel):
-    min_area: float
-    min_movement: float
-
-
-@router.post("/filters/purge")
-async def purge_history(body: PurgeRequest) -> dict[str, Any]:
-    """Delete recorded tracks that fail these thresholds.
-
-    Separate from saving the thresholds: applying a filter going forward
-    and rewriting what is already on record are different decisions, and
-    the second one cannot be undone.
-    """
-    result = await asyncio.to_thread(
-        history.prune_below, body.min_area, body.min_movement
+        },
     )
-    return result
-
-
-@router.get("/history")
-async def track_history(
-    camera_id: str | None = Query(default=None),
-    object_type: str | None = Query(default=None),
-    limit: int = Query(default=200, le=2000),
-) -> dict[str, Any]:
-    """Completed tracks, most recent first, with a summary.
-
-    One row per object rather than per message: the live view already
-    shows the messages, and what you want hours later is "what came
-    through, when, and for how long".
-    """
-    return {
-        "tracks": history.read(camera_id=camera_id, limit=limit, object_type=object_type),
-        "summary": history.summarize(camera_id=camera_id),
-    }
 
 
 @router.get("/live")
