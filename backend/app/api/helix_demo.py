@@ -37,6 +37,7 @@ from app.crypto import decrypt_secret
 from app.db import get_session
 from app.helixdemo import compose as composer
 from app.helixdemo import generate
+from app.helixdemo import history
 from app.models import Connection, VerkadaCamera
 from app.models.verkada_api import VerkadaApiEndpoint
 from app.pricing import ledger
@@ -64,6 +65,11 @@ class ComposeRequest(BaseModel):
 
 
 class SeedRequest(BaseModel):
+    # Carried through to the history entry so a run can be re-run or
+    # adjusted later. Nothing here is secret — it is the design, not the
+    # events.
+    name: str | None = None
+    summary: str | None = None
     connection_id: UUID
     camera_id: str
     event_type_uid: str
@@ -402,6 +408,26 @@ async def seed(
     failures = [r for r in results if r]
     posted = 1 + sum(1 for r in results if r is None)
 
+    await history.record(
+        {
+            "name": body.name or "Demo data",
+            "summary": body.summary or "",
+            "connection_id": str(body.connection_id),
+            "camera_id": body.camera_id,
+            "event_type_uid": body.event_type_uid,
+            "count": body.count,
+            "window_days": body.window_days,
+            "timing": used_timing,
+            "seed": seed_value,
+            "posted": posted,
+            "requested": len(events),
+            # The spec is the point of keeping any of this: it is what
+            # you load back when the customer wants hardware-store items
+            # instead of groceries.
+            "spec": body.spec,
+        }
+    )
+
     return {
         "posted": posted,
         "requested": len(events),
@@ -418,3 +444,16 @@ async def seed(
         # informative than five.
         "errors": failures[:5],
     }
+
+
+@router.get("/history")
+async def list_history() -> list[dict[str, Any]]:
+    """Past seeding runs, newest first."""
+    return await history.load()
+
+
+@router.delete("/history/{entry_id}")
+async def delete_history(entry_id: str) -> dict[str, bool]:
+    """Forget a run. Does not touch the events it posted — vFusion has no
+    record of those and could not delete them if it did."""
+    return {"removed": await history.remove(entry_id)}

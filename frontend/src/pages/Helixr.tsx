@@ -26,6 +26,22 @@ interface ComposedDemo {
   sample: { attributes: Record<string, string>; at: string }[];
 }
 
+interface DemoRun {
+  id: string;
+  at: string;
+  name: string;
+  summary: string;
+  camera_id: string;
+  event_type_uid: string;
+  count: number;
+  window_days: number;
+  timing: string;
+  seed: number;
+  posted: number;
+  requested: number;
+  spec: Record<string, unknown>;
+}
+
 interface SeedResult {
   posted: number;
   requested: number;
@@ -292,9 +308,63 @@ function DemoPanel({ connId }: { connId: string }) {
         count,
         window_days: windowDays,
         timing,
+        name: draft?.name ?? typeName,
+        summary: draft?.summary ?? "",
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helix-demo-history"] }),
     onError: (e: Error) => setErr(e.message),
   });
+
+  const runs = useQuery({
+    queryKey: ["helix-demo-history"],
+    queryFn: () => apiGet<DemoRun[]>("/api/helix-demo/history"),
+  });
+  const forget = useMutation({
+    mutationFn: (id: string) => apiDelete(`/api/helix-demo/history/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helix-demo-history"] }),
+  });
+  // Re-runs post *fresh* events: no seed is sent, so the generator picks
+  // a new one. Repeating a seed exactly would duplicate the timeline
+  // rather than replace it — vFusion keeps no record of what it posted
+  // and could not clean up after itself.
+  const rerun = useMutation({
+    mutationFn: (r: DemoRun) =>
+      apiPost<SeedResult>("/api/helix-demo/seed", {
+        connection_id: connId,
+        camera_id: r.camera_id,
+        event_type_uid: r.event_type_uid,
+        spec: r.spec,
+        count: r.count,
+        window_days: r.window_days,
+        timing: r.timing,
+        name: r.name,
+        summary: r.summary,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helix-demo-history"] }),
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  /** Put a past design back in the panel so the adjust box works on it.
+   *  The schema and samples are not stored — only the spec, which is
+   *  what a refinement actually edits — so this restores enough to
+   *  describe a change and recompose, not a full replay of the draft. */
+  function loadForAdjust(r: DemoRun) {
+    setDraft({
+      name: r.name,
+      summary: r.summary,
+      helix_event_type: { name: r.name, event_schema: {} },
+      spec: r.spec,
+      model: "",
+      raw: {},
+      sample: [],
+    } as unknown as ComposedDemo);
+    setTypeName(r.name);
+    setTypeUid(r.event_type_uid);
+    setCameraId(r.camera_id);
+    setCount(r.count);
+    setWindowDays(r.window_days);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   // The name of the type actually posted to, which is not always the
   // editable draft name above -- an existing type can be picked instead.
@@ -621,6 +691,65 @@ function DemoPanel({ connId }: { connId: string }) {
               Nothing posted. {seed.data.errors[0] ?? "The API rejected it."}
             </div>
           )}
+        </Card>
+      )}
+
+      {(runs.data ?? []).length > 0 && (
+        <Card>
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+            Past runs
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Running again posts a fresh set with the same shape — different
+            values, different timings. Nothing is removed: vFusion keeps no
+            record of the events it posted, so a second run adds to the
+            timeline rather than replacing it.
+          </p>
+          <div className="space-y-2">
+            {(runs.data ?? []).map((r) => (
+              <div
+                key={r.id}
+                className="rounded border border-white/10 bg-white/5 p-2.5 flex items-start justify-between gap-3 flex-wrap"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-100">{r.name}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {r.posted.toLocaleString()} events on{" "}
+                    {allCameras.find((c) => c.camera_id === r.camera_id)?.name ??
+                      "a camera"}{" "}
+                    &middot; {r.window_days}d window &middot;{" "}
+                    {new Date(r.at).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => rerun.mutate(r)}
+                    disabled={rerun.isPending}
+                    className="text-xs px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40"
+                  >
+                    {rerun.isPending ? "Posting…" : "Run again"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadForAdjust(r)}
+                    title="Load this design so you can describe a change to it"
+                    className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-slate-200"
+                  >
+                    Adjust
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => forget.mutate(r.id)}
+                    title="Forget this run. The events it posted stay."
+                    className="text-xs px-2 py-1.5 rounded border border-white/15 text-slate-500 hover:text-rose-300"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
     </div>
