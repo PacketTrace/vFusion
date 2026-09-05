@@ -56,6 +56,23 @@ const METHOD_COLOR: Record<string, string> = {
 // Starting points for someone who does not know the vocabulary. These
 // are searches, not endpoints — "door" finds eleven things and one of
 // them is the one you meant.
+// What people call these things, mapped onto the paths Verkada uses.
+// Searching "plate" should find LPR; searching "notify" should find the
+// nothing it deserves, but say so having actually looked.
+const ALIASES: Record<string, string> = {
+  video_tagging: "helix event tag custom data timeline",
+  lpr: "plate license plate vehicle anpr",
+  occupancy: "people count crowd busy footfall",
+  audit_log: "audit history who did what activity log",
+  access_users: "badge credential card person employee",
+  doors: "door lock unlock entry",
+  alarms: "alarm siren panic intrusion",
+  environment: "sensor temperature humidity air quality noise",
+  footage: "video clip recording playback thumbnail image",
+  devices: "camera hardware inventory",
+  guest: "visitor reception sign in",
+};
+
 const SUGGESTIONS = ["door", "camera", "unlock", "user", "helix", "alarm", "sensor"];
 
 function paramsOf(detail: ApiEndpointDetail | null): Param[] {
@@ -107,7 +124,7 @@ export default function ApiRunner() {
   const all = useQuery({
     queryKey: ["api-endpoints-all"],
     queryFn: () =>
-      apiGet<ApiEndpointList>("/api/verkada-catalog/endpoints?limit=1000"),
+      apiGet<ApiEndpointList>("/api/verkada/catalog/endpoints?limit=1000"),
   });
 
   const hits = useMemo(() => {
@@ -117,9 +134,16 @@ export default function ApiRunner() {
     const words = needle.split(/\s+/);
     return items
       .filter((e) => {
-        const hay = `${e.method} ${e.path} ${e.summary ?? ""} ${
+        const path = e.path.toLowerCase();
+        let hay = `${e.method} ${path} ${e.summary ?? ""} ${
           e.operation_id ?? ""
         }`.toLowerCase();
+        // Fold in the words an operator would actually type for these
+        // paths. Verkada names things its own way and you cannot search
+        // a vocabulary you do not have.
+        for (const [fragment, extra] of Object.entries(ALIASES)) {
+          if (path.includes(fragment)) hay += ` ${extra}`;
+        }
         return words.every((w) => hay.includes(w));
       })
       .slice(0, 40);
@@ -128,7 +152,7 @@ export default function ApiRunner() {
   const detail = useQuery({
     queryKey: ["api-endpoint", picked?.id],
     queryFn: () =>
-      apiGet<ApiEndpointDetail>(`/api/verkada-catalog/endpoints/${picked!.id}`),
+      apiGet<ApiEndpointDetail>(`/api/verkada/catalog/endpoints/${picked!.id}`),
     enabled: !!picked,
   });
 
@@ -186,7 +210,9 @@ export default function ApiRunner() {
           placeholder={
             all.data
               ? `Search ${all.data.total} Verkada endpoints — try "door", "unlock", "what a camera saw"…`
-              : "Loading the catalog…"
+              : all.isLoading
+                ? "Loading the catalog…"
+                : "The catalog could not be loaded"
           }
           className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
         />
@@ -201,7 +227,21 @@ export default function ApiRunner() {
         )}
       </div>
 
-      {!q && (
+      {all.error && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-rose-200">
+          Could not load the endpoint catalog: {(all.error as Error).message}
+        </div>
+      )}
+
+      {all.data && all.data.total === 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-200">
+          The catalog is empty — nothing has been crawled from Verkada yet.
+          It syncs every four hours, or trigger it now from{" "}
+          <b>MCP &rsaquo; Verkada API catalog</b>.
+        </div>
+      )}
+
+      {!q && !all.error && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] text-slate-500">Try:</span>
           {SUGGESTIONS.map((s) => (
@@ -221,8 +261,9 @@ export default function ApiRunner() {
         <div className="rounded-lg border border-white/15 bg-white/5 divide-y divide-white/5 max-h-64 overflow-y-auto">
           {hits.length === 0 && (
             <div className="px-3 py-3 text-sm text-slate-500">
-              Nothing matches “{q}”. The catalog covers what Verkada publishes;
-              if something is missing it may be a namespace not crawled yet.
+              Nothing matches “{q}” in {all.data?.total ?? 0} endpoints. Try a
+              word from the URL or the summary — Verkada names things its own
+              way, so “Helix” lives under video_tagging and plates under lpr.
             </div>
           )}
           {hits.map((e) => (
