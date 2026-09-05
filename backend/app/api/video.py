@@ -47,6 +47,7 @@ async def options() -> dict[str, Any]:
         "settings": video_prompt.SETTINGS,
         "lighting": video_prompt.LIGHTING,
         "activity": video_prompt.ACTIVITY,
+        "price_per_second": video_prompt.PRICE_PER_SECOND,
     }
 
 

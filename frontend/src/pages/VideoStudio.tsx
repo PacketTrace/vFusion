@@ -38,15 +38,11 @@ interface Options {
   settings: Record<string, string>;
   lighting: Record<string, string>;
   activity: Record<string, string>;
+  // Per-second rates live in the backend, which is also what records
+  // the spend — one copy, so the estimate and the ledger cannot
+  // disagree about what a clip cost.
+  price_per_second: Record<string, Record<string, number>>;
 }
-
-// Per-second prices from Google's pricing page, so the form can say what
-// a request will cost before it is made rather than after.
-const PRICE_PER_SEC: Record<string, Record<string, number>> = {
-  "veo-3.1-generate-preview": { "720p": 0.4, "1080p": 0.4 },
-  "veo-3.1-fast-generate-preview": { "720p": 0.1, "1080p": 0.12 },
-  "veo-3.1-lite-generate-preview": { "720p": 0.05, "1080p": 0.08 },
-};
 
 const MODELS = [
   ["veo-3.1-fast-generate-preview", "Fast — cheapest sensible default"],
@@ -125,7 +121,7 @@ export default function VideoStudio() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["video-jobs"] }),
   });
 
-  const perSec = PRICE_PER_SEC[model]?.[resolution];
+  const perSec = options.data?.price_per_second?.[model]?.[resolution];
   const estimate = perSec != null ? perSec * duration : null;
 
   const opts = options.data;
@@ -282,9 +278,14 @@ export default function VideoStudio() {
             >
               {generate.isPending ? "Requesting…" : "Generate"}
             </button>
-            {estimate != null && (
+            {estimate != null ? (
               <span className="text-xs text-slate-400">
-                about ${estimate.toFixed(2)} · {duration}s at {resolution}
+                about ${estimate.toFixed(2)} · {duration}s at {resolution} ·
+                lands on the Stats page
+              </span>
+            ) : (
+              <span className="text-xs text-amber-300">
+                No published rate for this model — cost unknown until it runs
               </span>
             )}
             <button

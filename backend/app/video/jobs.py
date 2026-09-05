@@ -24,7 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.video.prompt import VideoRequest, describe
+from app.pricing import ledger
+from app.video.prompt import VideoRequest, describe, estimate_cost
 
 
 logger = logging.getLogger(__name__)
@@ -181,12 +182,26 @@ async def _run(job_id: str, api_key: str, req: VideoRequest, prompt: str) -> Non
     await _update(job_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
     loop = asyncio.get_running_loop()
 
+    cost = estimate_cost(req.model, req.resolution, req.duration_seconds)
+
     def note_generated(uri: str | None) -> None:
         # Called from the worker thread the moment generation completes,
         # so the uri is on the job even if the save then fails.
         asyncio.run_coroutine_threadsafe(
-            _update(job_id, video_uri=uri, status="saving"), loop
+            _update(job_id, video_uri=uri, status="saving", cost_usd=cost), loop
         )
+        # Billed at generation, not at download — a save that fails does
+        # not refund it, and the Stats page should say so.
+        if cost is not None:
+            asyncio.run_coroutine_threadsafe(
+                ledger.record_usd(
+                    req.model,
+                    cost,
+                    source="Video generation",
+                    units=f"{req.duration_seconds}s {req.resolution}",
+                ),
+                loop,
+            )
 
     try:
         result = await asyncio.to_thread(

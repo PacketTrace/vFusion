@@ -62,6 +62,35 @@ def usage_of(res: Any) -> tuple[int, int]:
     )
 
 
+async def record_usd(
+    model: str, cost_usd: float, *, source: str, units: str = ""
+) -> None:
+    """Note spend that is not priced in tokens.
+
+    Video is billed per second of output, so the token path cannot price
+    it — and video is the most expensive thing in the product, which
+    makes it the worst thing to leave off the page. The entry carries
+    zero tokens and a cost computed by the caller from the published
+    per-second rate, plus a note of what was bought.
+    """
+    try:
+        entry = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "source": source,
+            "model": model,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "cost_usd": round(float(cost_usd), 6),
+            "units": units,
+        }
+        async with _lock:
+            STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with STORE_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+    except Exception:  # noqa: BLE001
+        logger.warning("could not record %s spend for %s", model, source, exc_info=True)
+
+
 async def record(
     model: str, tokens_in: int, tokens_out: int, *, source: str
 ) -> None:

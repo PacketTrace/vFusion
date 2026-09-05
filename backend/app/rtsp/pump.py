@@ -100,6 +100,12 @@ class Pump:
 
     # ---- lifecycle -----------------------------------------------------
 
+    # Set by play_now / on_source_start. Declared here so the pump has
+    # them from construction rather than growing attributes later.
+    _priority: dict[str, Any] | None = None
+    _on_start: Any = None
+    started_at: float | None = None
+
     def start(self) -> None:
         if self._task and not self._task.done():
             return
@@ -249,12 +255,31 @@ class Pump:
                     if not line.startswith(("frame=", "size=")):
                         self.last_error = line
 
+    def play_now(self, item: dict[str, Any]) -> None:
+        """Jump this clip ahead of the queue at the next source change.
+
+        One slot, not a list: the caller is a sequencer that plays one
+        thing at a time and would rather its second request replace a
+        stale first than sit behind it.
+        """
+        self._priority = item
+
+    def on_source_start(self, fn: Any) -> None:
+        """Called with (item, unix_seconds) as each source begins."""
+        self._on_start = fn
+
     async def _play_next(self) -> None:
         # Cleared before the check, not inside standby: an upload landing
         # between "queue is empty" and "start waiting" would otherwise be
         # missed, and standby has no other reason to ever end.
         queue.arrived.clear()
-        item = queue.next_pending()
+        # The jump slot wins, and is consumed whether or not it plays
+        # cleanly — a clip that fails should not be retried forever in
+        # front of whatever the sequencer wanted next.
+        item = self._priority
+        self._priority = None
+        if item is None:
+            item = queue.next_pending()
         if item is None:
             await self._standby()
             return
@@ -308,6 +333,16 @@ class Pump:
             await asyncio.sleep(1.0)
             return
         started = time.monotonic()
+        # Wall clock, not monotonic: this is the number a Helix event
+        # timestamp is derived from, and the two have to be in the same
+        # frame of reference as Verkada's.
+        self.started_at = time.time()
+        if self._on_start is not None:
+            try:
+                self._on_start(self.now_playing, self.started_at)
+            except Exception:  # noqa: BLE001 — a listener must never
+                # take the stream down with it.
+                logger.warning("source-start listener failed", exc_info=True)
         try:
             await proc.wait()
         finally:

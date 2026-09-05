@@ -205,3 +205,23 @@ def describe(req: VideoRequest) -> str:
             req.extra.strip(),
         ]
     ).strip()
+
+
+# Published per-second rates, so a generation can be priced without a
+# lookup table living in the frontend and drifting from the backend.
+# Source: Google's Gemini API pricing page, video-with-audio.
+PRICE_PER_SECOND: dict[str, dict[str, float]] = {
+    "veo-3.1-generate-preview": {"720p": 0.40, "1080p": 0.40, "4k": 0.60},
+    "veo-3.1-fast-generate-preview": {"720p": 0.10, "1080p": 0.12, "4k": 0.30},
+    "veo-3.1-lite-generate-preview": {"720p": 0.05, "1080p": 0.08},
+}
+
+
+def estimate_cost(model: str, resolution: str, seconds: int) -> float | None:
+    """What this request costs, or None when the model is unknown to us.
+
+    None rather than zero: an unpriced model has an unknown cost, and
+    showing "$0.00" for it would be a lie in the expensive direction.
+    """
+    per_sec = PRICE_PER_SECOND.get(model, {}).get(resolution)
+    return None if per_sec is None else round(per_sec * max(0, seconds), 4)
