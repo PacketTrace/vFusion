@@ -121,6 +121,13 @@ def _blank() -> dict[str, Any]:
         # the path it is watching.
         "publish_username": "vfusion",
         "publish_password": "",
+        # MediaMTX's own API. It has an "api" permission like any other,
+        # and removing the default anonymous user — which is the whole
+        # point of this config — revoked it along with everything else.
+        # Without a user holding it, vFusion's own status calls get 401,
+        # which is why the viewer count read "unknown" indefinitely.
+        "api_username": "vfusionapi",
+        "api_password": "",
         "loop": False,
         # "onvif" or "rtsp". Not a presentation choice: ONVIF needs a
         # sub-stream and a snapshot to be worth choosing, and plain RTSP
@@ -247,6 +254,10 @@ async def put(entry: dict[str, Any]) -> dict[str, Any]:
             current["read_password"] = _password()
         if not current["publish_password"]:
             current["publish_password"] = _password()
+        if not current["api_username"]:
+            current["api_username"] = "vfusionapi"
+        if not current["api_password"]:
+            current["api_password"] = _password()
         if not current["device_uuid"]:
             current["device_uuid"] = str(uuid.uuid4())
         _write(current)
