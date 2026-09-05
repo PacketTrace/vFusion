@@ -130,6 +130,9 @@ export default function Byoa() {
   interface BuiltinTemplate {
     name: string;
     value: string;
+    /** "video" (default) or "audio" — decides which footage mode the
+     *  card switches to when it is picked. */
+    medium?: string;
     // Optional Helix pairing — see /api/prompt-templates/builtins.
     // When present, picking the template auto-toggles "Post to Helix",
     // selects the matching event type by name (if one exists on the
@@ -364,10 +367,15 @@ export default function Byoa() {
       ...(savedAnalytics.data ?? []).map((a) => ({
         name: a.name,
         value: a.prompt,
+        medium: a.medium ?? "video",
         helix_event_type: a.helix_event_type,
         helix_attribute_mapping: a.helix_attribute_mapping,
       })),
-      ...(userTemplates.data ?? []).map((t) => ({ name: t.name, value: t.value })),
+      ...(userTemplates.data ?? []).map((t) => ({
+        name: t.name,
+        value: t.value,
+        medium: "video",
+      })),
       ...(builtinTemplates.data ?? []),
     ];
     // Name is the identity here: it keys the cards and decides which one
@@ -469,6 +477,7 @@ export default function Byoa() {
     setPickedTemplate({
       name: found.name,
       value: found.prompt,
+      medium: found.medium ?? "video",
       helix_event_type: found.helix_event_type,
       helix_attribute_mapping: found.helix_attribute_mapping,
     });
@@ -495,11 +504,30 @@ export default function Byoa() {
     setPickedTemplate({
       name: found.name,
       value: found.value,
+      medium: found.medium ?? "video",
       helix_event_type: found.helix_event_type ?? undefined,
       helix_attribute_mapping: found.helix_attribute_mapping ?? undefined,
     });
     setPromptOpen(true);
   }, [preselectBuiltin, builtinTemplates.data]);
+
+  // The prompt decides the footage. An audio analytic run against a
+  // still frame does not fail — Gemini writes a plausible sentence about
+  // a picture it cannot hear, and it posts to Helix reading as success —
+  // so leaving the mode alone produces a confident wrong answer rather
+  // than an error.
+  //
+  // Keyed on the template only. Switching footage by hand afterwards is
+  // a deliberate act and does not get undone.
+  useEffect(() => {
+    if (!pickedTemplate) return;
+    if ((pickedTemplate.medium ?? "video") === "audio") {
+      setMode("audio");
+    } else {
+      setMode((m) => (m === "audio" ? "live" : m));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedTemplate]);
 
   // When a paired template is selected, auto-toggle "Post to Helix" and
   // try to select the matching event type by name on the current
@@ -1178,6 +1206,15 @@ export default function Byoa() {
                 Audio (live)
               </ModeBtn>
             </div>
+            {pickedTemplate &&
+              (pickedTemplate.medium ?? "video") === "audio" &&
+              mode !== "audio" && (
+                <p className="mt-1.5 text-[11px] text-amber-300/90">
+                  This is an audio prompt. Against a frame or a silent clip
+                  it will still answer — with a guess about a picture it
+                  cannot hear, which posts to Helix looking like a result.
+                </p>
+              )}
           </Field>
           <Field label="Model" required>
             <div className="space-y-1.5">
