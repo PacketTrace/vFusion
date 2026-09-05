@@ -17,6 +17,18 @@ import { apiGet, apiPut } from "../lib/api";
  * that is an actual ceiling.
  */
 
+interface Breakdown {
+  sources: {
+    name: string;
+    what: string;
+    token_priced: boolean;
+    cost_usd: number;
+    calls: number;
+  }[];
+  flows: { flow_id: string; name: string | null; cost_usd: number; steps: number }[];
+  unregistered: { name: string; cost_usd: number }[];
+}
+
 interface CostState {
   enabled: boolean;
   cap_usd: number;
@@ -32,6 +44,12 @@ export default function CostSettings() {
     queryKey: ["cost-state"],
     queryFn: () => apiGet<CostState>("/api/cost/state"),
     refetchInterval: 30_000,
+  });
+
+  const breakdown = useQuery({
+    queryKey: ["cost-breakdown"],
+    queryFn: () => apiGet<Breakdown>("/api/cost/breakdown"),
+    refetchInterval: 60_000,
   });
 
   const [enabled, setEnabled] = useState(false);
@@ -162,6 +180,91 @@ export default function CostSettings() {
           as skipped with the reason, rather than failing.
         </p>
       </div>
+
+      <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+          Where it went
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Every way vFusion can spend, listed whether or not it has. A row you
+          have used this month that still reads $0.00 is not free — it is not
+          being recorded, and that is worth knowing.
+        </p>
+        <table className="w-full text-sm">
+          <tbody>
+            {(breakdown.data?.sources ?? []).map((row) => (
+              <tr key={row.name} className="border-t border-white/10">
+                <td className="py-1.5 pr-3">
+                  <div className="text-slate-200">{row.name}</div>
+                  <div className="text-[11px] text-slate-500">{row.what}</div>
+                </td>
+                <td className="py-1.5 pr-3 text-right text-[11px] text-slate-500 whitespace-nowrap align-top">
+                  {row.calls > 0
+                    ? `${row.calls.toLocaleString()} ${row.token_priced ? "calls" : "clips"}`
+                    : "—"}
+                </td>
+                <td
+                  className={`py-1.5 text-right font-mono whitespace-nowrap align-top ${
+                    row.cost_usd > 0 ? "text-slate-200" : "text-slate-600"
+                  }`}
+                >
+                  ${row.cost_usd.toFixed(row.cost_usd >= 0.01 ? 2 : 4)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {(breakdown.data?.unregistered ?? []).length > 0 && (
+          <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/5 p-2">
+            <div className="text-xs text-amber-200">
+              Spend recorded under a name that is not declared
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">
+              {(breakdown.data?.unregistered ?? [])
+                .map((u) => `${u.name} $${u.cost_usd.toFixed(4)}`)
+                .join(" · ")}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              Add it to app/pricing/sources.py so it appears above with the
+              rest.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(breakdown.data?.flows ?? []).length > 0 && (
+        <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+            Which flows
+          </div>
+          <p className="text-[11px] text-slate-500 mb-3">
+            The actionable form of &ldquo;what costs most&rdquo;. Flow spend
+            comes off each run&rsquo;s own recorded step costs.
+          </p>
+          <table className="w-full text-sm">
+            <tbody>
+              {(breakdown.data?.flows ?? []).map((f) => (
+                <tr key={f.flow_id} className="border-t border-white/10">
+                  <td className="py-1.5 pr-3 text-slate-200">
+                    {f.name ?? (
+                      <span className="text-slate-500">
+                        deleted flow · {f.flow_id.slice(0, 8)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right text-[11px] text-slate-500 whitespace-nowrap">
+                    {f.steps.toLocaleString()} steps
+                  </td>
+                  <td className="py-1.5 text-right font-mono text-slate-200 whitespace-nowrap">
+                    ${f.cost_usd.toFixed(f.cost_usd >= 0.01 ? 2 : 4)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* The part that matters most, and the part a cap like this is
           most likely to be mistaken for. */}

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { API_BASE, apiDelete, apiGet, apiPost, apiPut } from "../lib/api";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -104,6 +105,7 @@ export default function Rtsp() {
   // within seconds and needs re-adding — which is not something to learn
   // from the camera list a day later.
   const [confirmRtsp, setConfirmRtsp] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [pendingDelete, setPendingDelete] = useState<QueueItem | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -214,6 +216,17 @@ export default function Rtsp() {
     onError: (e: Error) => setUploadError(e.message),
   });
 
+  // Setting the camera up and managing what it plays are different
+  // jobs — the first is done once, the second every time there is new
+  // footage — and stacking them meant scrolling past the whole setup to
+  // reach the queue.
+  const tab = searchParams.get("tab") === "queue" ? "queue" : "camera";
+  const setTab = (next: string) => {
+    const p = new URLSearchParams(searchParams);
+    p.set("tab", next);
+    setSearchParams(p, { replace: true });
+  };
+
   const s = status.data;
   const hostValue = host ?? s?.advertise_host ?? "";
   const pending = (items.data ?? []).filter((i) => !i.played_at);
@@ -248,11 +261,29 @@ export default function Rtsp() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Virtual camera</h1>
         <p className="text-slate-400 text-sm mt-1">
-          A camera that does not exist, for Verkada's Command Connector to
-          record. While it is on there is always a picture — your uploads when
-          there are any, black with a clock when there are not — so the camera
-          never goes offline between clips.
+          {tab === "queue"
+            ? "What the camera plays, in order. Add a clip and it joins the stream without interrupting it; loop keeps the queue going round rather than falling back to standby."
+            : "A camera that does not exist, for Verkada's Command Connector to record. While it is on there is always a picture — your uploads when there are any, black with a clock when there are not — so the camera never goes offline between clips."}
         </p>
+        <div className="mt-4 flex items-center gap-1 border-b border-white/10">
+          {[
+            { key: "camera", label: "Camera" },
+            { key: "queue", label: "Queue" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                tab === t.key
+                  ? "border-sky-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {status.data?.paths?.known && !status.data.paths.ok && (
@@ -519,7 +550,8 @@ export default function Rtsp() {
         )}
       </Card>
 
-      <Card title="3 · What it plays">
+      {tab === "queue" && (
+      <Card title="What it plays">
         <input
           ref={fileRef}
           type="file"
@@ -679,6 +711,7 @@ export default function Rtsp() {
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 }

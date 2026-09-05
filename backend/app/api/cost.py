@@ -29,6 +29,12 @@ async def state(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     return await budget.state(session)
 
 
+@router.get("/breakdown")
+async def breakdown(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Where this month's spend went, per source and per flow."""
+    return await budget.breakdown(session, budget.month_start())
+
+
 @router.put("/cap")
 async def set_cap(
     body: CapRequest,
