@@ -73,7 +73,21 @@ const ALIASES: Record<string, string> = {
   guest: "visitor reception sign in",
 };
 
-const SUGGESTIONS = ["door", "camera", "unlock", "user", "helix", "alarm", "sensor"];
+/** A readable name for a namespace, for endpoints the spec left untagged. */
+function namespaceLabel(ns: string): string {
+  return ns
+    .replace(/_v\d+$/, "")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/** The distinguishing tail of a path. Every camera endpoint starts
+ *  "/cameras/v1/", so leading with it wastes the width a sidebar has
+ *  least of. */
+function shortName(e: { path: string }): string {
+  const parts = e.path.split("/").filter(Boolean);
+  return parts.slice(2).join("/") || e.path;
+}
 
 function paramsOf(detail: ApiEndpointDetail | null): Param[] {
   const raw = detail?.raw as { parameters?: Param[] } | undefined;
@@ -163,6 +177,9 @@ export default function ApiRunner() {
   const [connId, setConnId] = useState("");
   const [armed, setArmed] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Which categories are expanded. Nothing is open on arrival: a wall of
+  // 121 endpoints is the thing the categories exist to prevent.
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
   const conns = useQuery({
     queryKey: ["connections"],
@@ -178,10 +195,10 @@ export default function ApiRunner() {
       apiGet<ApiEndpointList>("/api/verkada/catalog/endpoints?limit=1000"),
   });
 
-  const hits = useMemo(() => {
+  const hitsRaw = useMemo(() => {
     const items = all.data?.items ?? [];
     const needle = q.trim().toLowerCase();
-    if (!needle) return [];
+    if (!needle) return items;
     const words = needle.split(/\s+/);
     return items
       .filter((e) => {
@@ -196,9 +213,27 @@ export default function ApiRunner() {
           if (path.includes(fragment)) hay += ` ${extra}`;
         }
         return words.every((w) => hay.includes(w));
-      })
-      .slice(0, 40);
+      });
   }, [all.data, q]);
+
+  // Categories come from the spec's tags rather than from a list here.
+  // A hand-written taxonomy would be a second opinion about someone
+  // else's API, wrong the first time they add a section.
+  const groups = useMemo(() => {
+    const by = new Map<string, ApiEndpoint[]>();
+    for (const e of hitsRaw) {
+      const tag = e.tags?.[0]?.trim() || namespaceLabel(e.namespace);
+      if (!by.has(tag)) by.set(tag, []);
+      by.get(tag)!.push(e);
+    }
+    for (const list of by.values()) {
+      list.sort(
+        (a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method),
+      );
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [hitsRaw]);
+
 
   const detail = useQuery({
     queryKey: ["api-endpoint", picked?.id],
@@ -272,99 +307,99 @@ export default function ApiRunner() {
   }
 
   return (
-    <div className="space-y-3">
-      {/* Search is the interface. Everything else appears in response
-          to it. */}
-      <div className="relative">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          autoFocus
-          placeholder={
-            all.data
-              ? `Search ${all.data.total} Verkada endpoints — try "door", "unlock", "what a camera saw"…`
-              : all.isLoading
-                ? "Loading the catalog…"
-                : "The catalog could not be loaded"
-          }
-          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
-        />
-        {q && (
-          <button
-            type="button"
-            onClick={() => setQ("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-sm px-2"
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      {all.error && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-rose-200">
-          Could not load the endpoint catalog: {(all.error as Error).message}
+    <div className="flex gap-4 items-start">
+      {/* Browse first, search second. Search assumes you already know
+          the word; the categories are how you find out what exists —
+          which is the same reason Verkada's own docs lead with them. */}
+      <div className="w-72 shrink-0 rounded-lg border border-white/15 bg-white/5 flex flex-col max-h-[38rem]">
+        <div className="p-2 border-b border-white/10">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={
+              all.data ? `Filter ${all.data.total} endpoints…` : "Loading…"
+            }
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs focus:outline-none focus:border-sky-600"
+          />
         </div>
-      )}
 
-      {all.data && all.data.total === 0 && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-200">
-          The catalog is empty — nothing has been crawled from Verkada yet.
-          It syncs every four hours, or trigger it now from{" "}
-          <b>MCP &rsaquo; Verkada API catalog</b>.
-        </div>
-      )}
-
-      {!q && !all.error && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-500">Try:</span>
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setQ(s)}
-              className="text-[11px] px-2 py-1 rounded border border-white/10 text-slate-400 hover:bg-white/5 hover:text-slate-200"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {q && (
-        <div className="rounded-lg border border-white/15 bg-white/5 divide-y divide-white/5 max-h-64 overflow-y-auto">
-          {hits.length === 0 && (
-            <div className="px-3 py-3 text-sm text-slate-500">
-              Nothing matches “{q}” in {all.data?.total ?? 0} endpoints. Try a
-              word from the URL or the summary — Verkada names things its own
-              way, so “Helix” lives under video_tagging and plates under lpr.
+        <div className="overflow-y-auto flex-1 py-1">
+          {all.error && (
+            <div className="px-3 py-3 text-xs text-rose-300">
+              Could not load the catalog: {(all.error as Error).message}
             </div>
           )}
-          {hits.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => choose(e)}
-              className={`w-full text-left px-3 py-2 hover:bg-white/5 flex items-baseline gap-2 ${
-                picked?.id === e.id ? "bg-sky-900/20" : ""
-              }`}
-            >
-              <span
-                className={`text-[10px] font-mono w-14 shrink-0 ${
-                  METHOD_COLOR[e.method] ?? "text-slate-400"
-                }`}
-              >
-                {e.method}
-              </span>
-              <span className="font-mono text-xs text-slate-200 break-all">
-                {e.path}
-              </span>
-              {e.summary && (
-                <span className="text-[11px] text-slate-500 truncate ml-auto pl-3 shrink-0 max-w-[45%]">
-                  {e.summary}
-                </span>
-              )}
-            </button>
-          ))}
+          {all.data?.total === 0 && (
+            <div className="px-3 py-3 text-xs text-amber-300">
+              Nothing crawled yet. Trigger a sync from MCP › Verkada API
+              catalog.
+            </div>
+          )}
+          {groups.map(([group, items]) => {
+            // A search collapses the tree to what matched, so the
+            // categories stop being navigation and start being labels
+            // on the results.
+            const isOpen = q.trim() !== "" || open.has(group);
+            return (
+              <div key={group}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = new Set(open);
+                    if (next.has(group)) next.delete(group);
+                    else next.add(group);
+                    setOpen(next);
+                  }}
+                  className="w-full flex items-baseline gap-2 px-3 py-1.5 text-left hover:bg-white/5"
+                >
+                  <span className="text-slate-500 text-[10px] w-2">
+                    {isOpen ? "▾" : "▸"}
+                  </span>
+                  <span className="text-xs text-slate-200">{group}</span>
+                  <span className="text-[10px] text-slate-600 ml-auto">
+                    {items.length}
+                  </span>
+                </button>
+                {isOpen &&
+                  items.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => choose(e)}
+                      title={e.summary ?? e.path}
+                      className={`w-full text-left pl-7 pr-2 py-1 flex items-baseline gap-1.5 hover:bg-white/5 ${
+                        picked?.id === e.id ? "bg-sky-900/30" : ""
+                      }`}
+                    >
+                      <span
+                        className={`text-[9px] font-mono w-10 shrink-0 ${
+                          METHOD_COLOR[e.method] ?? "text-slate-400"
+                        }`}
+                      >
+                        {e.method}
+                      </span>
+                      <span className="text-[11px] text-slate-300 truncate">
+                        {shortName(e)}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
+          {q.trim() !== "" && groups.length === 0 && (
+            <div className="px-3 py-3 text-xs text-slate-500">
+              Nothing matches “{q}”. Verkada names things its own way —
+              Helix lives under video_tagging, plates under lpr.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-3">
+      {!picked && (
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-500">
+          Pick an endpoint on the left. Categories come from Verkada&rsquo;s own
+          tags, so they match how the API is documented.
         </div>
       )}
 
@@ -660,6 +695,7 @@ export default function ApiRunner() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
