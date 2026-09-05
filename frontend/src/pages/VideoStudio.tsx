@@ -20,7 +20,11 @@ import { API_BASE, apiDelete, apiGet, apiPost } from "../lib/api";
 interface Job {
   id: string;
   at: string;
-  status: "queued" | "running" | "done" | "failed" | "interrupted";
+  status: "queued" | "running" | "done" | "failed" | "interrupted" | "saving";
+  // "upload" for your own footage. Absent on everything generated
+  // before uploads existed, which is why the check is for the value
+  // rather than for the field.
+  source?: string;
   scene: string;
   setting: string;
   vantage: string;
@@ -70,6 +74,34 @@ export default function VideoStudio() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Uploaded and generated clips are the same thing once they exist — a
+  // file the virtual camera can play and a Helix event can point at — so
+  // they share one list rather than living in separate places you have
+  // to remember the difference between.
+  async function upload(file: File) {
+    setUploading(true);
+    setErr(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/api/video/upload`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        throw new Error(j?.detail ?? `Upload failed (${res.status})`);
+      }
+      qc.invalidateQueries({ queryKey: ["video-jobs"] });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const options = useQuery({
     queryKey: ["video-options"],
@@ -146,7 +178,36 @@ export default function VideoStudio() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-4">
+        <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+            Use your own footage
+          </div>
+          <p className="text-xs text-slate-400 mb-2">
+            An mp4 you already have is free, instant, and looks exactly like
+            what it is. Generating is for when you do not have the footage.
+          </p>
+          <label className="inline-block">
+            <input
+              type="file"
+              accept="video/mp4,video/quicktime,video/x-matroska,video/webm"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void upload(f);
+                e.target.value = "";
+              }}
+            />
+            <span className="cursor-pointer inline-block text-sm px-3 py-1.5 rounded border border-white/15 text-slate-200 hover:border-sky-600">
+              {uploading ? "Uploading…" : "Choose a video"}
+            </span>
+          </label>
+        </div>
+
         <div className="rounded-lg border border-white/15 bg-white/5 p-4 space-y-3">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400">
+            Or generate one
+          </div>
           <label className="block">
             <div className="text-xs text-slate-300 mb-1">What happens</div>
             <textarea
@@ -312,12 +373,15 @@ export default function VideoStudio() {
             </pre>
           )}
         </div>
+        </div>
 
         <div className="space-y-2">
           {(jobs.data ?? []).length === 0 && (
             <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-500">
-              Clips land here. Generation takes a few minutes — you can leave
-              the page, the job keeps running.
+              Your video library. Uploaded and generated clips both land here,
+              and either can be played on the virtual camera or used by a live
+              Helix demo. Generation takes a few minutes — you can leave the
+              page, the job keeps running.
             </div>
           )}
           {(jobs.data ?? []).map((j) => (
@@ -331,7 +395,9 @@ export default function VideoStudio() {
                     {j.scene}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    {titleise(j.setting)} · {j.duration_seconds}s · {j.resolution}
+                    {j.source === "upload"
+                      ? "Uploaded"
+                      : `${titleise(j.setting)} · ${j.duration_seconds}s · ${j.resolution}`}
                     {j.bytes ? ` · ${Math.round(j.bytes / 1024)} KB` : ""}
                     {j.waited_sec ? ` · took ${j.waited_sec}s` : ""}
                   </div>
@@ -378,6 +444,7 @@ export default function VideoStudio() {
                     : "Use in virtual camera"}
                 </button>
               )}
+              {j.source !== "upload" && (
               <button
                 type="button"
                 onClick={() => setOpenPrompt(openPrompt === j.id ? null : j.id)}
@@ -385,6 +452,7 @@ export default function VideoStudio() {
               >
                 {openPrompt === j.id ? "hide" : "what was asked for"}
               </button>
+              )}
               {openPrompt === j.id && (
                 <pre className="text-[10px] text-slate-500 font-mono whitespace-pre-wrap bg-black/30 border border-white/10 rounded p-2 max-h-48 overflow-y-auto">
                   {j.prompt}

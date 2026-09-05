@@ -273,3 +273,40 @@ async def remove(job_id: str) -> bool:
 
 def clip_path(job_id: str) -> Path:
     return CLIP_DIR / f"{job_id}.mp4"
+
+
+async def record_upload(filename: str, data: bytes) -> dict[str, Any]:
+    """File your own footage alongside the generated clips.
+
+    The library does not care where a clip came from — both are a file
+    on disk that the virtual camera can play and a Helix event can point
+    at. So an upload is a finished job with ``source: "upload"`` and no
+    prompt, rather than a second kind of thing with its own list.
+    """
+    job_id = str(uuid.uuid4())
+    out = CLIP_DIR / f"{job_id}.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    job = {
+        "id": job_id,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "status": "done",
+        "source": "upload",
+        "scene": Path(filename).stem[:120],
+        "setting": "uploaded",
+        "vantage": "",
+        "lighting": "",
+        "activity": "",
+        "framing": "",
+        "focus_target": "",
+        "duration_seconds": 0,
+        "resolution": "",
+        "model": "",
+        "prompt": "",
+        "bytes": len(data),
+        "cost_usd": 0.0,
+        "error": None,
+    }
+    jobs = await load()
+    await _write([job, *jobs])
+    return job

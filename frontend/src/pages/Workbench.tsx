@@ -15,14 +15,14 @@ import Byoa from "./Byoa";
 const TABS = [
   { key: "analytics", label: "Analytics builder" },
   { key: "api", label: "API runner" },
-  { key: "video", label: "Video" },
+  { key: "video", label: "Video library" },
 ] as const;
 
 const BLURB: Record<string, string> = {
   analytics:
     "One-shot Gemini run. Pick a camera, write a prompt, see what comes back without baking it into a flow first.",
   api: "Run any Verkada endpoint against a connection you already have, and read the response properly.",
-  video: "Generate footage that looks like it came off a fixed security camera.",
+  video: "Clips for the virtual camera and for live Helix demos — upload your own, or generate footage that looks like it came off a fixed camera.",
 };
 
 export default function Workbench() {

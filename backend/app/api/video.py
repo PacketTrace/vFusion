@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -130,3 +130,35 @@ async def use_in_camera(job_id: str) -> dict[str, Any]:
         if existing.get("id") == path.stem:
             return existing
     return await rtsp_queue.adopt(path, f"{name[:60]}.mp4")
+
+
+# Same ceiling as the virtual camera's own upload — a demo clip that
+# will not fit through that path is no use here either.
+MAX_UPLOAD_BYTES = 512 * 1024 * 1024
+VIDEO_SUFFIXES = (".mp4", ".mov", ".mkv", ".webm", ".ts")
+
+
+@router.post("/upload")
+async def upload(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Add your own footage to the library.
+
+    Generated and uploaded clips are the same thing once they exist —
+    a file that can be played on the virtual camera and pointed at by a
+    Helix event — so an upload becomes a job record like any other,
+    already done, with no prompt because nobody wrote one.
+    """
+    name = file.filename or "upload.mp4"
+    if not name.lower().endswith(VIDEO_SUFFIXES):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video files only: {', '.join(VIDEO_SUFFIXES)}.",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    return await video_jobs.record_upload(name, data)
