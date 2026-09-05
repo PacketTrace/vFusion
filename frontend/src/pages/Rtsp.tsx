@@ -684,8 +684,37 @@ export default function Rtsp() {
 }
 
 function StatusBar({ s }: { s?: Status }) {
+  // Fetched only while the panel is open. The count comes with status
+  // on every poll; the session list is a second API call and is worth
+  // making only when somebody has asked who.
+  const [showViewers, setShowViewers] = useState(false);
+  const viewers = useQuery({
+    queryKey: ["rtsp-viewers"],
+    queryFn: () =>
+      apiGet<{
+        known: boolean;
+        why?: string;
+        readers?: {
+          id: string;
+          address: string;
+          path: string;
+          since: string;
+          transport: string;
+          bytes_sent: number;
+        }[];
+      }>("/api/rtsp/viewers"),
+    enabled: showViewers,
+    refetchInterval: showViewers ? 5000 : false,
+  });
+
   if (!s) return null;
-  const items: { label: string; value: string; good: boolean; hint: string }[] = [
+  const items: {
+    label: string;
+    value: string;
+    good: boolean;
+    hint: string;
+    onClick?: () => void;
+  }[] = [
     {
       label: "Stream",
       value: s.pump.publishing ? "publishing" : s.enabled ? "starting" : "off",
@@ -707,7 +736,8 @@ function StatusBar({ s }: { s?: Status }) {
       hint:
         s.viewers === null
           ? s.viewers_error || "Could not reach the RTSP server's API"
-          : "Clients pulling either published path. The Command Connector is one of them",
+          : "Clients pulling either published path. The Command Connector is one of them. Click to see which",
+      onClick: s.viewers === null ? undefined : () => setShowViewers((v) => !v),
     },
     {
       label: "Showing",
@@ -728,12 +758,16 @@ function StatusBar({ s }: { s?: Status }) {
     },
   ];
   return (
+    <>
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {items.map((item) => (
         <div
           key={item.label}
           title={item.hint}
-          className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg px-3 py-2"
+          onClick={item.onClick}
+          className={`bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg px-3 py-2 ${
+            item.onClick ? "cursor-pointer hover:border-white/30" : ""
+          }`}
         >
           <div className="text-[10px] uppercase tracking-wider text-slate-400">
             {item.label}
@@ -774,6 +808,69 @@ function StatusBar({ s }: { s?: Status }) {
         </div>
       )}
     </div>
+
+    {showViewers && (
+      <div className="rounded-lg border border-white/15 bg-white/5 p-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400">
+            Pulling the stream now
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowViewers(false)}
+            className="text-[11px] text-slate-500 hover:text-slate-300"
+          >
+            Close
+          </button>
+        </div>
+        {viewers.isLoading && (
+          <div className="text-xs text-slate-500 mt-2">Asking the server…</div>
+        )}
+        {viewers.data && !viewers.data.known && (
+          <div className="text-xs text-amber-300 mt-2">{viewers.data.why}</div>
+        )}
+        {viewers.data?.known && (viewers.data.readers ?? []).length === 0 && (
+          <div className="text-xs text-slate-500 mt-2">
+            Nothing is reading either path. If a Command Connector should be,
+            it has given up and needs re-adding — it does not retry forever.
+          </div>
+        )}
+        {(viewers.data?.readers ?? []).length > 0 && (
+          <table className="w-full text-xs mt-2">
+            <thead className="text-slate-500 text-[10px] uppercase tracking-wider">
+              <tr>
+                <th className="text-left pb-1">Address</th>
+                <th className="text-left pb-1">Path</th>
+                <th className="text-left pb-1">Since</th>
+                <th className="text-right pb-1">Sent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(viewers.data?.readers ?? []).map((r) => (
+                <tr key={r.id} className="border-t border-white/10">
+                  <td className="py-1 font-mono text-slate-200">{r.address}</td>
+                  <td className="py-1 font-mono text-slate-400">{r.path}</td>
+                  <td className="py-1 text-slate-500">
+                    {r.since ? new Date(r.since).toLocaleTimeString() : "—"}
+                  </td>
+                  <td className="py-1 text-right font-mono text-slate-500">
+                    {r.bytes_sent
+                      ? `${(r.bytes_sent / 1024 / 1024).toFixed(1)} MB`
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="text-[11px] text-slate-500 mt-2">
+          Publishers are excluded — vFusion&rsquo;s own encoder is always one,
+          and listing it as a viewer of its own stream would be noise. A
+          Connector appears as its LAN address, one row per path it pulls.
+        </p>
+      </div>
+    )}
+    </>
   );
 }
 

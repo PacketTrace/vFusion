@@ -316,3 +316,50 @@ async def path_health(expected: list[str]) -> dict[str, object]:
         "not_ready": not_ready,
         "ok": not missing and not not_ready,
     }
+
+
+async def readers(expected: list[str]) -> dict[str, object]:
+    """Who is pulling the stream, not just how many.
+
+    The count answers "is anything watching"; the next question is
+    always "is that the Connector or something else", and only the
+    session list carries the address. Publishers are filtered out — the
+    encoder is always one of them, and reporting vFusion as a viewer of
+    its own stream is noise dressed as information.
+    """
+    import httpx
+
+    url = f"http://{settings.INTERNAL_HOST}:9997/v3/rtspsessions/list"
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(url, auth=_api_auth())
+    except Exception as e:  # noqa: BLE001
+        return {"known": False, "why": f"cannot reach the RTSP server's API: {e}"}
+    if resp.status_code != 200:
+        return {"known": False, "why": f"the RTSP server's API answered {resp.status_code}"}
+    try:
+        items = (resp.json() or {}).get("items") or []
+    except ValueError:
+        return {"known": False, "why": "the RTSP server's API returned something that is not JSON"}
+
+    wanted = set(expected)
+    out: list[dict[str, object]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("state") != "read":
+            continue
+        path = str(item.get("path") or "")
+        if wanted and path not in wanted:
+            continue
+        out.append(
+            {
+                "id": item.get("id"),
+                "address": item.get("remoteAddr"),
+                "path": path,
+                "since": item.get("created"),
+                "transport": item.get("transport"),
+                "bytes_sent": item.get("bytesSent"),
+            }
+        )
+    return {"known": True, "readers": out}

@@ -187,3 +187,14 @@ async def delete(item_id: str) -> dict:
 @router.post("/queue/clear-played")
 async def clear_played() -> dict:
     return {"removed": await queue.clear_played()}
+
+
+@router.get("/viewers")
+async def viewers() -> dict:
+    """Who is pulling the stream right now.
+
+    Its own endpoint rather than part of status: the session list is a
+    second API call, and status is polled continuously while this is
+    asked for once, when somebody wants the answer.
+    """
+    return await pump_mod.readers()

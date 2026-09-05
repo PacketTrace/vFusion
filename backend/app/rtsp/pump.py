@@ -673,6 +673,11 @@ async def viewers() -> tuple[int | None, str]:
     return await mediamtx.viewers(expected_paths())
 
 
+async def readers() -> dict[str, Any]:
+    """Each client currently pulling a published path."""
+    return await mediamtx.readers(expected_paths())
+
+
 async def health() -> dict[str, Any]:
     """Whether the server is actually serving what we claim to publish.
 
