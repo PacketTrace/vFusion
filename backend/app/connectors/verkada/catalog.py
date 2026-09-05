@@ -32,12 +32,23 @@ from app.models import VerkadaApiEndpoint, VerkadaApiSpec
 logger = logging.getLogger(__name__)
 
 
-# Namespaces vFusion knows about. New ones discovered upstream (e.g.
-# access_v2) just need to be added here.
+# Namespaces vFusion knows about. This list used to be the whole story,
+# and the comment above it used to say new ones "just need to be added
+# here" — which is how access_v2 and camera_v2 stayed invisible for
+# months, a quarter of the API missing with nothing to indicate it. A
+# hand-maintained list of what exists upstream is wrong the moment
+# upstream ships, and wrong silently.
+#
+# So this is the seed, not the answer. ``discover_namespaces`` probes
+# the next version of each of these on every crawl, which is how a
+# camera_v3 gets picked up the day it appears rather than the day
+# somebody notices.
 DEFAULT_NAMESPACES: list[str] = [
     "access_v1",
+    "access_v2",
     "alarms_v1",
     "camera_v1",
+    "camera_v2",
     "core_v1",
     "guest_v1",
     "guest_v2",
@@ -45,6 +56,10 @@ DEFAULT_NAMESPACES: list[str] = [
     "tokens",
     "viewing_station_v1",
 ]
+
+# How far past the highest known version to look. Two is enough to catch
+# a release without turning every crawl into a scan.
+VERSION_LOOKAHEAD = 2
 
 
 # Region-aware: defaults to the US host, but EU operators can override by
@@ -221,9 +236,54 @@ async def crawl_namespace(namespace: str) -> dict[str, Any]:
         }
 
 
+async def discover_namespaces(seed: list[str] | None = None) -> list[str]:
+    """The seed list, plus any newer version of one that actually exists.
+
+    For every ``name_vN`` in the seed, ask for ``name_v(N+1)`` and
+    ``name_v(N+2)``; keep the ones that answer. Verkada serves these as
+    plain JSON at a predictable URL, so a probe is one cheap HEAD-ish
+    GET and a miss costs a 404.
+
+    Bounded on purpose: it looks two versions ahead of what is known
+    rather than enumerating, so it finds a release without becoming a
+    scanner pointed at someone else's API.
+    """
+    known = list(seed or DEFAULT_NAMESPACES)
+    candidates: set[str] = set()
+    for ns in known:
+        stem, _, ver = ns.rpartition("_v")
+        if not stem or not ver.isdigit():
+            continue
+        for bump in range(1, VERSION_LOOKAHEAD + 1):
+            candidates.add(f"{stem}_v{int(ver) + bump}")
+    candidates -= set(known)
+    if not candidates:
+        return known
+
+    found: list[str] = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        for ns in sorted(candidates):
+            url = SPEC_URL_TEMPLATE.format(namespace=ns)
+            try:
+                res = await client.get(url)
+            except httpx.HTTPError:
+                continue
+            if res.status_code == 200:
+                found.append(ns)
+                logger.warning(
+                    "catalog: discovered a new Verkada namespace, %s — "
+                    "crawling it from now on",
+                    ns,
+                )
+    return known + found
+
+
 async def crawl_all(namespaces: list[str] | None = None) -> list[dict[str, Any]]:
-    """Crawl every known namespace. Used by the 4-hourly cron + manual trigger."""
-    ns_list = namespaces or DEFAULT_NAMESPACES
+    """Crawl every known namespace, and look for ones we do not know yet.
+
+    Used by the 4-hourly cron + manual trigger.
+    """
+    ns_list = namespaces or await discover_namespaces()
     results: list[dict[str, Any]] = []
     for ns in ns_list:
         try:
