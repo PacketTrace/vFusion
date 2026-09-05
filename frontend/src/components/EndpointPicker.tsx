@@ -128,7 +128,6 @@ function PickerModal({
   );
 
   // Group by (namespace, tag) for the visual organization the user expects.
-  type Bucket = { label: string; items: ApiEndpoint[] };
   const groupByNs = !namespace;
   const byNs = new Map<string, Map<string, ApiEndpoint[]>>();
   for (const e of visible) {

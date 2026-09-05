@@ -136,7 +136,7 @@ function RunDetailView({ run }: { run: RunDetail }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const isByoa =
-    run.input &&
+    !!run.input &&
     typeof run.input === "object" &&
     !Array.isArray(run.input) &&
     (run.input as Record<string, unknown>).byoa === true;

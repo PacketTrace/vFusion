@@ -335,6 +335,8 @@ export default function Rtsp() {
       <StatusBar s={s} />
 
 
+      {tab === "camera" && (
+      <>
       <Card title="1 · Where the Connector will find it">
         <label className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">
           Address this machine answers on
@@ -549,6 +551,9 @@ export default function Rtsp() {
           </div>
         )}
       </Card>
+      </>
+      )}
+
 
       {tab === "queue" && (
       <Card title="What it plays">
