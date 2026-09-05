@@ -6,7 +6,6 @@ import { apiDelete, apiGet, apiPost, apiPut, Flow, FlowExportFormat } from "../l
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
 import ConfirmDialog from "../components/ConfirmDialog";
-import FlowBuilder from "./FlowBuilder";
 import Templates from "./Templates";
 import Runs from "./Runs";
 
@@ -210,30 +209,7 @@ export default function Flows() {
         ))}
       </div>
 
-      {tab === "templates" && (
-        <>
-          <div className="rounded-lg border border-white/15 bg-white/5 p-4">
-            <div className="text-sm font-medium text-slate-100">
-              Describe it
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5 mb-3">
-              Say what you want to happen and this drafts a flow for it —
-              trigger, steps, and any Helix event type it needs — grounded in
-              your cameras, doors and event types. Use it when nothing below
-              fits.
-            </p>
-            <FlowBuilder embedded />
-          </div>
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-white/10" />
-            <span className="text-[11px] uppercase tracking-wider text-slate-500">
-              or start from one of these
-            </span>
-            <div className="h-px flex-1 bg-white/10" />
-          </div>
-          <Templates embedded />
-        </>
-      )}
+      {tab === "templates" && <Templates embedded />}
       {tab === "runs" && <Runs embedded />}
 
       {tab === "flows" && (

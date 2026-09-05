@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
+import DescribeFlowPanel from "../components/DescribeFlowPanel";
 import FlowAssistant from "../components/FlowAssistant";
 import {
   Background,
@@ -143,6 +144,11 @@ function FlowEditorInner() {
   // verkada_helix_event node wired with whatever uid the bootstrap
   // returned. Holds the pending def + mapping + source step until the
   // modal closes.
+  // Shown over an empty new flow. Dismissing it is how you say "I will
+  // build this myself" — there is no modal in front of Create flow,
+  // because a blank canvas is the moment the offer is welcome and the
+  // moment it costs nothing to decline.
+  const [describing, setDescribing] = useState(isNew);
   const [pendingPairedHelix, setPendingPairedHelix] = useState<{
     def: HelixEventTypeDef;
     mapping: Record<string, string>;
@@ -361,6 +367,40 @@ function FlowEditorInner() {
     if (newEdge) setEdges([...edges, newEdge]);
     setSelected({ kind: "node", id });
     return id;
+  };
+
+  /**
+   * Put a drafted flow on the canvas.
+   *
+   * Nothing is saved — this only fills editor state, so the draft is
+   * yours to adjust or abandon exactly like anything else you have
+   * dragged out. Helix types the draft invented keep their ``tpl:``
+   * placeholder uid; the bootstrap modal rewrites them if the operator
+   * chooses to provision, and runtime fails loudly if they do not,
+   * which is how an imported template already behaves.
+   */
+  const applyDraft = (tpl: Record<string, unknown>) => {
+    const flow = (tpl.flow ?? {}) as {
+      trigger_type?: string;
+      trigger_config?: Record<string, unknown>;
+      nodes?: FlowNode[];
+      edges?: FlowEdge[];
+      helix_event_types?: HelixEventTypeDef[];
+    };
+    if (typeof tpl.name === "string" && tpl.name.trim()) setName(tpl.name);
+    const tt = (flow.trigger_type ?? "verkada_webhook") as
+      | "verkada_webhook"
+      | "schedule";
+    setTriggerType(tt);
+    if (tt === "schedule") {
+      setSchedule(scheduleStateFromConfig(flow.trigger_config ?? {}));
+    } else {
+      setTrigger(triggerStateFromConfig(flow.trigger_config ?? {}));
+    }
+    setNodes(flow.nodes ?? []);
+    setEdges(flow.edges ?? []);
+    setSelected({ kind: "trigger" });
+    setDescribing(false);
   };
 
   /**
@@ -1049,6 +1089,14 @@ function FlowEditorInner() {
             Save as template
           </button>
           <button
+            type="button"
+            onClick={() => setDescribing(true)}
+            title="Draft this flow from a description"
+            className="text-sm px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-slate-100 border border-white/15"
+          >
+            Describe
+          </button>
+          <button
             onClick={handleSave}
             disabled={save.isPending}
             className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
@@ -1096,6 +1144,15 @@ function FlowEditorInner() {
             <Background color="rgba(255,255,255,0.08)" gap={20} />
             <Controls position="bottom-right" />
           </ReactFlow>
+
+          {describing && (
+            <div className="absolute inset-0 z-20 flex items-start justify-center pt-16 bg-black/50 backdrop-blur-[2px]">
+              <DescribeFlowPanel
+                onDraft={applyDraft}
+                onDismiss={() => setDescribing(false)}
+              />
+            </div>
+          )}
 
           {setupOpen && (
             <TriggerSetupModal
