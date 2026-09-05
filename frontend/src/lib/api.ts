@@ -238,8 +238,24 @@ export interface FlowTemplateListItem {
    *  Computed server-side from the flow's nodes + edges. */
   summary_steps?: TemplateSummaryStep[];
   trigger_type: string;
+  /** Read off the flow body server-side rather than declared, so a
+   *  template cannot be filed wrong. See backend flow_facets.py. */
+  facets?: FlowTemplateFacets;
   default_name: string;
   created_at?: string | null;
+}
+
+export interface FlowTemplateFacets {
+  /** Primary grouping axis — what sets the flow off. */
+  starts: { group: string; detail: string };
+  /** Credentials beyond Verkada, e.g. ["Gemini"]. Empty = Verkada only. */
+  needs: string[];
+  /** Outcomes, e.g. ["Logs to Helix", "Unlocks a door"]. */
+  does: string[];
+  /** ["Vision"] / ["Audio"] / [] when the flow runs no analytic. */
+  media: string[];
+  action_types: string[];
+  step_count: number;
 }
 
 

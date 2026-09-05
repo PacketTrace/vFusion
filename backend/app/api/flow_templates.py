@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.flow_facets import facets
 from app.db import get_session
 from app.models import Connection, Flow, UserFlowTemplate
 
@@ -116,6 +117,8 @@ async def list_flow_templates(
                 "summary": tpl.get("summary"),
                 "summary_steps": _summary_steps(flow),
                 "trigger_type": flow.get("trigger_type"),
+                # Derived from the flow, not declared. See flow_facets.
+                "facets": facets(flow),
                 "default_name": tpl.get("default_name", tpl.get("name", tpl["id"])),
             }
         )
@@ -141,6 +144,7 @@ async def list_flow_templates(
                 "summary": row.summary,
                 "summary_steps": _summary_steps(row.flow or {}),
                 "trigger_type": (row.flow or {}).get("trigger_type"),
+                "facets": facets(row.flow or {}),
                 "default_name": row.default_name or row.name,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
