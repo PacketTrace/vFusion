@@ -99,7 +99,9 @@ export default function Flows() {
   // useful answer to an empty list is the shelf of starting points
   // rather than a panel saying there is nothing here.
   const tab =
-    requestedTab === "flows" || requestedTab === "runs"
+    requestedTab === "flows" ||
+    requestedTab === "runs" ||
+    requestedTab === "analytics"
       ? requestedTab
       : "templates";
   const setTab = (next: string) => {
@@ -132,9 +134,14 @@ export default function Flows() {
           <p className="text-slate-400 text-sm mt-1">
             {tab === "templates" ? (
               <>
-                Starting points: whole flows pre-wired with a trigger, AI
-                analysis and a Helix event type, and the analytics you have
-                composed in Build.
+                Complete automations, pre-wired with a trigger, AI analysis and
+                a Helix event type. Install one and it becomes a flow you own.
+              </>
+            ) : tab === "analytics" ? (
+              <>
+                Prompts composed in Build, kept with the Helix event type they
+                write into. No trigger — run one in Build, or pick it inside a
+                flow&rsquo;s analysis step.
               </>
             ) : tab === "runs" ? (
               <>
@@ -191,6 +198,7 @@ export default function Flows() {
       <div className="flex items-center gap-1 border-b border-white/10">
         {[
           { key: "templates", label: "Templates" },
+          { key: "analytics", label: "Analytics" },
           { key: "flows", label: "Existing" },
           { key: "runs", label: "Runs" },
         ].map((t) => (
@@ -209,7 +217,8 @@ export default function Flows() {
         ))}
       </div>
 
-      {tab === "templates" && <Templates embedded />}
+      {tab === "templates" && <Templates embedded show="flows" />}
+      {tab === "analytics" && <Templates embedded show="analytics" />}
       {tab === "runs" && <Runs embedded />}
 
       {tab === "flows" && (

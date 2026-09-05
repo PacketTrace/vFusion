@@ -43,7 +43,17 @@ const DEFAULT_TAG_STYLE =
   "bg-white/10 text-slate-300 border-white/15";
 
 
-export default function Templates({ embedded = false }: { embedded?: boolean }) {
+export default function Templates({
+  embedded = false,
+  show = "both",
+}: {
+  embedded?: boolean;
+  // Which kind of starting point to render. Automate gives each its own
+  // tab; "both" keeps the standalone page whole.
+  show?: "both" | "flows" | "analytics";
+}) {
+  const flows = show === "both" || show === "flows";
+  const analytics = show === "both" || show === "analytics";
   return (
     <div className="space-y-6">
       {!embedded && (
@@ -56,24 +66,34 @@ export default function Templates({ embedded = false }: { embedded?: boolean }) 
           </p>
         </div>
       )}
-      {/* Two kinds of starting point, one page. A flow template is a
-          whole automation — trigger, analysis, Helix write — while an
-          analytic is only the "what to look for" half, which you point
-          at a camera in Build or drop into a step of your own. They
-          lived in two different destinations before, which meant a
-          saved analytic effectively vanished once you made it. */}
-      <Section
-        title="Flows"
-        blurb="Complete automations. Install one and it becomes a flow you own."
-      >
-        <FlowTemplatesPanel />
-      </Section>
-      <Section
-        title="Analytics"
-        blurb="Just a prompt and the Helix event type it writes into — no trigger. Run one in Build, or pick it inside a flow's analysis step."
-      >
-        <AnalyticsPanel />
-      </Section>
+      {/* A flow template is a whole automation — trigger, analysis,
+          Helix write — while an analytic is only the "what to look for"
+          half, which you point at a camera in Build or drop into a step
+          of your own. Related enough to live together, different enough
+          in kind that stacking them read as one long list of unlike
+          things. Hence a tab each. */}
+      {flows &&
+        (embedded ? (
+          <FlowTemplatesPanel />
+        ) : (
+          <Section
+            title="Flows"
+            blurb="Complete automations. Install one and it becomes a flow you own."
+          >
+            <FlowTemplatesPanel />
+          </Section>
+        ))}
+      {analytics &&
+        (embedded ? (
+          <AnalyticsPanel />
+        ) : (
+          <Section
+            title="Analytics"
+            blurb="Just a prompt and the Helix event type it writes into — no trigger. Run one in Build, or pick it inside a flow's analysis step."
+          >
+            <AnalyticsPanel />
+          </Section>
+        ))}
     </div>
   );
 }
