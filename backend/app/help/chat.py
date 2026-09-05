@@ -17,9 +17,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Flash: the corpus is large and the job is comprehension, not
-# generation. Pro is the fallback for when flash returns nothing usable.
-MODEL_CHAIN = ("gemini-2.5-flash", "gemini-2.5-pro")
+# Flash only, and deliberately. The corpus is large and the job is
+# comprehension rather than generation, which flash does well — and with
+# ~51k tokens going in, quietly falling back to Pro would cost roughly
+# ten times as much for an answer nobody asked to upgrade. Two attempts,
+# then an honest failure.
+MODEL = "gemini-2.5-flash"
+ATTEMPTS = 2
 
 MAX_TURNS = 16
 
@@ -76,7 +80,8 @@ def ask(api_key: str, prompt: str) -> tuple[dict[str, Any], str, int, int]:
 
     client = genai.Client(api_key=api_key)
     last: Exception | None = None
-    for model in MODEL_CHAIN:
+    for _ in range(ATTEMPTS):
+        model = MODEL
         try:
             res = client.models.generate_content(
                 model=model,

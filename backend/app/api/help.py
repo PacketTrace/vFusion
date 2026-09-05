@@ -17,6 +17,7 @@ from app.help import chat as help_chat
 from app.help import corpus as help_corpus
 from app.models import Connection
 from app.pricing import ledger
+from app.pricing.gemini import cost_for
 
 
 logger = logging.getLogger(__name__)
@@ -74,5 +75,16 @@ async def chat(
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     await ledger.record(model, t_in, t_out, source="Help")
+    # Shown per answer, not just aggregated on the Stats page. A number
+    # you see at the moment you spend it is the one that changes how
+    # often you ask.
+    cost = await cost_for(model, t_in, t_out)
 
-    return {**data, "model": model, "corpus_chars": len(corpus)}
+    return {
+        **data,
+        "model": model,
+        "corpus_chars": len(corpus),
+        "tokens_in": t_in,
+        "tokens_out": t_out,
+        "cost_usd": float(cost.get("cost_usd") or 0) if cost else None,
+    }

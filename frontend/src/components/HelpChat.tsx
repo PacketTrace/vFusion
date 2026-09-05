@@ -17,6 +17,8 @@ interface Turn {
   role: "user" | "assistant";
   content: string;
   where?: string | null;
+  cost?: number | null;
+  tokensIn?: number;
 }
 
 interface HelpReply {
@@ -24,6 +26,15 @@ interface HelpReply {
   where: string | null;
   model: string;
   corpus_chars: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number | null;
+}
+
+/** Sub-cent answers are the normal case, so two decimals would render
+ *  every question as "$0.00" and hide the one that was not. */
+function money(n: number): string {
+  return n >= 0.01 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`;
 }
 
 const OPENERS = [
@@ -38,6 +49,7 @@ export default function HelpChat({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState("");
   const [meta, setMeta] = useState<HelpReply | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const sessionCost = turns.reduce((sum, t) => sum + (t.cost ?? 0), 0);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -62,7 +74,13 @@ export default function HelpChat({ onClose }: { onClose: () => void }) {
       setMeta(r);
       setTurns((t) => [
         ...t,
-        { role: "assistant", content: r.reply, where: r.where },
+        {
+          role: "assistant",
+          content: r.reply,
+          where: r.where,
+          cost: r.cost_usd,
+          tokensIn: r.tokens_in,
+        },
       ]);
     },
     onError: (e: Error) => {
@@ -140,6 +158,11 @@ export default function HelpChat({ onClose }: { onClose: () => void }) {
               >
                 {t.content}
               </div>
+              {t.role === "assistant" && t.cost != null && (
+                <div className="text-[10px] text-slate-600 mt-1">
+                  {money(t.cost)} &middot; {t.tokensIn?.toLocaleString()} tokens in
+                </div>
+              )}
               {t.where && (
                 <div className="mt-1.5 text-[11px] text-emerald-300 bg-emerald-900/20 border border-emerald-800/40 rounded px-2 py-1 inline-block">
                   {t.where}
@@ -178,8 +201,10 @@ export default function HelpChat({ onClose }: { onClose: () => void }) {
           </form>
           {meta && (
             <div className="text-[10px] text-slate-600 mt-1.5">
-              Read {Math.round(meta.corpus_chars / 1000)}k characters of this
-              install&rsquo;s documentation and source comments · {meta.model}
+              Reads {Math.round(meta.corpus_chars / 1000)}k characters of this
+              install&rsquo;s docs and source comments on every question &middot;{" "}
+              {meta.model}
+              {sessionCost > 0 && <> &middot; {money(sessionCost)} this session</>}
             </div>
           )}
         </div>
