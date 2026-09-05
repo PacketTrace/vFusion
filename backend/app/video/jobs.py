@@ -90,7 +90,49 @@ async def mark_interrupted_on_boot() -> int:
     return n
 
 
-def _generate_blocking(api_key: str, req: VideoRequest, prompt: str, out: Path) -> dict[str, Any]:
+def _save_video(client: Any, video: Any, out: Path) -> int:
+    """Get the bytes onto disk, whichever way this SDK version offers.
+
+    The published example passes ``destination=`` to files.download; the
+    installed SDK has no such argument and returns bytes instead. That
+    mismatch threw away a clip that had already been generated and paid
+    for, which is the expensive kind of wrong. So all three routes are
+    tried rather than trusting any one signature: download-to-bytes,
+    the video_bytes the download sets as a side effect, and Video.save.
+    """
+    out.parent.mkdir(parents=True, exist_ok=True)
+    errors: list[str] = []
+
+    try:
+        data = client.files.download(file=video)
+        if isinstance(data, (bytes, bytearray)) and data:
+            out.write_bytes(data)
+            return len(data)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"download: {e}")
+
+    # download() sets this on the object as a documented side effect,
+    # so it may be populated even when the call above returned nothing.
+    data = getattr(video, "video_bytes", None)
+    if isinstance(data, (bytes, bytearray)) and data:
+        out.write_bytes(data)
+        return len(data)
+
+    try:
+        video.save(str(out))
+        if out.is_file() and out.stat().st_size > 0:
+            return out.stat().st_size
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"save: {e}")
+
+    raise RuntimeError(
+        "the video generated but could not be saved — " + "; ".join(errors)
+    )
+
+
+def _generate_blocking(
+    api_key: str, req: VideoRequest, prompt: str, out: Path, on_generated: Any = None
+) -> dict[str, Any]:
     """The SDK call, start to finished file. Runs in a worker thread."""
     import time
 
@@ -124,16 +166,32 @@ def _generate_blocking(api_key: str, req: VideoRequest, prompt: str, out: Path) 
             "generation finished but returned no video — usually a prompt "
             "the safety filters declined"
         )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    client.files.download(file=videos[0].video, destination=str(out))
-    return {"waited_sec": waited, "bytes": out.stat().st_size if out.exists() else 0}
+    video = videos[0].video
+    # Recorded before the save is attempted. Generation is the part that
+    # costs money, so if saving fails the job should still say what was
+    # produced rather than looking like nothing happened.
+    if on_generated is not None:
+        on_generated(getattr(video, "uri", None))
+    size = _save_video(client, video, out)
+    return {"waited_sec": waited, "bytes": size}
 
 
 async def _run(job_id: str, api_key: str, req: VideoRequest, prompt: str) -> None:
     out = CLIP_DIR / f"{job_id}.mp4"
     await _update(job_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
+    loop = asyncio.get_running_loop()
+
+    def note_generated(uri: str | None) -> None:
+        # Called from the worker thread the moment generation completes,
+        # so the uri is on the job even if the save then fails.
+        asyncio.run_coroutine_threadsafe(
+            _update(job_id, video_uri=uri, status="saving"), loop
+        )
+
     try:
-        result = await asyncio.to_thread(_generate_blocking, api_key, req, prompt, out)
+        result = await asyncio.to_thread(
+            _generate_blocking, api_key, req, prompt, out, note_generated
+        )
     except Exception as e:  # noqa: BLE001 — every failure belongs on the job
         logger.warning("video job %s failed: %s", job_id, e)
         await _update(

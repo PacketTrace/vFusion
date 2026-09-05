@@ -42,6 +42,59 @@ DOC_FILES = ("README.md", "SECURITY.md")
 MIN_DOCSTRING = 40
 
 
+# Product invariants, injected before everything else.
+#
+# The corpus is 51k tokens of implementation docstrings, and the true
+# answer to a common question can be one paragraph buried in the middle
+# of it. Asked "how do I get notified", the assistant found the
+# mechanism — flows, triggers, the verkada_helix_event action — and
+# answered with that, which is correct and not what anyone wanted to
+# know. The answer is "vFusion writes a Helix event; you configure the
+# alert on it in Command", and it should not have to be inferred.
+#
+# These are deliberately invariants rather than an FAQ. Each is true
+# regardless of what the code does this week, and if one stops being
+# true that is a product decision somebody made on purpose — not drift.
+# Anything that changes with the code stays in the docstrings, where it
+# cannot go stale.
+KEY_FACTS = """### The short answers to the questions people actually ask
+
+**Getting notified.** vFusion does not send notifications. It writes an
+event to Verkada Helix; you then configure an alert on that Helix event
+type inside Verkada Command, and Command sends the notification. There
+is no email, SMS or push anywhere in vFusion, and no setting that adds
+one. Anyone asking to "be told when X happens" needs: a flow that writes
+a Helix event, then an alert on that event type in Command.
+
+**Flows versus analytics.** A flow is a whole automation — a trigger,
+some steps, usually a Helix event at the end. An analytic is only the
+"what to look for" half: a prompt plus the Helix event type it writes
+into, with no trigger. You run an analytic on the Workbench, or pick it
+inside a flow's analysis step.
+
+**Nothing runs until it is enabled.** A drafted, imported or
+template-installed flow is created disabled. Enabling it is always a
+deliberate act.
+
+**What can start a flow.** A Verkada webhook, or a schedule. vFusion
+cannot poll Verkada for arbitrary changes, and cannot react to something
+Verkada does not send a webhook for.
+
+**One Gemini key does everything.** Analysis steps, drafting flows,
+composing analytics and demo data, this help, and video generation all
+use the single Gemini connection.
+
+**Where things are.** Webhook Explorer is incoming events. Automate holds
+flow templates, analytics, your existing flows and their runs. Workbench
+has the analytics builder, the API runner and video generation. Helix
+manages event types and demo data. Virtual camera serves footage to a
+Command Connector. MQTT is object-position streaming. Settings has
+Connections, Retention, Security and Stats.
+
+**Verkada's 403.** The API answers 403 both for a key that lacks a scope
+and for a path it does not serve, so a 403 does not tell you which.
+"""
+
 def _python_knowledge() -> list[str]:
     """Module and definition docstrings, labelled by where they live."""
     out: list[str] = []
@@ -129,6 +182,10 @@ def build(_cache_key: str) -> str:
     """Assemble the corpus. Keyed on the build id so it rebuilds exactly
     when the source does and not once per question."""
     sections = [
+        # First, and deliberately: the model reads in order, and the
+        # short true answer should not be competing with an
+        # implementation note four hundred paragraphs later.
+        KEY_FACTS,
         *_docs(),
         _actions(),
         _routes(),
