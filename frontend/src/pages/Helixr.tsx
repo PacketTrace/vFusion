@@ -749,7 +749,7 @@ function DemoPanel({ connId }: { connId: string }) {
         </Card>
       )}
 
-      {draft && typeUid && cameraId && (
+      {draft && (
         <LiveDemoPanel
           connId={connId}
           cameraId={cameraId}

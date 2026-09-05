@@ -91,6 +91,21 @@ export default function LiveDemoPanel({
   const videos = (clips.data ?? []).filter((c) => c.kind === "video");
   const minutes = Math.round((count * interval) / 60);
 
+  // Everything this needs before it can run, in the order you would fix
+  // them. Listed rather than enforced by hiding the panel: a control
+  // that disappears until it is satisfiable cannot tell you why.
+  const blockers: string[] = [];
+  if (!cameraId) blockers.push("Pick a camera above.");
+  if (!eventTypeUid)
+    blockers.push(
+      "Create the Helix event type above — the events need somewhere to go.",
+    );
+  if (videos.length === 0)
+    blockers.push(
+      "Generate a clip on Workbench › Video, then press “Use in virtual camera” on it.",
+    );
+  if (!eventClip && videos.length > 0) blockers.push("Pick a clip below.");
+
   return (
     <div className="rounded-lg border border-white/15 bg-white/5 p-4 space-y-3">
       <div>
@@ -174,6 +189,14 @@ export default function LiveDemoPanel({
         </label>
       </div>
 
+      {blockers.length > 0 && !running && (
+        <ul className="text-[11px] text-amber-300 space-y-0.5 list-disc pl-4">
+          {blockers.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
         {running ? (
           <button
@@ -187,7 +210,7 @@ export default function LiveDemoPanel({
           <button
             type="button"
             onClick={() => start.mutate()}
-            disabled={!eventClip || !cameraId || !eventTypeUid || !spec}
+            disabled={blockers.length > 0 || !spec}
             className="px-4 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40"
           >
             Start
