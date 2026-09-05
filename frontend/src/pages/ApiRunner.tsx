@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
+import CameraIdInput from "../components/CameraIdInput";
 import JsonView from "../components/JsonView";
 import { copyToClipboard } from "../lib/clipboard";
 import {
@@ -98,6 +99,18 @@ function namespaceLabel(ns: string): string {
 function shortName(e: { path: string }): string {
   const parts = e.path.split("/").filter(Boolean);
   return parts.slice(2).join("/") || e.path;
+}
+
+/** Whether a field names a single camera.
+ *
+ * Matched on the name rather than a list of endpoints, because the
+ * spec uses camera_id consistently and a curated list would miss the
+ * next endpoint to use it. Deliberately not camera_ids — a plural takes
+ * a comma-separated set, and offering one picker for it would quietly
+ * discard whatever was already typed. */
+function isCameraField(name: string): boolean {
+  const n = name.toLowerCase();
+  return n === "camera_id" || n.endsWith("_camera_id") || n === "cameraid";
 }
 
 function paramsOf(detail: ApiEndpointDetail | null): Param[] {
@@ -561,19 +574,35 @@ export default function ApiRunner() {
 
             {pathParams.map((p) => (
               <Field key={p.name} p={p} required>
-                <input
-                  value={pathValues[p.name] ?? ""}
-                  onChange={(e) =>
-                    setPathValues({ ...pathValues, [p.name]: e.target.value })
-                  }
-                  className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
-                />
+                {isCameraField(p.name) ? (
+                  <CameraIdInput
+                    value={pathValues[p.name] ?? ""}
+                    onChange={(v) =>
+                      setPathValues({ ...pathValues, [p.name]: v })
+                    }
+                  />
+                ) : (
+                  <input
+                    value={pathValues[p.name] ?? ""}
+                    onChange={(e) =>
+                      setPathValues({ ...pathValues, [p.name]: e.target.value })
+                    }
+                    className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+                  />
+                )}
               </Field>
             ))}
 
             {queryParams.map((p) => (
               <Field key={p.name} p={p} required={!!p.required}>
-                {p.schema?.enum ? (
+                {isCameraField(p.name) ? (
+                  <CameraIdInput
+                    value={queryValues[p.name] ?? ""}
+                    onChange={(v) =>
+                      setQueryValues({ ...queryValues, [p.name]: v })
+                    }
+                  />
+                ) : p.schema?.enum ? (
                   <select
                     value={queryValues[p.name] ?? ""}
                     onChange={(e) =>
@@ -643,7 +672,14 @@ export default function ApiRunner() {
                         {f.type}
                       </span>
                     </div>
-                    {f.enum ? (
+                    {isCameraField(f.name) ? (
+                      <CameraIdInput
+                        value={bodyValues[f.name] ?? ""}
+                        onChange={(v) =>
+                          setBodyValues({ ...bodyValues, [f.name]: v })
+                        }
+                      />
+                    ) : f.enum ? (
                       <select
                         value={bodyValues[f.name] ?? ""}
                         onChange={(e) =>
