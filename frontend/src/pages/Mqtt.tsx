@@ -452,6 +452,8 @@ export default function Mqtt() {
         </Card>
       </div>
 
+      {status.data?.mode === "external" && <BrokerRequirements />}
+
       {status.data?.mode === "external" && (
         <Card title="Viewing is off in external mode">
           <p className="text-sm text-slate-400">
@@ -1962,5 +1964,76 @@ function BrokerMode({ onChanged }: { onChanged: () => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+
+/**
+ * What a broker has to do before a Verkada camera will publish to it.
+ *
+ * None of this is discoverable from the API — a camera accepts a
+ * configuration it cannot use, reports nothing, and leaves the evidence
+ * in a log on the broker side. So each requirement is paired with the
+ * symptom you get without it, because the symptom is what someone
+ * actually has in front of them when they come looking. Knowing that a
+ * CA without basicConstraints reads as "bad certificate" is the whole
+ * value; the requirement on its own is a sentence you have already read
+ * and dismissed.
+ *
+ * vFusion's built-in broker satisfies all of it, which is why this only
+ * appears when you have pointed the cameras somewhere else.
+ */
+function BrokerRequirements() {
+  const [open, setOpen] = useState(false);
+  const reqs = useQuery({
+    queryKey: ["mqtt-broker-requirements"],
+    queryFn: () =>
+      apiGet<{
+        requirements: { id: string; title: string; detail: string; symptom: string }[];
+        allowed_ports?: number[];
+        topic?: string;
+      }>("/api/mqtt/broker-requirements"),
+  });
+
+  const items = reqs.data?.requirements ?? [];
+  if (items.length === 0) return null;
+
+  return (
+    <Card title="What your broker has to do">
+      <p className="text-sm text-slate-400">
+        You are pointing cameras at your own broker, so these are yours to
+        satisfy — vFusion&rsquo;s built-in one already does. None of it is
+        reported by the API: a camera accepts a configuration it cannot use and
+        says nothing, so each one lists the symptom you get without it.
+      </p>
+      {reqs.data?.topic && (
+        <p className="text-[11px] text-slate-500 mt-1">
+          Cameras publish to <code className="text-slate-400">{reqs.data.topic}</code>
+          {reqs.data.allowed_ports
+            ? ` on port ${reqs.data.allowed_ports.join(", ")} — Verkada rejects every other port outright.`
+            : "."}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs mt-3 px-3 py-1.5 rounded border border-white/15 text-slate-200 hover:border-sky-600"
+      >
+        {open ? "Hide" : `Show all ${items.length} requirements`}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {items.map((r) => (
+            <div key={r.id} className="border-t border-white/10 pt-3">
+              <div className="text-sm text-slate-100">{r.title}</div>
+              <p className="text-xs text-slate-400 mt-0.5">{r.detail}</p>
+              <p className="text-[11px] text-amber-300/90 mt-1">
+                Without it: {r.symptom}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
