@@ -9,6 +9,7 @@ from app.api import mqtt_config as mqtt_api
 from app.api import onvif as onvif_api
 from app.api import helix_demo as helix_demo_api
 from app.api import api_runner as api_runner_api
+from app.api import cost as cost_api
 from app.api import flow_assist as flow_assist_api
 from app.api import help as help_api
 from app.api import security as security_api
@@ -189,6 +190,7 @@ app.include_router(rtsp_api.router)
 app.include_router(helix_demo_api.router)
 app.include_router(onvif_api.router)
 app.include_router(api_runner_api.router)
+app.include_router(cost_api.router)
 app.include_router(flow_assist_api.router)
 app.include_router(help_api.router)
 app.include_router(security_api.router)

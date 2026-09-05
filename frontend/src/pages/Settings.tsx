@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import Connections from "./Connections";
+import CostSettings from "./CostSettings";
 import Security from "./Security";
 import Stats from "./Stats";
 
@@ -35,7 +36,8 @@ export default function Settings() {
   const tab =
     requested === "connections" ||
     requested === "stats" ||
-    requested === "security"
+    requested === "security" ||
+    requested === "cost"
       ? requested
       : "retention";
   const setTab = (next: string) => {
@@ -53,7 +55,9 @@ export default function Settings() {
             ? "Verkada orgs and Gemini keys this instance can use."
             : tab === "stats"
               ? "Counters for ingest, flow runs, spend and on-disk storage."
-              : tab === "security"
+              : tab === "cost"
+                ? "What vFusion has spent this month, and a cap that pauses flows when it is reached."
+                : tab === "security"
                 ? "What this install stands on, what it exposes, and whether its credentials are being used by anyone else."
                 : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
         </p>
@@ -62,6 +66,7 @@ export default function Settings() {
             { key: "retention", label: "Retention" },
             { key: "connections", label: "Connections" },
             { key: "security", label: "Security" },
+            { key: "cost", label: "Cost" },
             { key: "stats", label: "Stats" },
           ].map((t) => (
             <button
@@ -82,6 +87,7 @@ export default function Settings() {
 
       {tab === "connections" && <Connections />}
       {tab === "security" && <Security />}
+      {tab === "cost" && <CostSettings />}
       {tab === "stats" && <Stats />}
       {tab === "retention" && (
       <>

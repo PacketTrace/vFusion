@@ -43,6 +43,7 @@ from app.engine.conditions import evaluate as evaluate_condition
 from app.engine.progress import StepProgress
 from app.engine.schedule import is_due as schedule_is_due
 from app.models import Connection, Flow, Run, VerkadaHelixEventType
+from app.pricing import budget
 from app.pricing.gemini import refresh_gemini_pricing
 
 
@@ -212,6 +213,20 @@ async def run_flow(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             run.finished_at = _utcnow()
             await session.commit()
             return {"error": run.error}
+
+        # The cap, checked here rather than at enqueue: a queue drained
+        # after the cap was raised should run, and one drained after it
+        # was hit should not. Flows are left enabled — the halt lifts
+        # itself when the cap rises or the month rolls over, and
+        # disabling them would lose which ones the operator had on.
+        halt = await budget.should_halt(session)
+        if halt:
+            run.status = "skipped"
+            run.error = halt
+            run.finished_at = _utcnow()
+            await session.commit()
+            logger.warning("flow run %s skipped: %s", run_id, halt)
+            return {"skipped": halt}
 
         nodes = list(flow.nodes or [])
         edges = list(flow.edges or [])
