@@ -1291,10 +1291,9 @@ function TrackReplay({
             className="relative w-full rounded overflow-hidden bg-black/30 border border-white/15"
             style={{ aspectRatio: "16 / 9" }}
           >
-            <img
-              src={`${API_BASE}/api/mqtt/frame/${track.camera_id}?epoch=${startEpoch}`}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-60"
+            <ProxiedFrame
+              cameraId={track.camera_id}
+              epoch={startEpoch}
             />
             <svg viewBox="0 0 160 90" className="absolute inset-0 w-full h-full">
               <polyline
@@ -2073,5 +2072,97 @@ function BrokerRequirements() {
         </div>
       )}
     </div>
+  );
+}
+
+
+/**
+ * A still from the moment a track started.
+ *
+ * Loaded with fetch rather than an <img src>, because the backend and
+ * the dashboard are different origins and an image that fails there
+ * fails silently: the endpoint answers 502 with a JSON explanation, and
+ * Chrome blocks the response as ORB and reports net::ERR_BLOCKED_BY_ORB
+ * with no status. Everything useful — which camera, which moment, why
+ * Verkada had nothing — is in a body the <img> is not allowed to read.
+ *
+ * Fetching it costs an object URL and gives back the sentence.
+ */
+function ProxiedFrame({
+  cameraId,
+  epoch,
+}: {
+  cameraId: string;
+  epoch: number;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    setSrc(null);
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/mqtt/frame/${cameraId}?epoch=${epoch}`,
+          { credentials: "include" },
+        );
+        if (!res.ok) {
+          let detail = `The server answered ${res.status}.`;
+          try {
+            const j = await res.json();
+            if (j?.detail) detail = String(j.detail);
+          } catch {
+            /* not JSON — the status is all there is */
+          }
+          if (!cancelled) setError(detail);
+          return;
+        }
+        const blob = await res.blob();
+        url = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setSrc(url);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [cameraId, epoch]);
+
+  if (error) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="text-xs text-amber-300">No still for this moment</div>
+          <div className="text-[11px] text-slate-500 mt-1 max-w-sm">{error}</div>
+          <div className="text-[11px] text-slate-600 mt-1">
+            The track itself is fine — it is drawn from what the camera
+            published over MQTT, which does not depend on stored footage.
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!src) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center text-[11px] text-slate-600">
+        Pulling the frame…
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="absolute inset-0 w-full h-full object-cover opacity-60"
+    />
   );
 }
