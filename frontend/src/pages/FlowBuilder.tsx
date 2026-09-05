@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 
 import { useQuery } from "@tanstack/react-query";
 
-import { API_BASE, apiGet, apiPost, Connection } from "../lib/api";
+import FlowPreview from "../components/flow-canvas/FlowPreview";
+import { ActionSpec, API_BASE, apiGet, apiPost, Connection } from "../lib/api";
 
 type EventKind = {
   family: string | null;
@@ -104,6 +105,10 @@ export default function FlowBuilder({ embedded = false }: { embedded?: boolean }
   // in the wrong one — a side effect on real infrastructure that is
   // tedious to undo. With none or several, the import still lands and
   // the type gets picked in the editor, exactly as templates behave.
+  const actionSpecs = useQuery({
+    queryKey: ["action-specs"],
+    queryFn: () => apiGet<Record<string, ActionSpec>>("/api/flows/actions"),
+  });
   const verkadaConns = (conns.data ?? []).filter((c) => c.type === "verkada");
   const soleVerkadaId =
     verkadaConns.length === 1 ? verkadaConns[0]!.id : null;
@@ -610,46 +615,19 @@ export default function FlowBuilder({ embedded = false }: { embedded?: boolean }
               </p>
             )}
 
-            <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
-              Trigger
-            </div>
-            <div className="mt-1 rounded border border-white/10 bg-black/20 px-3 py-2">
-              <div className="text-[13px] text-slate-100">
-                {flow?.trigger_type === "schedule"
-                  ? "On a schedule"
-                  : "Verkada webhook"}
+            <div className="mt-4">
+              <FlowPreview
+                triggerType={flow?.trigger_type ?? "verkada_webhook"}
+                triggerConfig={flow?.trigger_config ?? {}}
+                nodes={(nodes ?? []) as never}
+                edges={(flow?.edges ?? []) as never}
+                specs={actionSpecs.data}
+              />
+              <div className="text-[11px] text-slate-500 mt-1.5">
+                Drag to pan. Every setting is editable after you create it —
+                the full configuration is in the raw template below.
               </div>
-              <pre className="text-[11px] text-slate-400 mt-1 whitespace-pre-wrap font-mono">
-                {JSON.stringify(flow?.trigger_config ?? {}, null, 1)}
-              </pre>
             </div>
-
-            <div className="mt-4 text-[11px] uppercase tracking-wide text-slate-500">
-              Steps
-            </div>
-            <ol className="mt-1 space-y-1.5">
-              {nodes.map((n, i) => (
-                <li
-                  key={n.id ?? i}
-                  className="rounded border border-white/10 bg-black/20 px-3 py-2"
-                >
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-slate-500 text-[11px]">{i + 1}</span>
-                    <span className="text-[13px] text-slate-100">
-                      {n.label ?? n.name}
-                    </span>
-                    <span className="font-mono text-[11px] text-sky-300/80">
-                      {n.kind === "condition" ? "condition" : n.action_type}
-                    </span>
-                  </div>
-                  {n.config && Object.keys(n.config).length > 0 && (
-                    <pre className="text-[11px] text-slate-400 mt-1 whitespace-pre-wrap font-mono">
-                      {JSON.stringify(n.config, null, 1)}
-                    </pre>
-                  )}
-                </li>
-              ))}
-            </ol>
 
             {(flow?.helix_event_types?.length ?? 0) > 0 && (
               <>
