@@ -793,7 +793,7 @@ export default function ApiRunner() {
                   <div className="p-3 text-sm text-rose-200">{run.data.error}</div>
                 ) : (
                   <div className="p-3 max-h-[30rem] overflow-auto text-xs">
-                    <JsonView value={run.data.body} />
+                    <JsonView value={run.data.body} openDepth={8} />
                   </div>
                 )}
                 {run.data.status_code === 403 && (

@@ -5,6 +5,10 @@ interface Props {
   name?: string;
   depth?: number;
   defaultOpen?: boolean;
+  /** How many levels start expanded. Two suits a webhook body, where
+   *  the point is to skim the shape; an API response you asked for on
+   *  purpose wants more, because collapsing it hides the answer. */
+  openDepth?: number;
 }
 
 export default function JsonView({
@@ -12,6 +16,7 @@ export default function JsonView({
   name,
   depth = 0,
   defaultOpen = true,
+  openDepth = 2,
 }: Props) {
   if (value === null) return <Leaf name={name} v={<Token kind="null">null</Token>} />;
   if (typeof value === "boolean")
@@ -28,7 +33,7 @@ export default function JsonView({
       <Collapsible
         name={name}
         depth={depth}
-        defaultOpen={defaultOpen && depth < 2}
+        defaultOpen={defaultOpen && depth < openDepth}
         summary={`Array(${value.length})`}
       >
         {value.map((item, i) => (
@@ -37,7 +42,8 @@ export default function JsonView({
             value={item}
             name={String(i)}
             depth={depth + 1}
-            defaultOpen={defaultOpen && depth < 1}
+            defaultOpen={defaultOpen && depth + 1 < openDepth}
+            openDepth={openDepth}
           />
         ))}
       </Collapsible>
@@ -49,7 +55,7 @@ export default function JsonView({
       <Collapsible
         name={name}
         depth={depth}
-        defaultOpen={defaultOpen && depth < 2}
+        defaultOpen={defaultOpen && depth < openDepth}
         summary={`{${entries.length}}`}
       >
         {entries.map(([k, v]) => (
@@ -58,7 +64,8 @@ export default function JsonView({
             name={k}
             value={v}
             depth={depth + 1}
-            defaultOpen={defaultOpen && depth < 1}
+            defaultOpen={defaultOpen && depth + 1 < openDepth}
+            openDepth={openDepth}
           />
         ))}
       </Collapsible>
