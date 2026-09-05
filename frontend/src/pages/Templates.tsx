@@ -225,7 +225,7 @@ function AnalyticsPanel() {
                   onClick={() => setEditingBuiltin(b)}
                   className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
                 >
-                  Open
+                  Edit
                 </button>
               </div>
             ))}
@@ -295,7 +295,7 @@ function AnalyticsPanel() {
               onClick={() => setEditing(a)}
               className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
             >
-              Open
+              Edit
             </button>
           </div>
         ))}

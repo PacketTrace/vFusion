@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes, Navigate } from "react-router-dom";
 
 import AuthGate from "./components/AuthGate";
 import BuildStamp from "./components/BuildStamp";
+import HelpChat from "./components/HelpChat";
 import VfusionAtom from "./components/VfusionAtom";
 import OnboardingGate from "./components/OnboardingGate";
 import { apiPost } from "./lib/api";
@@ -61,6 +62,7 @@ function LogoutButton() {
 
 function AppShell() {
   const brand = useBrand();
+  const [helpOpen, setHelpOpen] = useState(false);
   // Hover speeds the orbit up. Doing this by swapping animation-duration
   // in CSS makes the particles jump: progress is elapsed % duration, so
   // a new duration maps the same elapsed time to a different point on
@@ -179,8 +181,15 @@ function AppShell() {
               Settings
             </NavLink>
           </nav>
-          <div className="ml-auto flex items-center gap-3">
-            <BuildStamp />
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="text-xs text-slate-300 hover:text-white px-2.5 py-1.5 rounded-md border border-white/15 hover:bg-white/10"
+              title="Ask about vFusion"
+            >
+              Help
+            </button>
             <LogoutButton />
           </div>
         </div>
@@ -208,6 +217,12 @@ function AppShell() {
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
+      {/* Bottom corner: available when you are wondering whether the
+          deploy took, invisible the rest of the time. */}
+      <div className="fixed bottom-1.5 right-2 z-10 pointer-events-auto">
+        <BuildStamp />
+      </div>
+      {helpOpen && <HelpChat onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
