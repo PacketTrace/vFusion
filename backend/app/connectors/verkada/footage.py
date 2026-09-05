@@ -205,13 +205,23 @@ async def grab_still_frame(
     timeout_sec: int = 45,
     progress: Any = None,
     base_url: str | None = None,
+    start_epoch: int | None = None,
 ) -> int:
-    """Pull a single live frame from the camera's HLS stream as a JPEG.
+    """Pull a single frame from the camera's HLS stream as a JPEG.
 
-    Same HLS endpoint as ``grab_video_clip`` (footage stream view) but with
-    no start/end window — the URL serves the live segment list and ffmpeg's
-    ``-frames:v 1`` grabs the first frame it decodes. Returns file size on
-    success or raises ``FootageError``.
+    Same HLS endpoint as ``grab_video_clip`` (footage stream view).
+    Without ``start_epoch`` the URL serves the live segment list and
+    ffmpeg's ``-frames:v 1`` grabs the first frame it decodes; with one
+    it asks for a short window at that moment and takes the first frame
+    of that instead.
+
+    The window matters because it is the same footage a clip comes
+    from. The stored-thumbnail endpoint is a different archive with
+    different retention, and asking it for a moment the stream can serve
+    perfectly well returns 404 on some cameras and an image on others —
+    which reads as "no footage" about footage that exists.
+
+    Returns file size on success or raises ``FootageError``.
 
     Retries once with a fresh stream key on the first failure (matches
     grab_video_clip semantics — usually an expired JWT)."""
@@ -233,6 +243,11 @@ async def grab_still_frame(
             f"&jwt={key}"
             f"&type=stream"
         )
+        if start_epoch is not None:
+            # A few seconds, not an instant: HLS is segmented, so a
+            # zero-length window can land between segments and produce
+            # nothing at all.
+            url += f"&start_time={start_epoch}&end_time={start_epoch + 4}"
         cmd = [
             "ffmpeg", "-y",
             "-loglevel", "error",

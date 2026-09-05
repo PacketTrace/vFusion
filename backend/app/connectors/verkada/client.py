@@ -312,24 +312,24 @@ class VerkadaClient:
         return res.content
 
     async def get_thumbnail_at(self, camera_id: str, timestamp: int) -> bytes:
-        """Still from a moment in the past, as JPEG bytes.
+        """Stored still from a moment, as JPEG bytes.
+
+        No longer used for the MQTT replay, which pulls the frame from
+        the footage stream instead — the stored-thumbnail archive has
+        its own retention and 404s on cameras whose footage the stream
+        serves perfectly well. Kept because "the last stored still" is
+        still the right answer for anything that wants cheap and
+        approximate rather than exact.
 
         Endpoint: ``GET /cameras/v1/footage/thumbnails``. Note the
-        resolution enum here is hyphenated (``hi-res``) while the live
-        stream uses underscores (``high_res``) -- the same word, spelled
-        two ways in one API, and the wrong one is a 400.
-
-        Falls back to low-res on a 404, which is the whole reason this
-        is not one request. The spec's own default is ``low-res``, and a
-        camera that has no *high* resolution still at a moment 404s
-        exactly as one with no still at all does -- so asking only for
-        hi-res reported "no footage" for cameras that had footage, while
-        the live view of the same camera worked and made it look like
-        nonsense. A low-res still behind a track overlay is
-        indistinguishable at the size it renders; no still is not.
+        resolution enum here is hyphenated (``hi-res``) while the stream
+        uses underscores (``high_res``) -- the same word, spelled two
+        ways in one API, and the wrong one is a 400. Falls back to
+        low-res, since a camera can have no high-resolution still at a
+        moment and 404 exactly as one with no still at all does.
         """
         token = await self._ensure_token()
-        last: int = 0
+        last = 0
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for resolution in ("hi-res", "low-res"):
                 res = await client.get(
@@ -344,19 +344,10 @@ class VerkadaClient:
                 if res.status_code == 200:
                     return res.content
                 last = res.status_code
-                # Only a 404 is worth retrying smaller. A 403 is a scope
-                # problem and a 400 is a bad request; both would answer
-                # the same way twice and just double the wait.
                 if res.status_code != 404:
                     break
         raise VerkadaApiError(
-            f"thumbnail fetch failed: HTTP {last}"
-            + (
-                " — no still stored at that moment, at either resolution"
-                if last == 404
-                else ""
-            ),
-            status_code=last,
+            f"thumbnail fetch failed: HTTP {last}", status_code=last
         )
 
     async def list_occupancy_trend_cameras(self) -> list[dict[str, Any]]:
