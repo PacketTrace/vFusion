@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import ApiRunner from "./ApiRunner";
+import VideoStudio from "./VideoStudio";
 import Byoa from "./Byoa";
 
 /**
@@ -14,12 +15,14 @@ import Byoa from "./Byoa";
 const TABS = [
   { key: "analytics", label: "Analytics builder" },
   { key: "api", label: "API runner" },
+  { key: "video", label: "Video" },
 ] as const;
 
 const BLURB: Record<string, string> = {
   analytics:
     "One-shot Gemini run. Pick a camera, write a prompt, see what comes back without baking it into a flow first.",
   api: "Run any Verkada endpoint against a connection you already have, and read the response properly.",
+  video: "Generate footage that looks like it came off a fixed security camera.",
 };
 
 export default function Workbench() {
@@ -38,7 +41,7 @@ export default function Workbench() {
 
   // ?tab=byoa predates these tabs and means the analytics builder.
   const tab =
-    requested === "api" ? "api" : "analytics";
+    requested === "api" ? "api" : requested === "video" ? "video" : "analytics";
   const setTab = (next: string) => {
     const p = new URLSearchParams(searchParams);
     p.set("tab", next);
@@ -70,6 +73,7 @@ export default function Workbench() {
 
       {tab === "analytics" && <Byoa />}
       {tab === "api" && <ApiRunner />}
+      {tab === "video" && <VideoStudio />}
     </div>
   );
 }

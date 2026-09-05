@@ -382,8 +382,35 @@ export default function ApiRunner() {
               </span>
             </div>
             {picked.summary && (
-              <p className="text-[11px] text-slate-400">{picked.summary}</p>
+              <p className="text-xs text-slate-200">{picked.summary}</p>
             )}
+            {detail.data?.description &&
+              plain(detail.data.description) !== plain(picked.summary ?? "") && (
+                <p className="text-[11px] text-slate-400 whitespace-pre-wrap">
+                  {plain(detail.data.description)}
+                </p>
+              )}
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="text-slate-600 font-mono">
+                {picked.namespace}
+              </span>
+              {picked.operation_id && (
+                <span className="text-slate-600 font-mono">
+                  {picked.operation_id}
+                </span>
+              )}
+              {picked.docs_url && (
+                <a
+                  href={picked.docs_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-400 hover:text-sky-300 ml-auto"
+                >
+                  Verkada docs ↗
+                </a>
+              )}
+            </div>
+            <Responses detail={detail.data ?? null} />
 
             {pathParams.map((p) => (
               <Field key={p.name} p={p} required>
@@ -633,6 +660,37 @@ export default function ApiRunner() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** What the endpoint says it can return. A status you did not expect is
+ *  worth being able to look up without leaving the page. */
+function Responses({ detail }: { detail: ApiEndpointDetail | null }) {
+  const raw = detail?.raw as
+    | { responses?: Record<string, { description?: string }> }
+    | undefined;
+  const responses = raw?.responses;
+  if (!responses || Object.keys(responses).length === 0) return null;
+  return (
+    <div className="pt-1">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+        Responses
+      </div>
+      <div className="space-y-0.5">
+        {Object.entries(responses).map(([code, r]) => (
+          <div key={code} className="flex gap-2 text-[11px]">
+            <span
+              className={`font-mono w-8 shrink-0 ${
+                code.startsWith("2") ? "text-emerald-400" : "text-slate-500"
+              }`}
+            >
+              {code}
+            </span>
+            <span className="text-slate-500">{plain(r.description) || "—"}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

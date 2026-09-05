@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,6 +12,7 @@ from app.api import api_runner as api_runner_api
 from app.api import flow_assist as flow_assist_api
 from app.api import help as help_api
 from app.api import security as security_api
+from app.api import video as video_api
 from app.api import rtsp as rtsp_api
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
@@ -76,6 +78,17 @@ async def lifespan(app: FastAPI):
         await refresh_gemini_pricing()
     except Exception:  # noqa: BLE001 — pricing failure must not block boot
         pass
+    # Any video job left "running" by a previous process is not.
+    from app.video import jobs as _video_jobs
+
+    _interrupted = await _video_jobs.mark_interrupted_on_boot()
+    if _interrupted:
+        logging.getLogger(__name__).warning(
+            "%s video job(s) were still generating when the backend last "
+            "stopped; marked interrupted",
+            _interrupted,
+        )
+
     # arq pool for enqueuing flow runs.
     app.state.arq_pool = await make_pool()
     # Object-position ingest. Opt-in, and deliberately non-fatal: a broker
@@ -179,6 +192,7 @@ app.include_router(api_runner_api.router)
 app.include_router(flow_assist_api.router)
 app.include_router(help_api.router)
 app.include_router(security_api.router)
+app.include_router(video_api.router)
 app.include_router(settings_api.router)
 
 
