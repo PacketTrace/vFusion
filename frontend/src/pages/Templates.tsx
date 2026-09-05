@@ -13,6 +13,7 @@ import {
   FlowTemplateDetail,
   FlowTemplateListItem,
   HelixEventTypeDef,
+  BuiltinAnalytic,
   SavedAnalytic,
 } from "../lib/api";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -133,32 +134,25 @@ function AnalyticsPanel() {
     queryKey: ["byoa-analytics"],
     queryFn: () => apiGet<SavedAnalytic[]>("/api/byoa/analytics"),
   });
+  // The prompts that ship with the product. The endpoint has always
+  // described these as "shown on the Templates page as read-only
+  // starting points" — this page just never asked for them, so a fresh
+  // install showed "no saved analytics yet" while five perfectly good
+  // ones sat in the code.
+  const builtins = useQuery({
+    queryKey: ["prompt-template-builtins"],
+    queryFn: () => apiGet<BuiltinAnalytic[]>("/api/prompt-templates/builtins"),
+  });
   const del = useMutation({
     mutationFn: (id: string) => apiDelete(`/api/byoa/analytics/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["byoa-analytics"] }),
   });
 
-  if (list.isLoading) {
+  if (list.isLoading || builtins.isLoading) {
     return <div className="text-sm text-slate-500">Loading…</div>;
   }
-  if (!list.data || list.data.length === 0) {
-    return (
-      <div className="border border-white/15 rounded-lg bg-white/5 p-6 text-sm text-slate-400">
-        <p className="font-medium text-slate-200 mb-1">No saved analytics yet.</p>
-        <p>
-          Describe what you want spotted on{" "}
-          <button
-            type="button"
-            onClick={() => navigate("/workbench?tab=byoa")}
-            className="text-sky-400 hover:underline"
-          >
-            Build
-          </button>{" "}
-          and save the result — it lands here.
-        </p>
-      </div>
-    );
-  }
+  const saved = list.data ?? [];
+  const shipped = builtins.data ?? [];
 
   return (
     <>
@@ -173,8 +167,71 @@ function AnalyticsPanel() {
           setPendingDelete(null);
         }}
       />
+      {shipped.length > 0 && (
+        <div className="mb-5">
+          <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
+            Built in
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {shipped.map((b) => (
+              <div
+                key={b.name}
+                className="border border-white/10 rounded-lg bg-white/[0.03] p-3 flex flex-col gap-2"
+              >
+                <div className="text-sm font-medium text-slate-100 leading-tight">
+                  {b.name}
+                </div>
+                {b.helix_event_type?.name && (
+                  <div className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-800/60 self-start">
+                    🧬 {b.helix_event_type.name}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 font-mono line-clamp-3 whitespace-pre-wrap">
+                  {b.value}
+                </p>
+                {/* No delete — these live in the code. Opening one in
+                    Build is the way to make it yours: edit it there and
+                    save, and the copy lands below as your own. */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/workbench?tab=byoa&builtin=${encodeURIComponent(b.name)}`,
+                    )
+                  }
+                  className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
+                >
+                  Open in Build
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
+        Yours
+      </div>
+      {saved.length === 0 && (
+        <div className="border border-white/15 rounded-lg bg-white/5 p-6 text-sm text-slate-400">
+          <p className="font-medium text-slate-200 mb-1">
+            None of your own yet.
+          </p>
+          <p>
+            Describe what you want spotted on{" "}
+            <button
+              type="button"
+              onClick={() => navigate("/workbench?tab=byoa")}
+              className="text-sky-400 hover:underline"
+            >
+              Build
+            </button>{" "}
+            and save the result — it lands here. Or open one above and edit it.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {list.data.map((a) => (
+        {saved.map((a) => (
           <div
             key={a.id}
             className="border border-white/15 rounded-lg bg-white/5 p-3 flex flex-col gap-2"

@@ -349,6 +349,15 @@ export interface SavedAnalytic extends ComposedAnalytic {
   created_at: string;
 }
 
+/** A prompt that ships with the product. Read-only: it lives in code,
+ *  so there is nothing to delete and no id to address it by. */
+export interface BuiltinAnalytic {
+  name: string;
+  value: string;
+  helix_event_type: { name?: string } | null;
+  helix_attribute_mapping: Record<string, string> | null;
+}
+
 export interface PromptTemplate {
   id: string;
   name: string;

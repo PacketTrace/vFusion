@@ -470,6 +470,31 @@ export default function Byoa() {
     setPromptOpen(true);
   }, [preselectId, savedAnalytics.data]);
 
+  // Arriving from Templates → a built-in analytic, by name rather than
+  // id: these live in code and have no id. Loaded as an unsaved draft,
+  // deliberately — editingAnalytic stays null, so saving creates your
+  // own copy instead of trying to update something that ships with the
+  // product.
+  const preselectBuiltin = searchParams.get("builtin");
+  const preselectedBuiltin = useRef(false);
+  useEffect(() => {
+    if (preselectedBuiltin.current || !preselectBuiltin) return;
+    const found = (builtinTemplates.data ?? []).find(
+      (b) => b.name === preselectBuiltin,
+    );
+    if (!found) return;
+    preselectedBuiltin.current = true;
+    setPrompt(found.value);
+    setPickedFromComposer(false);
+    setPickedTemplate({
+      name: found.name,
+      value: found.value,
+      helix_event_type: found.helix_event_type ?? undefined,
+      helix_attribute_mapping: found.helix_attribute_mapping ?? undefined,
+    });
+    setPromptOpen(true);
+  }, [preselectBuiltin, builtinTemplates.data]);
+
   // When a paired template is selected, auto-toggle "Post to Helix" and
   // try to select the matching event type by name on the current
   // Verkada connection. If the type doesn't exist on the org yet, the
