@@ -6,6 +6,7 @@ import { apiDelete, apiGet, apiPost, apiPut, Flow, FlowExportFormat } from "../l
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
 import ConfirmDialog from "../components/ConfirmDialog";
+import FlowAssistant from "../components/FlowAssistant";
 import Templates from "./Templates";
 import Runs from "./Runs";
 
@@ -208,6 +209,8 @@ export default function Flows() {
           </button>
         ))}
       </div>
+
+      <FlowAssistant currentFlow={null} />
 
       {tab === "templates" && <Templates embedded />}
       {tab === "runs" && <Runs embedded />}

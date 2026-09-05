@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { apiPost } from "../lib/api";
+import { copyToClipboard } from "../lib/clipboard";
 
 /**
  * An advisor beside the flow builder, not a second way to build.
@@ -43,12 +44,15 @@ export default function FlowAssistant({
   // Whatever is on the canvas right now — an unsaved proposal only
   // exists in the browser, so it is sent rather than looked up.
   currentFlow: unknown;
-  onUseSuggestion: (text: string) => void;
+  // Omitted where there is no builder in reach. The panel then offers
+  // the description to copy instead of pretending it can hand it over.
+  onUseSuggestion?: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [meta, setMeta] = useState<AssistReply | null>(null);
+  const [copied, setCopied] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -153,13 +157,27 @@ export default function FlowAssistant({
                   Description for the builder
                 </div>
                 <div className="text-xs text-slate-300">{t.suggestion}</div>
-                <button
-                  type="button"
-                  onClick={() => onUseSuggestion(t.suggestion as string)}
-                  className="mt-2 text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
-                >
-                  Send to the builder
-                </button>
+                {onUseSuggestion ? (
+                  <button
+                    type="button"
+                    onClick={() => onUseSuggestion(t.suggestion as string)}
+                    className="mt-2 text-xs px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
+                  >
+                    Send to the builder
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void copyToClipboard(t.suggestion as string).then((ok) =>
+                        setCopied(ok ? i : null),
+                      );
+                    }}
+                    className="mt-2 text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-slate-200"
+                  >
+                    {copied === i ? "Copied" : "Copy this description"}
+                  </button>
+                )}
               </div>
             )}
           </div>
