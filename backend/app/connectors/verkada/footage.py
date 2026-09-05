@@ -115,9 +115,26 @@ async def grab_video_clip(
     timeout_sec: int = 90,
     progress: Any = None,
     base_url: str | None = None,
+    audio: str = "none",
 ) -> int:
-    """Transcode a short historical MP4 clip to ``out_path``. Returns the
+    """Transcode a short historical clip to ``out_path``. Returns the
     file size on success; raises ``FootageError`` otherwise.
+
+    ``audio`` selects what gets kept:
+
+    ``"none"``  video only (the default, and what every existing caller
+                wants -- Gemini is charged per frame, so an audio track
+                nobody reads is pure cost).
+    ``"only"``  audio only, AAC in an .m4a. Roughly an eighth the tokens
+                of the same span as video, which is the entire reason
+                the audio analytic extracts rather than sending the MP4.
+    ``"both"``  both streams, for when a prompt needs to see and hear.
+
+    A camera whose microphone is off, or whose footage simply carries no
+    audio track, makes ffmpeg exit non-zero with "Output file does not
+    contain any stream" under ``"only"``. That is deliberate: an empty
+    .m4a would reach Gemini and come back as a confident "silence",
+    which is indistinguishable from a room where nobody spoke.
 
     Built for downstream Gemini upload — H.264 yuv420p is the broadest
     compatibility codec. Retries once with a fresh stream key on the
@@ -149,18 +166,29 @@ async def grab_video_clip(
             f"&start_time={start_epoch}"
             f"&end_time={end_epoch}"
         )
+        video_args = [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+        ]
+        # 64k mono AAC. Speech survives it comfortably and the file stays
+        # small enough that the Files API upload is not the slow part.
+        audio_args = ["-c:a", "aac", "-b:a", "64k", "-ac", "1"]
+        if audio == "only":
+            codec_args = ["-vn", *audio_args]
+        elif audio == "both":
+            codec_args = [*video_args, *audio_args]
+        else:
+            codec_args = ["-an", *video_args]
         cmd = [
             "ffmpeg", "-y",
             "-loglevel", "error",
             "-i", url,
             "-ss", str(max(0.0, buffer_sec)),
             "-t", str(duration_sec),
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
+            *codec_args,
             "-movflags", "+faststart",
-            "-pix_fmt", "yuv420p",
             str(out_path),
         ]
         proc = await asyncio.create_subprocess_exec(
@@ -187,6 +215,11 @@ async def grab_video_clip(
             attempt, camera_id, last_err,
         )
 
+    if audio == "only" and last_err and "does not contain any stream" in last_err:
+        raise FootageError(
+            "this camera's footage has no audio track — the microphone is "
+            "off, or the model has no mic"
+        )
     raise FootageError(f"grab_video_clip failed: {last_err}")
 
 

@@ -178,7 +178,7 @@ export default function Byoa() {
   );
   const [cameraId, setCameraId] = useState("");
   const [onlineOnly, setOnlineOnly] = useState(true);
-  const [mode, setMode] = useState<"live" | "historical">("live");
+  const [mode, setMode] = useState<"live" | "historical" | "audio">("live");
   const [postToHelix, setPostToHelix] = useState(false);
   const [helixEventTypeUid, setHelixEventTypeUid] = useState<string>("");
   const [helixAttribute, setHelixAttribute] = useState<string>("");
@@ -259,7 +259,8 @@ export default function Byoa() {
         if (typeof inp.gemini_connection_id === "string")
           setGeminiConnId(inp.gemini_connection_id);
         if (typeof inp.camera_id === "string") setCameraId(inp.camera_id);
-        if (inp.mode === "live" || inp.mode === "historical") setMode(inp.mode);
+        if (inp.mode === "live" || inp.mode === "historical" || inp.mode === "audio")
+          setMode(inp.mode);
         if (typeof inp.model === "string") setModel(inp.model);
         if (typeof inp.prompt === "string") setPrompt(inp.prompt);
         if (typeof inp.start_epoch === "number") setStartEpoch(inp.start_epoch);
@@ -525,8 +526,8 @@ export default function Byoa() {
     }
     if (!verkadaConnId) return "Pick a Verkada connection.";
     if (!cameraId.trim()) return "Pick a camera.";
-    if (mode === "historical" && !startEpoch)
-      return "Pick a start time for historical mode.";
+    if ((mode === "historical" || mode === "audio") && !startEpoch)
+      return `Pick a start time for ${mode} mode.`;
     if (postToHelix && !helixEventTypeUid)
       return "Pick a Helix event type or turn off 'Post to Helix'.";
     if (postToHelix && !helixAttribute)
@@ -561,7 +562,7 @@ export default function Byoa() {
         prompt,
         model,
       };
-      if (mode === "historical") {
+      if (mode === "historical" || mode === "audio") {
         body.start_epoch = startEpoch;
         body.duration_sec = durationSec;
         body.pre_roll_sec = preRollSec;
@@ -1160,6 +1161,12 @@ export default function Byoa() {
               >
                 Historical (clip)
               </ModeBtn>
+              <ModeBtn
+                active={mode === "audio"}
+                onClick={() => setMode("audio")}
+              >
+                Audio
+              </ModeBtn>
             </div>
           </Field>
           <Field label="Model" required>
@@ -1196,7 +1203,7 @@ export default function Byoa() {
           </Field>
         </Row>
 
-        {mode === "historical" && (
+        {(mode === "historical" || mode === "audio") && (
           <>
             <Field label="Start time" required>
               <EpochPicker value={startEpoch} onChange={setStartEpoch} />
@@ -1204,7 +1211,11 @@ export default function Byoa() {
             <Row>
               <Field
                 label="Duration (sec)"
-                help="How long the clip is. Gemini bills per second of video."
+                help={
+                  mode === "audio"
+                    ? "How long to listen for. Audio bills at roughly 32 tokens/sec — about an eighth of video, so a longer window is cheap."
+                    : "How long the clip is. Gemini bills per second of video."
+                }
               >
                 <input
                   type="number"
@@ -1217,7 +1228,11 @@ export default function Byoa() {
               </Field>
               <Field
                 label="Pre-roll (sec)"
-                help="Clip starts this many seconds before start time."
+                help={
+                  mode === "audio"
+                    ? "Starts this many seconds early, so a sentence already underway isn\u2019t clipped at the front."
+                    : "Clip starts this many seconds before start time."
+                }
               >
                 <input
                   type="number"
@@ -2207,7 +2222,7 @@ function MakeItRun({
   analyticName: string;
   prompt: string;
   model: string;
-  mode: "live" | "historical";
+  mode: "live" | "historical" | "audio";
   cameraId: string;
   verkadaConnId: string | null;
   geminiConnId: string | null;

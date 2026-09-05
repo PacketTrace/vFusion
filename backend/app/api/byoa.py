@@ -83,7 +83,10 @@ class ByoaRunRequest(BaseModel):
     connection_id: UUID
     gemini_connection_id: UUID
     camera_id: str
-    mode: Literal["live", "historical"]
+    # "audio" is a third medium, not a third video mode: it extracts the
+    # audio track for the same historical window "historical" would have
+    # pulled video for, and sends that instead.
+    mode: Literal["live", "historical", "audio"]
     prompt: str
     model: str | None = None
     # Historical mode only:
@@ -126,9 +129,10 @@ async def run_once(
         raise HTTPException(status_code=400, detail="camera_id is required")
     if not payload.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
-    if payload.mode == "historical" and not payload.start_epoch:
+    if payload.mode in ("historical", "audio") and not payload.start_epoch:
         raise HTTPException(
-            status_code=400, detail="start_epoch is required for historical mode"
+            status_code=400,
+            detail=f"start_epoch is required for {payload.mode} mode",
         )
     if payload.post_to_helix and not payload.helix_event_type_uid:
         raise HTTPException(
@@ -148,10 +152,18 @@ async def run_once(
         "connection_id": str(payload.connection_id),
         "gemini_connection_id": str(payload.gemini_connection_id),
     }
-    if payload.mode == "historical":
+    if payload.mode in ("historical", "audio"):
         input_blob["start_epoch"] = payload.start_epoch
-        input_blob["duration_sec"] = payload.duration_sec or 10
-        input_blob["pre_roll_sec"] = payload.pre_roll_sec if payload.pre_roll_sec is not None else 2
+        # Audio defaults run a little longer and start a little earlier: a
+        # sentence takes more wall-clock than a gesture, and one already
+        # underway when the event fired is worth catching the front of.
+        audio = payload.mode == "audio"
+        input_blob["duration_sec"] = payload.duration_sec or (15 if audio else 10)
+        input_blob["pre_roll_sec"] = (
+            payload.pre_roll_sec
+            if payload.pre_roll_sec is not None
+            else (3 if audio else 2)
+        )
     if payload.post_to_helix:
         input_blob["post_to_helix"] = True
         input_blob["helix_event_type_uid"] = payload.helix_event_type_uid

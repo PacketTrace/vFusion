@@ -58,13 +58,55 @@ def _money(value: float) -> str:
 MAX_VALUE_CHARS = 200
 
 
+def _parse_clock(value: str) -> tuple[int, int] | None:
+    """Read "7:58 AM" / "19:04" back into (hour, minute)."""
+    for fmt in ("%I:%M %p", "%H:%M"):
+        try:
+            t = datetime.strptime(value.strip(), fmt)
+            return t.hour, t.minute
+        except ValueError:
+            continue
+    return None
+
+
 def _one_field(
     rng: random.Random,
     spec: dict[str, Any],
     row: dict[str, Any],
     fields: dict[str, Any],
+    when: datetime | None = None,
 ) -> str:
     kind = str(spec.get("kind") or "choice")
+
+    # ---- Fields derived from the event's own timestamp ----
+    #
+    # A shift log has to agree with the timeline it sits on. If the day
+    # and the clock-in are rolled independently, an event Helix stamps
+    # 09:14 on a Tuesday carries attributes saying 4:30 PM on a Saturday,
+    # and the demo falls apart the moment somebody clicks a row.
+    #
+    # Times render straight off ``when`` without a timezone shift, which
+    # matches how ``build_times`` already treats hours as local.
+    if kind in ("event_day", "event_time") and when is not None:
+        if kind == "event_day":
+            return when.strftime(str(spec.get("format") or "%A"))
+        return when.strftime(str(spec.get("format") or "%-I:%M %p"))
+
+    if kind == "time_after":
+        # A clock time some hours after another one, for the end of a
+        # shift or a visit. Wraps past midnight so a night shift reads
+        # 11:12 PM -> 7:30 AM instead of running off the end of the day.
+        base = _parse_clock(str(row.get(str(spec.get("of") or ""), "")))
+        if base is None:
+            return ""
+        lo = float(spec.get("min_hours", 4))
+        hi = float(spec.get("max_hours", 9))
+        minutes = int(rng.uniform(min(lo, hi), max(lo, hi)) * 60)
+        # Real shifts end on quarter hours far more often than at 6:43.
+        minutes = int(round(minutes / 15.0)) * 15
+        total = (base[0] * 60 + base[1] + minutes) % (24 * 60)
+        stamp = datetime(2000, 1, 1, total // 60, total % 60)
+        return stamp.strftime(str(spec.get("format") or "%-I:%M %p"))
 
     if kind == "choice":
         return str(_weighted(rng, spec.get("values") or [], spec.get("weights")))
@@ -204,8 +246,17 @@ def _order(fields: dict[str, Any]) -> list[str]:
     return sorted(names, key=lambda n: 0 if n in depended else 1)
 
 
-def build_row(rng: random.Random, fields: dict[str, Any]) -> dict[str, str]:
+def build_row(
+    rng: random.Random,
+    fields: dict[str, Any],
+    when: datetime | None = None,
+) -> dict[str, str]:
     row: dict[str, str] = {}
+    # A caller with no timestamp still gets plausible times rather than
+    # blanks. Blank attributes reach Helix looking like data that failed
+    # to arrive, which is worse than an approximate clock-in.
+    if when is None:
+        when = datetime.now(timezone.utc)
     for name in _order(fields):
         spec = fields.get(name) or {}
         if not isinstance(spec, dict):
@@ -213,7 +264,7 @@ def build_row(rng: random.Random, fields: dict[str, Any]) -> dict[str, str]:
         # Truncated here as well as in the fields that know their own
         # budget: a model can put a 400-character phrase in a "text"
         # pool, and a value Helix cuts in half is worse than a short one.
-        row[name] = _one_field(rng, spec, row, fields)[:MAX_VALUE_CHARS]
+        row[name] = _one_field(rng, spec, row, fields, when)[:MAX_VALUE_CHARS]
     return row
 
 
@@ -309,6 +360,6 @@ def build_events(
         rng, count, timing, window_start=start, window_end=now, anchors=anchors
     )
     return [
-        {"attributes": build_row(rng, fields), "at": when}
+        {"attributes": build_row(rng, fields, when), "at": when}
         for when in times
     ]

@@ -665,7 +665,24 @@ function RunCapturedAsset({ run }: { run: RunDetail }) {
     const out = s.output as Record<string, unknown> | null | undefined;
     return typeof out?.image_path === "string" && out.image_path;
   });
+  const stepWithAudio = (run.steps ?? []).find((s) => {
+    const out = s.output as Record<string, unknown> | null | undefined;
+    return typeof out?.audio_path === "string" && out.audio_path;
+  });
 
+  // Audio first: an audio analytic never produces a clip or a frame, so
+  // there is nothing to lose by checking it early, and a run that
+  // transcribed something should let you hear what it heard rather than
+  // asking you to take the transcript on faith.
+  if (stepWithAudio) {
+    const url = `${API_BASE}/api/runs/${run.id}/audio?step=${encodeURIComponent(stepWithAudio.name)}`;
+    return (
+      <div>
+        <SectionTitle>Captured audio</SectionTitle>
+        <audio src={url} controls className="w-full" />
+      </div>
+    );
+  }
   if (stepWithClip) {
     const url = `${API_BASE}/api/runs/${run.id}/clip?step=${encodeURIComponent(stepWithClip.name)}`;
     return (

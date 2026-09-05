@@ -1,0 +1,90 @@
+{
+  "name": "Time clock — shift punches",
+  "summary": "Employee time-clock punches: who worked, when they started and finished, how they clocked in, and what day it was.",
+  "helix_event_type": {
+    "name": "🕓 Time Clock",
+    "event_schema": {
+      "Employee Name": "string",
+      "Time Clocked In": "string",
+      "Time Clocked Out": "string",
+      "Method": "string",
+      "Day": "string"
+    }
+  },
+  "spec": {
+    "fields": {
+      "Employee Name": {
+        "kind": "choice",
+        "values": [
+          "Marisol Reyes",
+          "Dwight Okafor",
+          "Hannah Lindqvist",
+          "Terrence Boyd",
+          "Priya Raghunathan",
+          "Colin Mabry",
+          "Yuki Tanabe",
+          "Rosa Delgado",
+          "Aaron Whitfield",
+          "Nadia Haddad",
+          "Grant Pemberton",
+          "Simone Osei",
+          "Victor Kaminski",
+          "Leah Brennan",
+          "Omar Farouk"
+        ],
+        "weights": [
+          14,
+          12,
+          11,
+          10,
+          9,
+          8,
+          7,
+          6,
+          5,
+          5,
+          4,
+          3,
+          3,
+          2,
+          1
+        ]
+      },
+      "Time Clocked In": {
+        "kind": "event_time"
+      },
+      "Time Clocked Out": {
+        "kind": "time_after",
+        "of": "Time Clocked In",
+        "min_hours": 3.5,
+        "max_hours": 9.25
+      },
+      "Method": {
+        "kind": "choice",
+        "values": [
+          "Badge",
+          "Manual"
+        ],
+        "weights": [
+          88,
+          12
+        ]
+      },
+      "Day": {
+        "kind": "event_day"
+      }
+    },
+    "timing": {
+      "shape": "business",
+      "open_hours": [
+        5,
+        23
+      ],
+      "peaks": [
+        7,
+        15
+      ],
+      "weekends": true
+    }
+  }
+}

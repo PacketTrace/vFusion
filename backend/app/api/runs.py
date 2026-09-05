@@ -203,6 +203,23 @@ async def serve_run_clip(
     return _serve_step_file(run, step, "clip_path", CLIP_ROOT, "video/mp4")
 
 
+@router.get("/{run_id}/audio")
+async def serve_run_audio(
+    run_id: UUID,
+    step: str = Query(..., description="Step name whose output.audio_path to serve"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Serve the .m4a produced by a gemini_analyze_audio step.
+
+    Shares CLIP_ROOT with video — same directory, same retention sweep,
+    same containment check. Only the media type differs, so a browser
+    gets an <audio> element rather than a video one with no picture."""
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return _serve_step_file(run, step, "audio_path", CLIP_ROOT, "audio/mp4")
+
+
 @router.get("/{run_id}/image")
 async def serve_run_image(
     run_id: UUID,

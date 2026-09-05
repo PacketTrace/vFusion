@@ -379,7 +379,8 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
     """One-off "Brew Your Own Analytics" run. Same Run + step + event
     plumbing as a normal flow execution, but the "flow" is synthesized
     from the BYOA form payload — historical → gemini_analyze_camera;
-    live → gemini_analyze_still_image. Reusing the actions means the
+    audio → gemini_analyze_audio; live → gemini_analyze_still_image.
+    Reusing the actions means the
     Runs page renders the captured media + AI text identically."""
     async with SessionLocal() as session:
         run = await session.get(Run, UUID(run_id))
@@ -394,11 +395,10 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             return {"error": run.error}
 
         mode = params.get("mode")
-        action_type = (
-            "gemini_analyze_camera"
-            if mode == "historical"
-            else "gemini_analyze_still_image"
-        )
+        action_type = {
+            "historical": "gemini_analyze_camera",
+            "audio": "gemini_analyze_audio",
+        }.get(mode, "gemini_analyze_still_image")
         spec = ACTIONS.get(action_type)
         if spec is None:
             run.status = "failed"
@@ -430,7 +430,7 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             "prompt": params.get("prompt"),
             "model": params.get("model"),
         }
-        if mode == "historical":
+        if mode in ("historical", "audio"):
             config["start_epoch"] = params.get("start_epoch")
             config["duration_sec"] = params.get("duration_sec", 10)
             config["pre_roll_sec"] = params.get("pre_roll_sec", 2)

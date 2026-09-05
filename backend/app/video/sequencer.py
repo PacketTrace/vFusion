@@ -100,7 +100,14 @@ class Run:
     # -- the run ----------------------------------------------------------
 
     async def _post(self, at_epoch: float) -> None:
-        row = helix_generate.build_row(self._rng, self.spec.get("fields") or {})
+        # The posting time, not "now": a spec with timestamp-derived
+        # fields (a shift's day, a clock-in time) has to agree with the
+        # time_ms this event is about to carry.
+        row = helix_generate.build_row(
+            self._rng,
+            self.spec.get("fields") or {},
+            datetime.fromtimestamp(at_epoch, timezone.utc),
+        )
         payload = {
             "camera_id": self.camera_id,
             "event_type_uid": self.event_type_uid,

@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.engine.actions.gemini_analyze_audio import AUDIO_PROMPT_TEMPLATES
 from app.engine.actions.gemini_analyze_video import PROMPT_TEMPLATES
 from app.models import PromptTemplate
 
@@ -63,6 +64,10 @@ class PairedHelixType(BaseModel):
 class BuiltinTemplate(BaseModel):
     name: str
     value: str
+    # Which analytic this prompt belongs to. "video" prompts run against
+    # frames, "audio" prompts against an extracted audio track — they are
+    # not interchangeable, so the picker filters rather than mixing them.
+    medium: str = "video"
     # Optional Helix pairing — see PairedHelixType / the registry in
     # gemini_analyze_video.PROMPT_TEMPLATES.
     helix_event_type: PairedHelixType | None = None
@@ -77,12 +82,13 @@ async def list_builtin_templates() -> list[BuiltinTemplate]:
     "this prompt pairs with X Helix type" hints and offer one-click
     Helix-step insertion when the prompt is picked in a flow."""
     out: list[BuiltinTemplate] = []
-    for t in PROMPT_TEMPLATES:
+    for t in [*PROMPT_TEMPLATES, *AUDIO_PROMPT_TEMPLATES]:
         het = t.get("helix_event_type")
         out.append(
             BuiltinTemplate(
                 name=t["name"],
                 value=t["value"],
+                medium=t.get("medium", "video"),
                 helix_event_type=PairedHelixType(**het) if het else None,
                 helix_attribute_mapping=t.get("helix_attribute_mapping"),
             )

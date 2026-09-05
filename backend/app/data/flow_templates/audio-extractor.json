@@ -1,0 +1,85 @@
+{
+  "id": "audio-extractor",
+  "name": "Audio extractor",
+  "tagline": "🔊 Hear what happened. Log the sound, a transcript, and a description to Helix.",
+  "description": "Pull the audio track from the camera at the moment a person is detected, ask Gemini what it hears, and post three fields to Helix: the kind of sound, a word-for-word transcript of any speech, and a sentence describing what was heard. Because only the audio is sent — no frames — this costs roughly an eighth of what the video analytic costs over the same span. The camera's microphone must be enabled; the step fails with a clear message if it isn't.",
+  "summary": "Webhook → extract audio → Gemini transcribe → Helix event with Sound + Transcript + Description",
+  "default_name": "Audio extractor",
+  "tags": [
+    "Cameras",
+    "Gemini Audio"
+  ],
+  "flow": {
+    "trigger_type": "verkada_webhook",
+    "trigger_config": {
+      "family": "camera",
+      "notification_type": "alert_rule_motion",
+      "filters": {
+        "objects": "person"
+      }
+    },
+    "helix_event_types": [
+      {
+        "event_type_uid": "tpl:audio-extractor",
+        "name": "🔊 Audio Extractor",
+        "event_schema": {
+          "Sound": "string",
+          "Transcript": "string",
+          "Description": "string"
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": "listen",
+        "name": "listen",
+        "label": "Listen to the audio",
+        "kind": "action",
+        "action_type": "gemini_analyze_audio",
+        "config": {
+          "connection_id": null,
+          "gemini_connection_id": null,
+          "camera_id": "{{ trigger.data.camera_id }}",
+          "start_epoch": "{{ trigger.data.created }}",
+          "duration_sec": "15",
+          "pre_roll_sec": "3",
+          "model": "gemini-2.5-flash",
+          "prompt": "Listen to this audio from a security camera and report what you hear. Respond with ONLY a JSON object - no prose, no code fence - with exactly three string keys:\n  \"sound\":       a short label for the dominant sound, lowercase, a few words at most (e.g. \"people talking\", \"dog barking\", \"vehicle engine\", \"door slamming\", \"glass breaking\", \"alarm\", \"wind\"). Use \"silence\" if there is nothing audible.\n  \"transcript\":  the speech, word for word, including who says what if more than one voice is distinguishable. Use \"none\" if nobody speaks, and \"unintelligible\" if there is clearly speech but you cannot make out the words. Do NOT invent words to fill a gap — an honest \"unintelligible\" is worth more than a plausible guess. HARD CAP 200 characters; if the speech runs longer, keep the most meaningful portion rather than trailing off.\n  \"description\": one to two sentences (HARD CAP 200 characters) on what was heard and what it suggests is happening — how many voices, their tone, whether it sounds routine or agitated, any background noise worth noting. Stay factual: describe the audio, do not speculate about what is on camera.\n\nExamples:\n  {\"sound\": \"people talking\", \"transcript\": \"Hey John, how are you doing?\", \"description\": \"Two people having a general conversation, relaxed and friendly. Footsteps and a door closing in the background.\"}\n  {\"sound\": \"dog barking\", \"transcript\": \"none\", \"description\": \"A single dog barking repeatedly close to the microphone, then trailing off. No voices.\"}\n  {\"sound\": \"vehicle engine\", \"transcript\": \"unintelligible\", \"description\": \"An engine idles then pulls away. Someone speaks briefly over it but the words are not clear.\"}\n  {\"sound\": \"silence\", \"transcript\": \"none\", \"description\": \"Nothing audible for the length of the clip apart from faint wind.\"}\n\nIMPORTANT: keep every value at or under 200 characters — Helix truncates anything longer."
+        },
+        "position": {
+          "x": 220,
+          "y": 0
+        }
+      },
+      {
+        "id": "post_helix",
+        "name": "post_helix",
+        "label": "Post to Helix",
+        "kind": "action",
+        "action_type": "verkada_helix_event",
+        "config": {
+          "connection_id": null,
+          "camera_id": "{{ trigger.data.camera_id }}",
+          "event_type_uid": "tpl:audio-extractor",
+          "attributes": {
+            "Sound": "{{ steps.listen.output.json.sound }}",
+            "Transcript": "{{ steps.listen.output.json.transcript }}",
+            "Description": "{{ steps.listen.output.json.description }}"
+          },
+          "time_ms": "{{ trigger.data.created }}000"
+        },
+        "position": {
+          "x": 220,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_listen_post",
+        "source": "listen",
+        "target": "post_helix"
+      }
+    ]
+  }
+}

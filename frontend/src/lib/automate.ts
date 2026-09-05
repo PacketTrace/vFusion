@@ -17,7 +17,7 @@ export interface AutomateArgs {
   analyticName: string;
   prompt: string;
   model: string;
-  mode: "live" | "historical";
+  mode: "live" | "historical" | "audio";
   cameraId: string;
   verkadaConnId: string;
   geminiConnId: string;
@@ -41,19 +41,28 @@ export function buildFlowBody(a: AutomateArgs): Record<string, unknown> {
     model: a.model,
     prompt: a.prompt,
   };
-  if (a.mode === "historical") {
+  if (a.mode === "historical" || a.mode === "audio") {
     analyzeConfig.start_epoch = "{{ trigger.data.created }}";
     analyzeConfig.duration_sec = String(a.durationSec);
-    analyzeConfig.pre_roll_sec = "2";
+    analyzeConfig.pre_roll_sec = a.mode === "audio" ? "3" : "2";
   }
+
+  // Audio runs a different action against the same camera and window —
+  // the step name changes with it, because every {{ steps.<name>.* }}
+  // reference below is built from it.
+  const analyzeId = a.mode === "audio" ? "listen" : "analyze";
+  // Live and historical both stay on gemini_analyze_camera, as before —
+  // only the medium changes the action.
+  const analyzeAction =
+    a.mode === "audio" ? "gemini_analyze_audio" : "gemini_analyze_camera";
 
   const nodes: Record<string, unknown>[] = [
     {
-      id: "analyze",
-      name: "analyze",
-      label: "Analyze the camera",
+      id: analyzeId,
+      name: analyzeId,
+      label: a.mode === "audio" ? "Listen to the audio" : "Analyze the camera",
       kind: "action",
-      action_type: "gemini_analyze_camera",
+      action_type: analyzeAction,
       // No position: the editor computes the layout when one is absent,
       // which is the same thing "Auto arrange" does. Guessing
       // coordinates here put this node on top of the trigger the canvas
@@ -69,7 +78,7 @@ export function buildFlowBody(a: AutomateArgs): Record<string, unknown> {
     const attributes = Object.fromEntries(
       Object.entries(a.helixMapping ?? {}).map(([attr, ref]) => [
         attr,
-        ref.replace(/output\./g, "steps.analyze.output."),
+        ref.replace(/output\./g, `steps.${analyzeId}.output.`),
       ]),
     );
     nodes.push({
@@ -84,10 +93,14 @@ export function buildFlowBody(a: AutomateArgs): Record<string, unknown> {
         event_type_uid: a.helixEventTypeUid,
         attributes: Object.keys(attributes).length
           ? attributes
-          : { Summary: "{{ steps.analyze.output.text }}" },
+          : { Summary: `{{ steps.${analyzeId}.output.text }}` },
       },
     });
-    edges.push({ id: "e_analyze_helix", source: "analyze", target: "post_helix" });
+    edges.push({
+      id: "e_analyze_helix",
+      source: analyzeId,
+      target: "post_helix",
+    });
   }
 
   return {
@@ -129,7 +142,10 @@ export function argsFromRunInput(
     analyticName: "Analytic",
     prompt: str("prompt"),
     model: str("model"),
-    mode: input.mode === "historical" ? "historical" : "live",
+    mode:
+      input.mode === "historical" || input.mode === "audio"
+        ? input.mode
+        : "live",
     cameraId: str("camera_id"),
     verkadaConnId: str("connection_id"),
     geminiConnId: str("gemini_connection_id"),

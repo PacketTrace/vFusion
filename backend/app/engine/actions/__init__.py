@@ -18,6 +18,11 @@ from app.engine.actions.gemini_analyze_camera import (
     SCHEMA as GEMINI_ANALYZE_CAMERA_SCHEMA,
     run as run_gemini_analyze_camera,
 )
+from app.engine.actions.gemini_analyze_audio import (
+    SAMPLE_OUTPUT as GEMINI_ANALYZE_AUDIO_OUTPUT,
+    SCHEMA as GEMINI_ANALYZE_AUDIO_SCHEMA,
+    run as run_gemini_analyze_audio,
+)
 from app.engine.actions.gemini_analyze_still_image import (
     SAMPLE_OUTPUT as GEMINI_ANALYZE_STILL_OUTPUT,
     SCHEMA as GEMINI_ANALYZE_STILL_SCHEMA,
@@ -96,6 +101,21 @@ ACTIONS: dict[str, ActionSpec] = {
         output_sample=GEMINI_ANALYZE_STILL_OUTPUT,
         run=run_gemini_analyze_still_image,
         default_step_name="analyze",
+    ),
+    "gemini_analyze_audio": ActionSpec(
+        type="gemini_analyze_audio",
+        label="Gemini: Analyze camera audio (transcribe + describe)",
+        description=(
+            "Pull the audio track from the Verkada camera at the trigger "
+            "time, send it to Gemini, and get back what kind of sound it "
+            "was, a transcript of any speech, and a sentence describing "
+            "what was heard. Roughly an eighth the cost of the video "
+            "flavor over the same span, because no frames are sent."
+        ),
+        schema=GEMINI_ANALYZE_AUDIO_SCHEMA,
+        output_sample=GEMINI_ANALYZE_AUDIO_OUTPUT,
+        run=run_gemini_analyze_audio,
+        default_step_name="listen",
     ),
     "verkada_helix_event": ActionSpec(
         type="verkada_helix_event",

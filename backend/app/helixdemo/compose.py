@@ -70,6 +70,20 @@ Field kinds available:
   {"kind": "sample_from", "pool": [...], "count_from": "Item Count"}
   {"kind": "text",  "values": [...], "weights": [...]}
   {"kind": "bool",  "rate": 0.15}
+  {"kind": "id",    "prefix": "TXN-", "digits": 6}
+  {"kind": "ratio_of", "of": "Price", "min_ratio": 0.7, "max_ratio": 1.0}
+  {"kind": "event_day"}
+  {"kind": "event_time"}
+  {"kind": "time_after", "of": "Time Clocked In", "min_hours": 4,
+                    "max_hours": 9}
+
+"event_day" and "event_time" render the event's OWN timestamp as a
+weekday and a clock time. Use them whenever a field restates when
+something happened -- a shift's day, the time a visitor signed in. A
+"choice" pool of days would contradict the timeline the event sits on,
+and one contradiction is all it takes for someone to stop believing the
+demo. "time_after" is a clock time some hours later, for the other end
+of a shift or a visit; it wraps past midnight.
 
 "skew": "low" means most values sit near the minimum, which is what
 basket sizes, queue lengths and durations actually look like.
