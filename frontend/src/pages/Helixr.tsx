@@ -26,6 +26,15 @@ interface ComposedDemo {
   sample: { attributes: Record<string, string>; at: string }[];
 }
 
+interface DemoTemplate {
+  id: string;
+  name: string;
+  summary: string;
+  helix_event_type: { name: string; event_schema: Record<string, string> };
+  spec: Record<string, unknown>;
+  sample: { attributes: Record<string, string>; at: string }[];
+}
+
 interface DemoRun {
   id: string;
   at: string;
@@ -315,6 +324,10 @@ function DemoPanel({ connId }: { connId: string }) {
     onError: (e: Error) => setErr(e.message),
   });
 
+  const demoTemplates = useQuery({
+    queryKey: ["helix-demo-templates"],
+    queryFn: () => apiGet<DemoTemplate[]>("/api/helix-demo/templates"),
+  });
   const runs = useQuery({
     queryKey: ["helix-demo-history"],
     queryFn: () => apiGet<DemoRun[]>("/api/helix-demo/history"),
@@ -390,6 +403,47 @@ function DemoPanel({ connId }: { connId: string }) {
           with believable events, so the value is visible before anyone builds
           the integration.
         </p>
+        {(demoTemplates.data ?? []).length > 0 && !draft && (
+          <div className="mb-3">
+            <div className="text-[11px] text-slate-400 mb-1.5">
+              Or start from one of these — no model call, loads instantly:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(demoTemplates.data ?? []).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  title={t.summary}
+                  onClick={() => {
+                    setErr(null);
+                    setIntent(t.summary);
+                    setDraft({
+                      name: t.name,
+                      summary: t.summary,
+                      helix_event_type: t.helix_event_type,
+                      spec: t.spec,
+                      model: "template",
+                      raw: {},
+                      sample: t.sample,
+                    } as unknown as ComposedDemo);
+                    setTypeName(t.helix_event_type.name);
+                    // Reuse an existing type of the same name rather
+                    // than making a near-duplicate to tell apart later.
+                    const match = (types.data ?? []).find(
+                      (x) =>
+                        (x.name ?? "").trim() ===
+                        t.helix_event_type.name.trim(),
+                    );
+                    setTypeUid(match?.event_type_uid ?? "");
+                  }}
+                  className="text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:border-sky-600 hover:text-white"
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <textarea
           value={intent}
           onChange={(e) => setIntent(e.target.value)}

@@ -1,0 +1,106 @@
+{
+  "name": "Point of sale — clothing store",
+  "summary": "Register transactions from a clothing retailer: what was bought, what it cost, how it was paid for, and who rang it up.",
+  "helix_event_type": {
+    "name": "🛍️ POS Transaction",
+    "event_schema": {
+      "Transaction ID": "string",
+      "Items": "string",
+      "Price": "string",
+      "Discount": "string",
+      "Cost": "string",
+      "Payment Method": "string",
+      "Cash Drawer Open": "string",
+      "Cashier Name": "string",
+      "Customer Name": "string"
+    }
+  },
+  "spec": {
+    "fields": {
+      "Transaction ID": { "kind": "id", "prefix": "TXN-", "digits": 6 },
+      "Items": {
+        "kind": "sample_from",
+        "pool": [
+          "Crewneck Tee",
+          "Slim Fit Jeans",
+          "Denim Jacket",
+          "Hooded Sweatshirt",
+          "Chino Trousers",
+          "Wool Overcoat",
+          "Cotton Chambray Shirt",
+          "Knit Beanie",
+          "Leather Belt",
+          "Ankle Boots",
+          "Canvas Sneakers",
+          "Puffer Vest",
+          "Merino Cardigan",
+          "Linen Shorts",
+          "Pleated Midi Skirt",
+          "Silk Scarf",
+          "Ribbed Tank",
+          "Corduroy Pants",
+          "Flannel Shirt",
+          "Trench Coat"
+        ]
+      },
+      "Price": { "kind": "money", "min": 18.0, "max": 480.0, "skew": "low" },
+      "Discount": {
+        "kind": "choice",
+        "values": [
+          "None",
+          "10% off — email signup",
+          "20% off — seasonal sale",
+          "Employee 30%",
+          "$15 off — loyalty reward",
+          "Price match"
+        ],
+        "weights": [62, 14, 12, 4, 5, 3]
+      },
+      "Cost": { "kind": "ratio_of", "of": "Price", "min_ratio": 0.7, "max_ratio": 1.0 },
+      "Payment Method": {
+        "kind": "choice",
+        "values": ["Card — chip", "Card — contactless", "Cash", "Mobile wallet", "Gift card", "Store credit"],
+        "weights": [34, 27, 18, 13, 5, 3]
+      },
+      "Cash Drawer Open": {
+        "kind": "bool",
+        "rate": 0.03,
+        "when": { "field": "Payment Method", "in": ["Cash"], "rate": 0.98 }
+      },
+      "Cashier Name": {
+        "kind": "choice",
+        "values": [
+          "Dana Whitfield",
+          "Marcus Ellery",
+          "Priya Raghunathan",
+          "Tomás Iglesias",
+          "Bex Okonkwo",
+          "Hollis Trent"
+        ],
+        "weights": [22, 20, 18, 16, 14, 10]
+      },
+      "Customer Name": {
+        "kind": "choice",
+        "values": [
+          "Guest",
+          "Alina Petrov",
+          "Desmond Achebe",
+          "Rowan Halloway",
+          "Mei-Lin Zhou",
+          "Gabriel Sandoval",
+          "Nadia Farouk",
+          "Elliot Brannigan",
+          "Saoirse Killeen",
+          "Yusuf Demirci"
+        ],
+        "weights": [40, 7, 7, 7, 7, 7, 7, 6, 6, 6]
+      }
+    },
+    "timing": {
+      "shape": "business",
+      "open_hours": [10, 21],
+      "peaks": [13, 18],
+      "weekends": true
+    }
+  }
+}

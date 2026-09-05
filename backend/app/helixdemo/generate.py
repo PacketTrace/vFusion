@@ -17,10 +17,13 @@ gives the same demo twice.
 Fields the model can ask for:
 
   choice        one of a weighted list
+  id            a prefixed random number, e.g. TXN-481203
   int / money   a number in a range, optionally scaled by another field
   sample_from   several values drawn from a pool, count taken from a field
   text          one of a list of short phrases
-  bool          "true" or "false" at a given rate
+  bool          "true" or "false" at a given rate, optionally condi-
+                tional on another field
+  ratio_of      a proportion of another number, bounded by it
 
 Everything lands in Helix as a string, because every Helix attribute is
 a string.
@@ -68,7 +71,31 @@ def _one_field(
 
     if kind == "bool":
         rate = float(spec.get("rate", 0.5))
+        # An override keyed off another field. Without it a boolean can
+        # only be independent of everything, and most real ones are not.
+        when = spec.get("when")
+        if isinstance(when, dict):
+            driver = str(when.get("field") or "")
+            wanted = when.get("in")
+            actual = str(row.get(driver, ""))
+            if isinstance(wanted, list) and actual in [str(w) for w in wanted]:
+                rate = float(when.get("rate", rate))
         return "true" if rng.random() < rate else "false"
+
+    if kind == "ratio_of":
+        # A proportion of another number: a total after discount, a tax
+        # line, a tip. Distinct from "scales_with", which spreads a
+        # range across a driver — this one is bounded *by* the driver,
+        # so a discounted total can never come out above the subtotal.
+        driver = str(spec.get("of") or "")
+        try:
+            base = float(str(row.get(driver, "0")).replace(",", "").lstrip("$"))
+        except ValueError:
+            base = 0.0
+        lo = float(spec.get("min_ratio", 0.8))
+        hi = float(spec.get("max_ratio", 1.0))
+        value = base * rng.uniform(min(lo, hi), max(lo, hi))
+        return _money(value) if spec.get("money", True) else str(int(round(value)))
 
     if kind in ("int", "money"):
         low = float(spec.get("min", 0))
@@ -140,6 +167,15 @@ def _one_field(
             text = f"{text} +{remaining} more"
         return text
 
+    if kind == "id":
+        # Transaction numbers, order refs, badge serials. Every real
+        # system has one and none of the other kinds can make one: a
+        # choice pool repeats, and a plain int reads as a quantity
+        # rather than an identifier.
+        prefix = str(spec.get("prefix") or "")
+        digits = max(1, min(int(spec.get("digits", 6) or 6), 12))
+        return f"{prefix}{rng.randrange(10 ** (digits - 1), 10**digits)}"
+
     if kind == "text":
         return str(_weighted(rng, spec.get("values") or [""], spec.get("weights")))
 
@@ -154,10 +190,17 @@ def _order(fields: dict[str, Any]) -> list[str]:
     One pass is enough: the model is told not to write chains.
     """
     names = list(fields)
-    depended = {
-        str(spec.get("scales_with") or spec.get("count_from") or "")
-        for spec in fields.values()
-    }
+    depended: set[str] = set()
+    for spec in fields.values():
+        if not isinstance(spec, dict):
+            continue
+        depended.add(str(spec.get("scales_with") or ""))
+        depended.add(str(spec.get("count_from") or ""))
+        depended.add(str(spec.get("of") or ""))
+        when = spec.get("when")
+        if isinstance(when, dict):
+            depended.add(str(when.get("field") or ""))
+    depended.discard("")
     return sorted(names, key=lambda n: 0 if n in depended else 1)
 
 

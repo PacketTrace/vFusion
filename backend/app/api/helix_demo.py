@@ -38,6 +38,7 @@ from app.db import get_session
 from app.helixdemo import compose as composer
 from app.helixdemo import generate
 from app.helixdemo import history
+from app.helixdemo import templates as demo_templates
 from app.models import Connection, VerkadaCamera
 from app.models.verkada_api import VerkadaApiEndpoint
 from app.pricing import ledger
@@ -457,3 +458,9 @@ async def delete_history(entry_id: str) -> dict[str, bool]:
     """Forget a run. Does not touch the events it posted — vFusion has no
     record of those and could not delete them if it did."""
     return {"removed": await history.remove(entry_id)}
+
+
+@router.get("/templates")
+async def list_demo_templates() -> list[dict[str, Any]]:
+    """Ready-made scenarios. No model call — these load instantly."""
+    return demo_templates.load_all()
