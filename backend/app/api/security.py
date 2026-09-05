@@ -146,8 +146,6 @@ async def overview(
     exposure = []
     for prefix in PUBLIC_PATH_PREFIXES:
         note = SURFACE_NOTES.get(prefix) or {}
-        if prefix in ("/docs", "/redoc", "/openapi.json") and not settings.enable_docs:
-            continue
         exposure.append(
             {
                 "path": prefix,
@@ -204,7 +202,6 @@ async def overview(
         "exposure": {
             "public_paths": exposure,
             "cors_origins": settings.cors_origin_list,
-            "docs_enabled": settings.enable_docs,
         },
         "data": {
             "storage": [

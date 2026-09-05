@@ -23,11 +23,11 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     # this gate means the Connector gets a 401 it cannot interpret before
     # any of that runs.
     "/onvif",
-    # FastAPI's interactive docs.
-    "/docs",
-    "/redoc",
-    "/openapi.json",
 )
+
+# FastAPI's /docs, /redoc and /openapi.json used to be here. They are no
+# longer served at all (see main.py), so they are not exempt from the
+# session gate -- there is nothing to exempt.
 
 
 # What each open path is for, in the terms someone would actually ask
@@ -99,34 +99,5 @@ SURFACE_NOTES: dict[str, dict[str, object]] = {
             "design: a client needs your clock before it can compute the "
             "digest. It returns the time and nothing else."
         ),
-    },
-    "/docs": {
-        "label": "Interactive API docs",
-        "plain": (
-            "A browsable page listing every endpoint. Nobody added it -- it "
-            "comes with the web framework and is on by default."
-        ),
-        "who": "Nothing. It exists for humans.",
-        "required": False,
-        "note": (
-            "vFusion runs fine without it. It exposes no data, but it hands "
-            "anyone who can reach this host a map of the API."
-        ),
-    },
-    "/redoc": {
-        "label": "API reference",
-        "plain": "The same listing as /docs, rendered as read-only docs.",
-        "who": "Nothing. It exists for humans.",
-        "required": False,
-        "note": None,
-    },
-    "/openapi.json": {
-        "label": "API schema",
-        "plain": (
-            "The machine-readable file the two pages above are built from."
-        ),
-        "who": "/docs and /redoc",
-        "required": False,
-        "note": None,
     },
 }

@@ -96,7 +96,6 @@ interface Overview {
   exposure: {
     public_paths: PublicPath[];
     cors_origins: string[];
-    docs_enabled: boolean;
   };
   data: {
     storage: { label: string; bytes: number; files: number }[];
@@ -652,42 +651,17 @@ export default function Security() {
           Everything else on this install returns 401 without a session
           cookie. These answer anyway, because whatever calls them has no way
           to hold one — Verkada, Docker, or your own browser before you have
-          logged in.
+          logged in. Every one of them has to answer; there is nothing here
+          to switch off.
         </p>
 
-        <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
-          Has to stay open
-        </div>
-        {s.exposure.public_paths
-          .filter((p) => p.required)
-          .map((p) => (
-            <Row key={p.path} ok title={`${p.path} — ${p.label}`}>
-              {p.plain}
-              <span className="text-slate-500"> Called by: {p.who}.</span>
-              {p.note && <span className="block mt-0.5">{p.note}</span>}
-            </Row>
-          ))}
-
-        {s.exposure.public_paths.some((p) => !p.required) && (
-          <>
-            <div className="text-[11px] uppercase tracking-wider text-slate-500 mt-4 mb-1">
-              Optional — safe to turn off
-            </div>
-            {s.exposure.public_paths
-              .filter((p) => !p.required)
-              .map((p) => (
-                <Row key={p.path} ok={false} title={`${p.path} — ${p.label}`}>
-                  {p.plain}
-                  {p.note && <span className="block mt-0.5">{p.note}</span>}
-                </Row>
-              ))}
-            <div className="mt-2 text-xs text-amber-300">
-              Set <code className="text-amber-200">ENABLE_DOCS=false</code> in
-              .env and restart the backend to remove all three. They are not
-              needed to run vFusion.
-            </div>
-          </>
-        )}
+        {s.exposure.public_paths.map((p) => (
+          <Row key={p.path} ok title={`${p.path} — ${p.label}`}>
+            {p.plain}
+            <span className="text-slate-500"> Called by: {p.who}.</span>
+            {p.note && <span className="block mt-0.5">{p.note}</span>}
+          </Row>
+        ))}
 
         <div className="mt-4 pt-3 border-t border-white/10">
           <Row ok={s.exposure.cors_origins.length > 0} title="Browser origins allowed to call the API">
@@ -695,12 +669,11 @@ export default function Security() {
               ? s.exposure.cors_origins.join(", ")
               : "None configured — the dashboard will not be able to reach the API from a browser."}
           </Row>
-          {!s.exposure.docs_enabled && (
-            <Row ok title="Interactive docs are off">
-              /docs, /redoc and /openapi.json are not mounted at all — they
-              return 404 rather than being blocked.
-            </Row>
-          )}
+          <Row ok title="Framework docs pages">
+            FastAPI mounts /docs, /redoc and /openapi.json by default.
+            vFusion does not serve them — they return 404, rather than being
+            mounted and blocked.
+          </Row>
         </div>
       </Card>
 

@@ -102,9 +102,14 @@ app = FastAPI(
     title=BRAND_NAME,
     version="0.3.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.enable_docs else None,
-    redoc_url="/redoc" if settings.enable_docs else None,
-    openapi_url="/openapi.json" if settings.enable_docs else None,
+    # FastAPI mounts /docs, /redoc and /openapi.json by default. vFusion
+    # does not serve them: nothing here consumes them, and they hand a
+    # complete map of the API to anyone who can reach the host. The
+    # schema is still generated in-process (``app.openapi()``); it is
+    # simply not published over HTTP.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
