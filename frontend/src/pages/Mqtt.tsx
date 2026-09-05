@@ -452,8 +452,6 @@ export default function Mqtt() {
         </Card>
       </div>
 
-      {status.data?.mode === "external" && <BrokerRequirements />}
-
       {status.data?.mode === "external" && (
         <Card title="Viewing is off in external mode">
           <p className="text-sm text-slate-400">
@@ -1875,6 +1873,7 @@ function BrokerMode({ onChanged }: { onChanged: () => void }) {
 
       {value.mode === "external" && (
         <div className="mt-3 space-y-2">
+          <BrokerRequirements />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Labeled label="Broker host">
               <input
@@ -1999,12 +1998,13 @@ function BrokerRequirements() {
   if (items.length === 0) return null;
 
   return (
-    <Card title="What your broker has to do">
-      <p className="text-sm text-slate-400">
-        You are pointing cameras at your own broker, so these are yours to
-        satisfy — vFusion&rsquo;s built-in one already does. None of it is
-        reported by the API: a camera accepts a configuration it cannot use and
-        says nothing, so each one lists the symptom you get without it.
+    <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] p-3">
+      <p className="text-xs text-slate-300">
+        Your broker has to satisfy {items.length} requirements before a camera
+        will publish to it — vFusion&rsquo;s built-in one already does. None of
+        them are reported by the API: a camera accepts a configuration it
+        cannot use and says nothing, so each one lists the symptom you get
+        without it.
       </p>
       {reqs.data?.topic && (
         <p className="text-[11px] text-slate-500 mt-1">
@@ -2017,9 +2017,9 @@ function BrokerRequirements() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs mt-3 px-3 py-1.5 rounded border border-white/15 text-slate-200 hover:border-sky-600"
+        className="text-xs mt-2 px-3 py-1.5 rounded border border-amber-500/30 text-amber-200 hover:bg-amber-500/10"
       >
-        {open ? "Hide" : `Show all ${items.length} requirements`}
+        {open ? "Hide them" : `Read them before you configure this`}
       </button>
       {open && (
         <div className="mt-3 space-y-3">
@@ -2034,6 +2034,6 @@ function BrokerRequirements() {
           ))}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
