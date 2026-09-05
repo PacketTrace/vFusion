@@ -80,26 +80,75 @@ function paramsOf(detail: ApiEndpointDetail | null): Param[] {
   return Array.isArray(raw?.parameters) ? raw!.parameters! : [];
 }
 
-function bodyExample(detail: ApiEndpointDetail | null): string {
+interface BodyField {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  enum?: string[];
+}
+
+/** Descriptions in the spec carry HTML — mostly <code> around example
+ *  values — which would otherwise render as literal angle brackets. */
+function plain(text: string | undefined): string {
+  if (!text) return "";
+  return text
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The request body as a list of fields, the way Verkada's own docs show
+ * it: a labelled input per property with its description and whether it
+ * is required.
+ *
+ * This used to be a JSON textarea with a "fill from schema" button,
+ * which put the burden of knowing seven parameter names on whoever was
+ * trying to find out what they were. The spec has all of it — names,
+ * types, descriptions, the required list — and the backend already
+ * inlines the $ref, so there was never a reason not to render it.
+ */
+function bodyFields(detail: ApiEndpointDetail | null): BodyField[] {
   const raw = detail?.raw as
     | { requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> } }
     | undefined;
-  const schema = raw?.requestBody?.content?.["application/json"]?.schema;
-  const props = (schema as { properties?: Record<string, { type?: string }> })
-    ?.properties;
-  if (!props) return "";
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    out[k] =
-      v.type === "number" || v.type === "integer"
-        ? 0
-        : v.type === "boolean"
-          ? false
-          : v.type === "array"
-            ? []
-            : "";
+  const schema = raw?.requestBody?.content?.["application/json"]?.schema as
+    | {
+        properties?: Record<
+          string,
+          { type?: string; description?: string; enum?: string[] }
+        >;
+        required?: string[];
+      }
+    | undefined;
+  const props = schema?.properties;
+  if (!props) return [];
+  const required = new Set(schema?.required ?? []);
+  return Object.entries(props).map(([name, v]) => ({
+    name,
+    type: v.type ?? "string",
+    required: required.has(name),
+    description: plain(v.description),
+    enum: v.enum,
+  }));
+}
+
+/** Coerce to what the schema says. Sending "1" where an integer is
+ *  expected is a 400 that reads like a permissions problem. */
+function coerce(value: string, type: string): unknown {
+  if (type === "integer" || type === "number") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
   }
-  return JSON.stringify(out, null, 2);
+  if (type === "boolean") return value === "true" || value === "1";
+  if (type === "array") {
+    return value
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+  return value;
 }
 
 export default function ApiRunner() {
@@ -107,6 +156,8 @@ export default function ApiRunner() {
   const [picked, setPicked] = useState<ApiEndpoint | null>(null);
   const [pathValues, setPathValues] = useState<Record<string, string>>({});
   const [queryValues, setQueryValues] = useState<Record<string, string>>({});
+  const [bodyValues, setBodyValues] = useState<Record<string, string>>({});
+  const [rawMode, setRawMode] = useState(false);
   const [bodyText, setBodyText] = useState("");
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [connId, setConnId] = useState("");
@@ -157,6 +208,7 @@ export default function ApiRunner() {
   });
 
   const params = useMemo(() => paramsOf(detail.data ?? null), [detail.data]);
+  const bodyParams = useMemo(() => bodyFields(detail.data ?? null), [detail.data]);
   const pathParams = params.filter((p) => p.in === "path");
   const queryParams = params.filter((p) => p.in === "query");
   const method = (picked?.method ?? "GET").toUpperCase();
@@ -171,7 +223,17 @@ export default function ApiRunner() {
         path: picked?.path,
         path_params: pathValues,
         query: queryValues,
-        json_body: isWrite && bodyText.trim() ? JSON.parse(bodyText) : null,
+        json_body: !isWrite
+          ? null
+          : rawMode
+            ? bodyText.trim()
+              ? JSON.parse(bodyText)
+              : null
+            : Object.fromEntries(
+                bodyParams
+                  .filter((f) => (bodyValues[f.name] ?? "").trim() !== "")
+                  .map((f) => [f.name, coerce(bodyValues[f.name]!.trim(), f.type)]),
+              ),
       }),
   });
 
@@ -179,7 +241,9 @@ export default function ApiRunner() {
     setPicked(e);
     setPathValues({});
     setQueryValues({});
+    setBodyValues({});
     setBodyText("");
+    setRawMode(false);
     setBodyError(null);
     setArmed(false);
     run.reset();
@@ -187,7 +251,16 @@ export default function ApiRunner() {
 
   function onRun() {
     setBodyError(null);
-    if (isWrite && bodyText.trim()) {
+    const missingBody = bodyParams.filter(
+      (f) => f.required && !(bodyValues[f.name] ?? "").trim(),
+    );
+    if (isWrite && !rawMode && missingBody.length > 0) {
+      setBodyError(
+        `Required: ${missingBody.map((f) => f.name).join(", ")}`,
+      );
+      return;
+    }
+    if (isWrite && rawMode && bodyText.trim()) {
       try {
         JSON.parse(bodyText);
       } catch (e) {
@@ -354,24 +427,104 @@ export default function ApiRunner() {
               </Field>
             ))}
 
-            {isWrite && (
+            {isWrite && bodyParams.length > 0 && !rawMode && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500">
+                    Body
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Seed the editor from whatever is filled in, so
+                      // switching to raw is a continuation rather than
+                      // starting over.
+                      setBodyText(
+                        JSON.stringify(
+                          Object.fromEntries(
+                            bodyParams
+                              .filter((f) => (bodyValues[f.name] ?? "").trim() !== "")
+                              .map((f) => [
+                                f.name,
+                                coerce(bodyValues[f.name]!.trim(), f.type),
+                              ]),
+                          ),
+                          null,
+                          2,
+                        ),
+                      );
+                      setRawMode(true);
+                    }}
+                    className="text-[11px] text-sky-400 hover:text-sky-300"
+                  >
+                    edit as JSON
+                  </button>
+                </div>
+                {bodyParams.map((f) => (
+                  <label key={f.name} className="block">
+                    <div className="text-xs text-slate-300">
+                      {f.name}
+                      {f.required && <span className="text-rose-400 ml-0.5">*</span>}
+                      <span className="text-slate-600 font-mono ml-1.5 text-[10px]">
+                        {f.type}
+                      </span>
+                    </div>
+                    {f.enum ? (
+                      <select
+                        value={bodyValues[f.name] ?? ""}
+                        onChange={(e) =>
+                          setBodyValues({ ...bodyValues, [f.name]: e.target.value })
+                        }
+                        className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm mt-0.5"
+                      >
+                        <option value="">— unset —</option>
+                        {f.enum.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={bodyValues[f.name] ?? ""}
+                        onChange={(e) =>
+                          setBodyValues({ ...bodyValues, [f.name]: e.target.value })
+                        }
+                        placeholder={f.type}
+                        className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono mt-0.5"
+                      />
+                    )}
+                    {f.description && (
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {f.description}
+                      </div>
+                    )}
+                  </label>
+                ))}
+                {bodyError && (
+                  <div className="text-[11px] text-rose-300">{bodyError}</div>
+                )}
+              </div>
+            )}
+
+            {isWrite && (bodyParams.length === 0 || rawMode) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-slate-300">Body</span>
-                  {bodyExample(detail.data ?? null) && !bodyText && (
+                  {bodyParams.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => setBodyText(bodyExample(detail.data ?? null))}
+                      onClick={() => setRawMode(false)}
                       className="text-[11px] text-sky-400 hover:text-sky-300"
                     >
-                      fill from schema
+                      back to fields
                     </button>
                   )}
                 </div>
                 <textarea
                   value={bodyText}
                   onChange={(e) => setBodyText(e.target.value)}
-                  rows={7}
+                  rows={8}
                   spellCheck={false}
                   placeholder="{ }"
                   className="w-full px-2 py-1.5 rounded bg-black/30 border border-white/15 text-xs font-mono resize-y"
@@ -505,6 +658,11 @@ function Field({
         )}
       </div>
       {children}
+      {p.description && (
+        <div className="text-[11px] text-slate-500 mt-0.5">
+          {plain(p.description)}
+        </div>
+      )}
     </label>
   );
 }
