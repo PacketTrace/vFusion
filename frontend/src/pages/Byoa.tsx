@@ -531,8 +531,8 @@ export default function Byoa() {
     }
     if (!verkadaConnId) return "Pick a Verkada connection.";
     if (!cameraId.trim()) return "Pick a camera.";
-    if ((mode === "historical" || mode === "audio") && !startEpoch)
-      return `Pick a start time for ${mode} mode.`;
+    if (mode === "historical" && !startEpoch)
+      return "Pick a start time for historical mode.";
     if (postToHelix && !helixEventTypeUid)
       return "Pick a Helix event type or turn off 'Post to Helix'.";
     if (postToHelix && !helixAttribute)
@@ -567,10 +567,15 @@ export default function Byoa() {
         prompt,
         model,
       };
-      if (mode === "historical" || mode === "audio") {
+      if (mode === "historical") {
         body.start_epoch = startEpoch;
         body.duration_sec = durationSec;
         body.pre_roll_sec = preRollSec;
+      }
+      if (mode === "audio") {
+        // No start time and no pre-roll: the recording runs forward from
+        // now, so there is nothing behind it to reach back into.
+        body.duration_sec = durationSec;
       }
       if (postToHelix) {
         body.post_to_helix = true;
@@ -958,8 +963,8 @@ export default function Byoa() {
           Try it on something real
         </div>
         <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
-          One run against live, historical or uploaded footage, so you can see
-          what comes back before wiring it into a flow.
+          One run against live, historical, audio or uploaded footage, so you
+          can see what comes back before wiring it into a flow.
         </p>
 
         {/* Connections collapse to a line. They are plumbing — set once,
@@ -1170,7 +1175,7 @@ export default function Byoa() {
                 active={mode === "audio"}
                 onClick={() => setMode("audio")}
               >
-                Audio
+                Audio (live)
               </ModeBtn>
             </div>
           </Field>
@@ -1208,7 +1213,7 @@ export default function Byoa() {
           </Field>
         </Row>
 
-        {(mode === "historical" || mode === "audio") && (
+        {mode === "historical" && (
           <>
             <Field label="Start time" required>
               <EpochPicker value={startEpoch} onChange={setStartEpoch} />
@@ -1216,11 +1221,7 @@ export default function Byoa() {
             <Row>
               <Field
                 label="Duration (sec)"
-                help={
-                  mode === "audio"
-                    ? "How long to listen for. Audio bills at roughly 32 tokens/sec — about an eighth of video, so a longer window is cheap."
-                    : "How long the clip is. Gemini bills per second of video."
-                }
+                help="How long the clip is. Gemini bills per second of video."
               >
                 <input
                   type="number"
@@ -1233,11 +1234,7 @@ export default function Byoa() {
               </Field>
               <Field
                 label="Pre-roll (sec)"
-                help={
-                  mode === "audio"
-                    ? "Starts this many seconds early, so a sentence already underway isn\u2019t clipped at the front."
-                    : "Clip starts this many seconds before start time."
-                }
+                help="Clip starts this many seconds before start time."
               >
                 <input
                   type="number"
@@ -1250,6 +1247,23 @@ export default function Byoa() {
               </Field>
             </Row>
           </>
+        )}
+
+        {mode === "audio" && (
+          <Field
+            label="Listen for (sec)"
+            help="Recorded live from the camera, so this takes that long in real time. Audio bills at roughly 32 tokens/sec — about an eighth of video for the same span."
+          >
+            <input
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={durationSec}
+              onChange={(e) => setDurationSec(Number(e.target.value) || 10)}
+              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+            />
+          </Field>
         )}
         </>
         )}

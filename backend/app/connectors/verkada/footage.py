@@ -108,7 +108,7 @@ async def grab_video_clip(
     api_key: str,
     org_id: str,
     camera_id: str,
-    start_epoch: int,
+    start_epoch: int | None,
     duration_sec: float,
     out_path: Path,
     buffer_sec: float = 0.0,
@@ -130,6 +130,12 @@ async def grab_video_clip(
                 the audio analytic extracts rather than sending the MP4.
     ``"both"``  both streams, for when a prompt needs to see and hear.
 
+    ``start_epoch`` of ``None`` records from the LIVE edge instead of
+    the archive: the same stream URL with no time window, which is what
+    the live still frame already uses. It costs ``duration_sec`` of real
+    wall-clock, because the footage does not exist yet -- ffmpeg sits
+    there and captures it as it arrives.
+
     A camera whose microphone is off, or whose footage simply carries no
     audio track, makes ffmpeg exit non-zero with "Output file does not
     contain any stream" under ``"only"``. That is deliberate: an empty
@@ -144,7 +150,10 @@ async def grab_video_clip(
     ffmpeg stderr lines and retry notes are forwarded to it as log messages
     for the run-events panel."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    end_epoch = start_epoch + int(max(2, buffer_sec + duration_sec + 2))
+    live = start_epoch is None
+    end_epoch = (
+        None if live else start_epoch + int(max(2, buffer_sec + duration_sec + 2))
+    )
     base = normalize_base_url(base_url)
 
     last_err: str | None = None
@@ -163,9 +172,9 @@ async def grab_video_clip(
             f"&type=stream"
             f"&codec=hevc"
             f"&transcode=false"
-            f"&start_time={start_epoch}"
-            f"&end_time={end_epoch}"
         )
+        if not live:
+            url += f"&start_time={start_epoch}&end_time={end_epoch}"
         video_args = [
             "-c:v", "libx264",
             "-preset", "veryfast",
@@ -185,7 +194,9 @@ async def grab_video_clip(
             "ffmpeg", "-y",
             "-loglevel", "error",
             "-i", url,
-            "-ss", str(max(0.0, buffer_sec)),
+            # Seeking into a live stream has nothing to seek past — the
+            # only footage there is arrives from now on.
+            *([] if live else ["-ss", str(max(0.0, buffer_sec))]),
             "-t", str(duration_sec),
             *codec_args,
             "-movflags", "+faststart",
@@ -197,7 +208,15 @@ async def grab_video_clip(
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            _, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            # A live capture cannot finish sooner than the span it is
+            # recording, so the timeout has to clear it with room to
+            # spare or every live grab dies at the deadline.
+            deadline = (
+                max(timeout_sec, duration_sec + 30) if live else timeout_sec
+            )
+            _, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=deadline
+            )
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()

@@ -431,6 +431,8 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             "model": params.get("model"),
         }
         if mode in ("historical", "audio"):
+            # Absent for a live audio capture, which is what a blank
+            # start_epoch means to the action.
             config["start_epoch"] = params.get("start_epoch")
             config["duration_sec"] = params.get("duration_sec", 10)
             config["pre_roll_sec"] = params.get("pre_roll_sec", 2)

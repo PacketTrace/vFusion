@@ -146,10 +146,10 @@ SCHEMA: dict[str, Any] = {
             "name": "start_epoch",
             "label": "Start time (unix seconds)",
             "type": "text",
-            "required": True,
+            "required": False,
             "group": "advanced",
             "default_template": "{{ trigger.data.created }}",
-            "help": "Auto-fills from {{ trigger.data.created }} when present.",
+            "help": "Auto-fills from {{ trigger.data.created }} when present. Leave blank to record live from now instead — which takes the clip duration in real time.",
         },
         {
             "name": "model",
@@ -232,6 +232,9 @@ SAMPLE_OUTPUT: dict[str, Any] = {
     "char_count": 120,
     "model_used": "gemini-2.5-flash",
     "audio_path": "/app/data/clips/abc.m4a",
+    # True when recorded from the live edge rather than pulled from the
+    # archive — i.e. no start time was given.
+    "live": False,
     "duration_sec": 15,
     "file_size": 123456,
     "started_at_epoch": 1700000000,
@@ -295,13 +298,14 @@ async def run(
 
     if not isinstance(camera_id, str) or not camera_id:
         raise ValueError("camera_id is required (string)")
+    # No start time means record from the live edge. A webhook flow has
+    # a timestamp and should use it; a one-off "what can this camera
+    # hear right now" has nothing to look back at, and asking someone to
+    # invent a start time for it is asking the wrong question.
     start_epoch = _coerce_int(start_epoch_raw, 0)
-    if start_epoch <= 0:
-        raise ValueError(
-            f"start_epoch must be positive unix-seconds, got {start_epoch_raw!r}"
-        )
-    grab_start_epoch = max(0, start_epoch - int(pre_roll_sec))
-    grab_duration = duration_sec + pre_roll_sec
+    live = start_epoch <= 0
+    grab_start_epoch = None if live else max(0, start_epoch - int(pre_roll_sec))
+    grab_duration = duration_sec if live else duration_sec + pre_roll_sec
 
     prompt = resolve_deep(config.get("prompt"), ctx) or _DEFAULT_PROMPT
     if not isinstance(prompt, str):
@@ -325,7 +329,10 @@ async def run(
     progress = ctx.get("_progress")
 
     # ---- Phase 1: optional wait ----
-    wait_until = start_epoch + int(delay_sec)
+    # Only meaningful against the archive; there is nothing to wait for
+    # at the live edge, where the delay would just push the recording
+    # later for no gain.
+    wait_until = 0 if live else start_epoch + int(delay_sec)
     wait_remaining = wait_until - int(time.time())
     if wait_remaining > 0:
         if progress:
@@ -344,8 +351,13 @@ async def run(
         await progress.phase(
             "ffmpeg_extract_audio",
             "running",
-            f"extracting {grab_duration:.0f}s of audio from epoch "
-            f"{grab_start_epoch} → {audio_path.name}",
+            (
+                f"recording {grab_duration:.0f}s of live audio → "
+                f"{audio_path.name} (takes {grab_duration:.0f}s of real time)"
+                if live
+                else f"extracting {grab_duration:.0f}s of audio from epoch "
+                f"{grab_start_epoch} → {audio_path.name}"
+            ),
         )
     grab_started = time.time()
     try:
@@ -418,7 +430,8 @@ async def run(
         "audio_path": str(audio_path),
         "duration_sec": duration_sec,
         "file_size": size,
-        "started_at_epoch": start_epoch,
+        "live": live,
+        "started_at_epoch": start_epoch or None,
         "tokens_in": result["tokens_in"],
         "tokens_out": result["tokens_out"],
     }
