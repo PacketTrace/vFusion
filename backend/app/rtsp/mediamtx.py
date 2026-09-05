@@ -115,8 +115,11 @@ authInternalUsers:
   # everything to everyone; leaving it out is the point of this file.
 
 paths:
-  # Main and sub are published by the same encoder process, so they are
-  # always both present or both absent.
+  # The sub path exists only in ONVIF mode, because only ONVIF can
+  # describe a second profile. Switching to plain RTSP removes it — and
+  # a Command Connector added over ONVIF keeps asking for it, is refused
+  # every second, and goes offline. If you are reading this file because
+  # a camera dropped, that is the first thing to check.
   {stream}:
     source: publisher{sub_path}
 """

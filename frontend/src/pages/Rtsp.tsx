@@ -99,6 +99,11 @@ export default function Rtsp() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [toggleError, setToggleError] = useState<string | null>(null);
+  // Switching to plain RTSP drops the sub path from the server config,
+  // and a Command Connector added over ONVIF pulls both. It goes offline
+  // within seconds and needs re-adding — which is not something to learn
+  // from the camera list a day later.
+  const [confirmRtsp, setConfirmRtsp] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<QueueItem | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -216,6 +221,18 @@ export default function Rtsp() {
 
   return (
     <div className="flex flex-col gap-4">
+      <ConfirmDialog
+        open={confirmRtsp}
+        title="Switch to plain RTSP?"
+        body="Plain RTSP publishes one path. The sub stream goes away, and a Command Connector added over ONVIF pulls both — it will be refused, go offline within seconds, and have to be re-added after you switch back. Nothing warns you in Command; the camera simply stops."
+        confirmLabel="Switch anyway"
+        busy={setMode.isPending}
+        onCancel={() => setConfirmRtsp(false)}
+        onConfirm={() => {
+          setConfirmRtsp(false);
+          setMode.mutate("rtsp");
+        }}
+      />
       <ConfirmDialog
         open={!!pendingDelete}
         title={`Delete "${pendingDelete?.name ?? ""}"?`}
@@ -366,7 +383,16 @@ export default function Rtsp() {
                 active={s.mode === "rtsp"}
                 title="Plain RTSP"
                 blurb="One stream and a URL. Half the encoding, but no Advanced Analytics — for anything that cannot speak ONVIF."
-                onClick={() => setMode.mutate("rtsp")}
+                onClick={() => {
+                  // Only worth interrupting when there is something to
+                  // break: switching before anything has connected costs
+                  // nothing and should not need a dialog.
+                  if (s.mode === "onvif" && s.pump.publishing) {
+                    setConfirmRtsp(true);
+                  } else {
+                    setMode.mutate("rtsp");
+                  }
+                }}
                 busy={setMode.isPending}
               />
             </div>
