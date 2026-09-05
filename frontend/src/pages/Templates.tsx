@@ -16,6 +16,7 @@ import {
   BuiltinAnalytic,
   SavedAnalytic,
 } from "../lib/api";
+import AnalyticEditor from "../components/AnalyticEditor";
 import ConfirmDialog from "../components/ConfirmDialog";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import TemplateSummaryStrip from "../components/TemplateSummaryStrip";
@@ -127,6 +128,13 @@ function Section({
 
 function AnalyticsPanel() {
   const navigate = useNavigate();
+  // Editing happens here rather than on the bench. Changing a name or a
+  // line of prompt should not cost you the list you were working
+  // through and the trip back to it.
+  const [editing, setEditing] = useState<SavedAnalytic | null>(null);
+  const [editingBuiltin, setEditingBuiltin] = useState<BuiltinAnalytic | null>(
+    null,
+  );
   const qc = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState<SavedAnalytic | null>(null);
 
@@ -156,6 +164,26 @@ function AnalyticsPanel() {
 
   return (
     <>
+      {editing && (
+        <AnalyticEditor
+          analytic={editing}
+          onClose={() => setEditing(null)}
+          onOpenInBuild={() =>
+            navigate(`/workbench?tab=analytics&analytic=${editing.id}`)
+          }
+        />
+      )}
+      {editingBuiltin && (
+        <AnalyticEditor
+          builtin={editingBuiltin}
+          onClose={() => setEditingBuiltin(null)}
+          onOpenInBuild={() =>
+            navigate(
+              `/workbench?tab=analytics&builtin=${encodeURIComponent(editingBuiltin.name)}`,
+            )
+          }
+        />
+      )}
       <ConfirmDialog
         open={!!pendingDelete}
         title={`Delete "${pendingDelete?.name ?? ""}"?`}
@@ -194,14 +222,10 @@ function AnalyticsPanel() {
                     save, and the copy lands below as your own. */}
                 <button
                   type="button"
-                  onClick={() =>
-                    navigate(
-                      `/workbench?tab=byoa&builtin=${encodeURIComponent(b.name)}`,
-                    )
-                  }
+                  onClick={() => setEditingBuiltin(b)}
                   className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
                 >
-                  Open in Build
+                  Open
                 </button>
               </div>
             ))}
@@ -268,10 +292,10 @@ function AnalyticsPanel() {
             </p>
             <button
               type="button"
-              onClick={() => navigate(`/workbench?tab=byoa&analytic=${a.id}`)}
+              onClick={() => setEditing(a)}
               className="text-xs px-2 py-1 rounded border border-white/15 text-slate-200 hover:border-sky-600 self-start mt-auto"
             >
-              Open in Build
+              Open
             </button>
           </div>
         ))}
