@@ -107,19 +107,7 @@ export default function LiveDemoPanel({
   if (!eventClip && videos.length > 0) blockers.push("Pick a clip below.");
 
   return (
-    <div className="rounded-lg border border-white/15 bg-white/5 p-4 space-y-3">
-      <div>
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
-          Live demo with footage
-        </div>
-        <p className="text-xs text-slate-400">
-          Plays a clip on the virtual camera and stamps a Helix event inside
-          the window it played, so clicking the event in Command shows the
-          footage. It runs forward in real time — footage cannot be
-          backfilled, so this is slower than seeding history and the events
-          have video behind them.
-        </p>
-      </div>
+    <div className="space-y-3">
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="block sm:col-span-2">

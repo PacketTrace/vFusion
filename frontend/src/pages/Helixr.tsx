@@ -263,6 +263,10 @@ function DemoPanel({ connId }: { connId: string }) {
   // one often enough to keep, and not often enough to be stuck with.
   const [typeName, setTypeName] = useState("");
   const [refinement, setRefinement] = useState("");
+  // Two ways to put events on a timeline, and they are alternatives
+  // rather than steps. Presented as two cards with two buttons they read
+  // as a sequence nobody could order correctly.
+  const [fillMode, setFillMode] = useState<"history" | "live">("history");
   const [err, setErr] = useState<string | null>(null);
   if (!geminiId && geminiConns.length > 0 && geminiConns[0]) {
     setGeminiId(geminiConns[0].id);
@@ -573,9 +577,13 @@ function DemoPanel({ connId }: { connId: string }) {
 
       {draft && (
         <Card>
-          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">
-            Fill a timeline
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+            Where the events go
           </div>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Both ways of filling a timeline write into this camera and this
+            event type.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <div className="text-xs text-slate-300 mb-1">Camera</div>
@@ -645,7 +653,49 @@ function DemoPanel({ connId }: { connId: string }) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
+              How to fill it
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(
+                [
+                  [
+                    "history",
+                    "A week of history, now",
+                    "Posts every event in a few seconds, spread across the past week. There is no footage behind them — the camera was not streaming then. Best for showing what a busy timeline looks like.",
+                  ],
+                  [
+                    "live",
+                    "Live, with footage",
+                    "Plays a clip and stamps an event inside it, so clicking one in Command shows the transaction. Runs forward in real time, so it is slower and produces fewer events. Best for proving data and video line up.",
+                  ],
+                ] as const
+              ).map(([key, title, blurb]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFillMode(key)}
+                  className={`text-left rounded-lg border p-3 transition-colors ${
+                    fillMode === key
+                      ? "border-sky-600 bg-sky-900/25"
+                      : "border-white/10 bg-white/[0.02] hover:bg-white/5"
+                  }`}
+                >
+                  <div className="text-sm text-slate-100">{title}</div>
+                  <div className="text-[11px] text-slate-400 mt-1">{blurb}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              They are alternatives, not steps — but nothing stops you doing
+              both against the same event type.
+            </p>
+          </div>
+
+          {fillMode === "history" && (
+          <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
             <label className="block">
               <div className="text-xs text-slate-300 mb-1">How many</div>
               <input
@@ -746,16 +796,20 @@ function DemoPanel({ connId }: { connId: string }) {
               Nothing posted. {seed.data.errors[0] ?? "The API rejected it."}
             </div>
           )}
-        </Card>
-      )}
+          </>
+          )}
 
-      {draft && (
-        <LiveDemoPanel
-          connId={connId}
-          cameraId={cameraId}
-          eventTypeUid={typeUid}
-          spec={(draft.spec ?? null) as Record<string, unknown> | null}
-        />
+          {fillMode === "live" && (
+            <div className="mt-4">
+              <LiveDemoPanel
+                connId={connId}
+                cameraId={cameraId}
+                eventTypeUid={typeUid}
+                spec={(draft.spec ?? null) as Record<string, unknown> | null}
+              />
+            </div>
+          )}
+        </Card>
       )}
 
       {(runs.data ?? []).length > 0 && (
