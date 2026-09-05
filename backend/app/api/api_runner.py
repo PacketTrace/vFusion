@@ -132,7 +132,8 @@ async def get_token(
     client = VerkadaClient(api_key=api_key, base_url=secret.get("region") or None)
     started = time.monotonic()
     try:
-        token = await client.login()
+        body = await client.login_raw()
+        token = str(body.get("token") or "")
     except Exception as e:  # noqa: BLE001
         return {
             "ok": False,
@@ -150,6 +151,16 @@ async def get_token(
         # exchange; the UI keeps it masked until asked.
         "token": token,
         "connection": conn.name,
+        "issued_at": time.time(),
+        # Whatever the response carries about lifetime, verbatim and
+        # unnamed on our side. Verkada documents these tokens as
+        # short-lived without the API always saying how short, so the
+        # UI counts down when there is something to count and says how
+        # old the token is when there is not — rather than inventing a
+        # number that would be wrong on the day it changes.
+        "expires_in": body.get("expires_in"),
+        "expires_at": body.get("expires_at") or body.get("expiry"),
+        "raw": {k: v for k, v in body.items() if k != "token"},
     }
 
 

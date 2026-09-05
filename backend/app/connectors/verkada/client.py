@@ -125,6 +125,29 @@ class VerkadaClient:
         self._token = token
         return token
 
+    async def login_raw(self) -> dict:
+        """The whole /token response, not just the token.
+
+        ``login`` keeps only the token because that is all a caller
+        needs. The API runner needs the rest: whatever expiry field
+        Verkada does or does not send is the difference between a real
+        countdown and a guessed one, and it cannot be read from a
+        string.
+        """
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            res = await client.post(
+                f"{self.base_url}/token",
+                headers={"x-api-key": self.api_key, "accept": "application/json"},
+            )
+        if res.status_code >= 400:
+            raise _build_error("POST", "/token", res)
+        body = res.json()
+        token = body.get("token") if isinstance(body, dict) else None
+        if not isinstance(token, str) or not token:
+            raise VerkadaApiError(f"login returned no token: {body!r}")
+        self._token = token
+        return body if isinstance(body, dict) else {"token": token}
+
     async def _ensure_token(self) -> str:
         if self._token is None:
             await self.login()

@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import CameraIdInput from "../components/CameraIdInput";
+import DoorIdInput from "../components/DoorIdInput";
+import EpochInput from "../components/EpochInput";
 import JsonView from "../components/JsonView";
 import { copyToClipboard } from "../lib/clipboard";
 import {
@@ -45,6 +47,65 @@ interface TokenResult {
   token?: string;
   connection?: string;
   error?: string;
+  issued_at?: number;
+  expires_in?: number | null;
+  expires_at?: number | string | null;
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * How long this token has left, or how old it is.
+ *
+ * Counts down when the response said when it expires, and counts up
+ * when it did not. The second is not a worse version of the first — it
+ * is the honest answer to "how stale is this", and it beats a
+ * hardcoded thirty minutes that is wrong the day Verkada changes it.
+ */
+function TokenAge({ auth }: { auth: TokenResult }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const issued = auth.issued_at ?? now;
+  const expiresAt =
+    typeof auth.expires_at === "number"
+      ? auth.expires_at
+      : typeof auth.expires_at === "string"
+        ? Date.parse(auth.expires_at) / 1000
+        : auth.expires_in
+          ? issued + auth.expires_in
+          : null;
+
+  if (expiresAt && Number.isFinite(expiresAt)) {
+    const left = Math.max(0, Math.round(expiresAt - now));
+    const mm = Math.floor(left / 60);
+    const ss = String(left % 60).padStart(2, "0");
+    return (
+      <span
+        className={
+          left === 0
+            ? "text-rose-300"
+            : left < 120
+              ? "text-amber-300"
+              : "text-slate-500"
+        }
+      >
+        {left === 0 ? "expired" : `expires in ${mm}:${ss}`}
+      </span>
+    );
+  }
+
+  const age = Math.max(0, Math.round(now - issued));
+  return (
+    <span
+      className={age > 1500 ? "text-amber-300" : "text-slate-500"}
+      title="Verkada did not say when this expires, so this is how long ago it was issued. If a call starts returning 401, get a new one."
+    >
+      issued {age < 60 ? `${age}s` : `${Math.floor(age / 60)}m ${age % 60}s`} ago
+    </span>
+  );
 }
 
 interface Param {
@@ -111,6 +172,38 @@ function shortName(e: { path: string }): string {
 function isCameraField(name: string): boolean {
   const n = name.toLowerCase();
   return n === "camera_id" || n.endsWith("_camera_id") || n === "cameraid";
+}
+
+/** Whether a field names a single door. Same reasoning as cameras. */
+function isDoorField(name: string): boolean {
+  const n = name.toLowerCase();
+  return n === "door_id" || n.endsWith("_door_id") || n === "doorid";
+}
+
+/**
+ * Whether a field is a moment in time.
+ *
+ * Requires an integer type as well as the name, which is what keeps
+ * cloud backup's time_to_preserve and upload_timeslot out — they are
+ * called times, and they are comma-separated strings of seconds past
+ * midnight, so a date picker would be actively wrong on them.
+ */
+function isEpochField(name: string, type: string): boolean {
+  if (type !== "integer" && type !== "number") return false;
+  const n = name.toLowerCase();
+  return (
+    n.endsWith("_time") ||
+    n.endsWith("_ms") ||
+    n.endsWith("_epoch") ||
+    n === "epoch" ||
+    n === "timestamp"
+  );
+}
+
+/** Epoch milliseconds rather than seconds. A thousandfold error lands
+ *  in 1970 and comes back empty rather than as an error. */
+function isMillis(name: string): boolean {
+  return name.toLowerCase().endsWith("_ms");
 }
 
 function paramsOf(detail: ApiEndpointDetail | null): Param[] {
@@ -480,6 +573,7 @@ export default function ApiRunner() {
                 <span className="text-slate-500">
                   {auth.data.elapsed_ms} ms · {auth.data.connection}
                 </span>
+                <TokenAge auth={auth.data} />
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <code className="text-[11px] text-slate-300 bg-black/30 border border-white/10 rounded px-2 py-1 break-all max-w-full">
@@ -581,6 +675,13 @@ export default function ApiRunner() {
                       setPathValues({ ...pathValues, [p.name]: v })
                     }
                   />
+                ) : isDoorField(p.name) ? (
+                  <DoorIdInput
+                    value={pathValues[p.name] ?? ""}
+                    onChange={(v) =>
+                      setPathValues({ ...pathValues, [p.name]: v })
+                    }
+                  />
                 ) : (
                   <input
                     value={pathValues[p.name] ?? ""}
@@ -601,6 +702,21 @@ export default function ApiRunner() {
                     onChange={(v) =>
                       setQueryValues({ ...queryValues, [p.name]: v })
                     }
+                  />
+                ) : isDoorField(p.name) ? (
+                  <DoorIdInput
+                    value={queryValues[p.name] ?? ""}
+                    onChange={(v) =>
+                      setQueryValues({ ...queryValues, [p.name]: v })
+                    }
+                  />
+                ) : isEpochField(p.name, p.schema?.type ?? "") ? (
+                  <EpochInput
+                    value={queryValues[p.name] ?? ""}
+                    onChange={(v) =>
+                      setQueryValues({ ...queryValues, [p.name]: v })
+                    }
+                    milliseconds={isMillis(p.name)}
                   />
                 ) : p.schema?.enum ? (
                   <select
@@ -678,6 +794,21 @@ export default function ApiRunner() {
                         onChange={(v) =>
                           setBodyValues({ ...bodyValues, [f.name]: v })
                         }
+                      />
+                    ) : isDoorField(f.name) ? (
+                      <DoorIdInput
+                        value={bodyValues[f.name] ?? ""}
+                        onChange={(v) =>
+                          setBodyValues({ ...bodyValues, [f.name]: v })
+                        }
+                      />
+                    ) : isEpochField(f.name, f.type) ? (
+                      <EpochInput
+                        value={bodyValues[f.name] ?? ""}
+                        onChange={(v) =>
+                          setBodyValues({ ...bodyValues, [f.name]: v })
+                        }
+                        milliseconds={isMillis(f.name)}
                       />
                     ) : f.enum ? (
                       <select
