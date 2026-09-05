@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import Collapse from "../components/Collapse";
@@ -172,7 +173,17 @@ export default function Mcp() {
     retry: false,
   });
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const tools = catalog.data?.tools ?? [];
+  // What the server is now, and what it has done since we started
+  // watching, are different questions. Squeezed into one column the
+  // second was a truncated list beside two others.
+  const tab = searchParams.get("tab") === "history" ? "history" : "server";
+  const setTab = (next: string) => {
+    const p = new URLSearchParams(searchParams);
+    p.set("tab", next);
+    setSearchParams(p, { replace: true });
+  };
 
   const counts = useMemo(() => {
     const c = { read: 0, write: 0, destructive: 0 };
@@ -231,13 +242,35 @@ export default function Mcp() {
         </button>
       </div>
 
+      <div className="mt-4 flex items-center gap-1 border-b border-white/10">
+        {[
+          { key: "server", label: "Server" },
+          { key: "history", label: "History" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+              tab === t.key
+                ? "border-sky-500 text-white"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {catalog.isError && (
         <div className="mt-6 rounded-lg border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-200">
           {(catalog.error as Error).message}
         </div>
       )}
 
-      {data && (
+      {data && tab === "history" && <ChangeHistory data={data} tools={tools} />}
+
+      {data && tab === "server" && (
         <div className="mt-5 space-y-2">
           <Collapse
             defaultOpen
@@ -317,31 +350,9 @@ export default function Mcp() {
                     {counts.destructive} destructive
                   </span>
                 </Fact>
-                {/* A tool disappearing off a server you depend on is the
-                    most consequential thing this page can tell you, and
-                    it was the one thing it could not: removals were
-                    recorded to disk and read by nothing, so the only
-                    trace was the total quietly dropping by one. */}
-                {(data.removed_tools ?? []).length > 0 && (
-                  <Fact label="Removed">
-                    <div className="flex flex-col gap-0.5">
-                      {(data.removed_tools ?? []).slice(0, 8).map((r) => (
-                        <span key={r.name} className="text-rose-300/90">
-                          <span className="font-mono">{r.name}</span>
-                          <span className="text-slate-500">
-                            {" "}
-                            — gone since {fmtDate(r.removed_at) ?? "?"}
-                          </span>
-                        </span>
-                      ))}
-                      {(data.removed_tools ?? []).length > 8 && (
-                        <span className="text-slate-500">
-                          and {(data.removed_tools ?? []).length - 8} more
-                        </span>
-                      )}
-                    </div>
-                  </Fact>
-                )}
+                {/* Removals moved to the History tab, where the full
+                    list fits and does not have to be truncated to eight
+                    beside two other columns. */}
                 {/* Zero destructive is not a finding about the tools, it
                     is a finding about the annotations — and read as
                     reassurance it is exactly backwards. A server that
@@ -370,31 +381,6 @@ export default function Mcp() {
                 </Fact>
               </Group>
 
-              <Group title="Changes">
-                <Fact
-                  label="Last updated"
-                  hint={
-                    data.last_changed_at
-                      ? "a tool was added, removed or edited"
-                      : "nothing has moved since we started watching"
-                  }
-                  title="MCP publishes no timestamps, so this comes from vFusion's own record of the catalog. It can only reflect changes since we first looked."
-                >
-                  {fmtDate(data.last_changed_at) ?? "no changes yet"}
-                </Fact>
-                <Fact label="New in last 30 days">
-                  {data.new_tools_30d}
-                  {data.new_tools_30d === 0 && (
-                    <span className="text-slate-500"> tools</span>
-                  )}
-                </Fact>
-                <Fact
-                  label="Watching since"
-                  hint={`${data.tracked_tools} tools tracked`}
-                >
-                  {fmtDate(data.history_since) ?? "—"}
-                </Fact>
-              </Group>
             </div>
           </Collapse>
 
@@ -604,6 +590,123 @@ export default function Mcp() {
           </Collapse>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * What has changed since vFusion started watching.
+ *
+ * MCP publishes no timestamps and no changelog, so all of this is
+ * vFusion's own observation: tools it has seen appear, and tools that
+ * stopped being offered. It can only speak for the window it has been
+ * looking at, which is why "watching since" is stated rather than
+ * implied.
+ */
+function ChangeHistory({
+  data,
+  tools,
+}: {
+  data: Catalog;
+  tools: McpTool[];
+}) {
+  const removed = data.removed_tools ?? [];
+  const added = tools
+    .filter((t) => isNew30d(t))
+    .sort((a, b) =>
+      (b._first_seen_at ?? "").localeCompare(a._first_seen_at ?? ""),
+    );
+
+  return (
+    <div className="mt-5 space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Group title="Watching since">
+          <Fact label="First look" hint={`${data.tracked_tools} tools tracked`}>
+            {fmtDate(data.history_since) ?? "—"}
+          </Fact>
+        </Group>
+        <Group title="Last change">
+          <Fact
+            label="Anything moved"
+            hint={
+              data.last_changed_at
+                ? "a tool was added, removed or edited"
+                : "nothing has moved since we started watching"
+            }
+          >
+            {fmtDate(data.last_changed_at) ?? "no changes yet"}
+          </Fact>
+        </Group>
+        <Group title="Recent">
+          <Fact label="New in last 30 days">{data.new_tools_30d}</Fact>
+        </Group>
+      </div>
+
+      <Collapse
+        defaultOpen
+        title="Removed"
+        summary={
+          removed.length === 0
+            ? "nothing has been withdrawn"
+            : `${removed.length} tool${removed.length === 1 ? "" : "s"} the server no longer offers`
+        }
+      >
+        {removed.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Every tool seen since {fmtDate(data.history_since) ?? "we started"}{" "}
+            is still offered.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {removed.map((r) => (
+              <div key={r.name} className="flex flex-wrap gap-x-3 text-sm">
+                <code className="text-rose-300">{r.name}</code>
+                <span className="text-slate-500">
+                  gone since {fmtDate(r.removed_at) ?? "?"}
+                  {r.first_seen
+                    ? ` · first seen ${fmtDate(r.first_seen)}`
+                    : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Collapse>
+
+      <Collapse
+        defaultOpen
+        title="Added"
+        summary={
+          added.length === 0
+            ? "nothing new in the last 30 days"
+            : `${added.length} tool${added.length === 1 ? "" : "s"} first seen in the last 30 days`
+        }
+      >
+        {added.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No tool has appeared in the last 30 days.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {added.map((t) => (
+              <div key={t.name} className="flex flex-wrap gap-x-3 text-sm">
+                <code className="text-emerald-300">{t.name}</code>
+                <span className="text-slate-500">
+                  added {fmtDate(t._first_seen_at) ?? "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Collapse>
+
+      <p className="text-[11px] text-slate-500">
+        MCP publishes no changelog, so this is vFusion&rsquo;s own record from
+        checking the catalog on a schedule. It cannot show anything that
+        changed before{" "}
+        {fmtDate(data.history_since) ?? "it started watching"}.
+      </p>
     </div>
   );
 }

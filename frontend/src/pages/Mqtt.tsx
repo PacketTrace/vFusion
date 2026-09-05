@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -87,6 +88,7 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function Mqtt() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const cameras = useCameras();
   const [cameraId, setCameraId] = useState("");
 
@@ -215,18 +217,57 @@ export default function Mqtt() {
       );
   }, [online]);
 
+  // Setting the broker up and reading what it recorded are different
+  // jobs done at different times: one is configuration you touch once,
+  // the other is the thing you come back for. Stacked in one column the
+  // second was four cards below the first.
+  const tab = searchParams.get("tab") === "history" ? "history" : "server";
+  const setTab = (next: string) => {
+    const p = new URLSearchParams(searchParams);
+    p.set("tab", next);
+    setSearchParams(p, { replace: true });
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">MQTT</h1>
         <p className="text-slate-400 text-sm mt-1 max-w-3xl">
-          Point a camera at vFusion's MQTT broker and watch what it reports.
-          Cameras publish bounding boxes for people, vehicles and animals about
-          eight times a second — this is that stream, unedited.
+          {tab === "history"
+            ? "Every object a camera tracked through frame and out again, recorded as it happened. Replay one to pull the footage it came from."
+            : "Point a camera at vFusion's MQTT broker and watch what it reports. Cameras publish bounding boxes for people, vehicles and animals about eight times a second — this is that stream, unedited."}
         </p>
+        <div className="mt-4 flex items-center gap-1 border-b border-white/10">
+          {[
+            { key: "server", label: "Server" },
+            { key: "history", label: "History" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                tab === t.key
+                  ? "border-sky-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <StatusBar status={status.data} />
+
+      {tab === "history" && (
+        <Card title="What it saw earlier">
+          <TrackHistory cameraId={cameraId} />
+        </Card>
+      )}
+
+      {tab === "server" && (
+      <>
 
       <Card title="0 · Set up the broker">
         <BrokerMode onChanged={() => status.refetch()} />
@@ -486,10 +527,7 @@ export default function Mqtt() {
 
       )}
 
-      {status.data?.mode !== "external" && (
-      <Card title="4 · What it saw earlier">
-        <TrackHistory cameraId={cameraId} />
-      </Card>
+      </>
       )}
     </div>
   );
