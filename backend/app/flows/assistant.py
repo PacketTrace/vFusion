@@ -64,6 +64,9 @@ not a request to build something.
 - If they already have a flow that does this, say which one instead.
 - If what they want is not possible, say what is possible instead, or \
 say nothing is. Do not invent a way.
+- When a flow is open, answer about that flow. "Why is this not firing?" \
+is a question about the trigger and conditions in front of you, not a \
+general one.
 
 Respond with ONLY this JSON object:
 
@@ -79,6 +82,7 @@ def build_prompt(
     messages: list[dict[str, str]],
     context_blocks: list[str],
     current_flow: dict[str, Any] | None,
+    selection: str | None = None,
 ) -> str:
     """System rules, then grounding, then the conversation."""
     parts = [SYSTEM, *context_blocks]
@@ -94,6 +98,13 @@ def build_prompt(
         parts.append(
             "=== THE FLOW CURRENTLY OPEN IN THE BUILDER ===\n"
             "Nothing yet — they have not generated or opened one."
+        )
+
+    if selection:
+        parts.append(
+            "=== WHAT THEY ARE LOOKING AT ===\n"
+            f"{selection}\n"
+            "When they say \"this\" or \"here\", they mean this."
         )
 
     # Trimmed to the most recent turns. A long thread is mostly the

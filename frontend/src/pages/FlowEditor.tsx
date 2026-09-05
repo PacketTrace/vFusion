@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+
+import FlowAssistant from "../components/FlowAssistant";
 import {
   Background,
   Connection as RFConnection,
@@ -1378,6 +1380,25 @@ function FlowEditorInner() {
                 onRemove={() => removeEdge(selectedEdge.id)}
               />
             )}
+
+            <FlowAssistant
+              currentFlow={{
+                name,
+                trigger_type: triggerType,
+                trigger_config: trigger,
+                nodes,
+                edges,
+              }}
+              selection={
+                selected.kind === "trigger"
+                  ? "The trigger"
+                  : selected.kind === "node" && selectedNode
+                    ? `${selectedNode.kind === "condition" ? "Condition" : "Action"} step named "${selectedNode.name}"`
+                    : selected.kind === "edge" && selectedEdge
+                      ? `The edge from ${selectedEdge.source} to ${selectedEdge.target}`
+                      : null
+              }
+            />
           </div>
         </aside>
       </div>

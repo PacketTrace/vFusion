@@ -39,11 +39,14 @@ const OPENERS = [
 
 export default function FlowAssistant({
   currentFlow,
+  selection,
   onUseSuggestion,
 }: {
   // Whatever is on the canvas right now — an unsaved proposal only
   // exists in the browser, so it is sent rather than looked up.
   currentFlow: unknown;
+  // A short description of what is selected, so "this" has a referent.
+  selection?: string | null;
   // Omitted where there is no builder in reach. The panel then offers
   // the description to copy instead of pretending it can hand it over.
   onUseSuggestion?: (text: string) => void;
@@ -64,6 +67,7 @@ export default function FlowAssistant({
       apiPost<AssistReply>("/api/flow-assist/chat", {
         messages: history.map((t) => ({ role: t.role, content: t.content })),
         flow: currentFlow ?? null,
+        selection: selection ?? null,
       }),
     onSuccess: (r) => {
       setMeta(r);

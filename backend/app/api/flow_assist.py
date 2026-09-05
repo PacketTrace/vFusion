@@ -46,6 +46,10 @@ class AssistRequest(BaseModel):
     # What is on the canvas, if anything. Sent by the browser rather than
     # looked up, because an unsaved draft only exists there.
     flow: dict[str, Any] | None = None
+    # What the operator is looking at right now, e.g. "the analyze step".
+    # Without it, "what does this field want?" has no referent and the
+    # answer is about some other node.
+    selection: str | None = None
     verkada_connection_id: UUID | None = None
 
 
@@ -98,6 +102,7 @@ async def chat(
         messages=[m.model_dump() for m in body.messages],
         context_blocks=blocks,
         current_flow=body.flow,
+        selection=body.selection,
     )
 
     try:
