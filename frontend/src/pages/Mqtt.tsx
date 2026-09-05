@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { API_BASE, apiDelete, apiGet, apiPost, apiPut } from "../lib/api";
-import { useCameras } from "../lib/cameras";
+import { useCameraLookup, useCameras } from "../lib/cameras";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 interface MqttStatus {
@@ -184,6 +184,7 @@ export default function Mqtt() {
 
   const live = useLiveTracks(cameraId);
 
+
   const online = useMemo(
     () =>
       (cameras.data ?? [])
@@ -191,6 +192,28 @@ export default function Mqtt() {
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")),
     [cameras.data],
   );
+
+  // Sites in alphabetical order, cameras within them likewise, with
+  // anything unsited last rather than under a blank heading.
+  const onlineBySite = useMemo(() => {
+    const groups = new Map<string, typeof online>();
+    for (const c of online) {
+      const site = c.site?.trim() || "No site";
+      if (!groups.has(site)) groups.set(site, []);
+      groups.get(site)!.push(c);
+    }
+    return [...groups.entries()]
+      .sort((a, b) =>
+        a[0] === "No site" ? 1 : b[0] === "No site" ? -1 : a[0].localeCompare(b[0]),
+      )
+      .map(
+        ([site, cams]) =>
+          [
+            site,
+            [...cams].sort((x, y) => (x.name ?? "").localeCompare(y.name ?? "")),
+          ] as const,
+      );
+  }, [online]);
 
   return (
     <div className="space-y-6">
@@ -297,11 +320,14 @@ export default function Mqtt() {
             className="w-full px-2 py-1.5 rounded bg-black/30 border border-white/15 text-sm"
           >
             <option value="">— choose a camera —</option>
-            {online.map((c) => (
-              <option key={c.camera_id} value={c.camera_id}>
-                {c.name ?? "(unnamed)"}
-                {c.site ? ` — ${c.site}` : ""}
-              </option>
+            {onlineBySite.map(([site, cams]) => (
+              <optgroup key={site} label={site}>
+                {cams.map((c) => (
+                  <option key={c.camera_id} value={c.camera_id}>
+                    {c.name ?? "(unnamed)"}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
@@ -886,6 +912,12 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
  *  through, when, and for how long. */
 function TrackHistory({ cameraId }: { cameraId: string }) {
   const [selected, setSelected] = useState<TrackRecord | null>(null);
+  // Narrows the table without touching the page-level camera choice,
+  // which also drives the live view and the noise filter. Reading
+  // history for one camera should not tear down the stream for another.
+  const [only, setOnly] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const cams = useCameraLookup();
   const history = useQuery({
     queryKey: ["mqtt-history", cameraId],
     queryFn: () =>
@@ -895,12 +927,26 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
     refetchInterval: 15000,
   });
 
-  const tracks = history.data?.tracks ?? [];
+  const allTracks = history.data?.tracks ?? [];
+  // Which cameras actually appear, busiest first. Built from the data
+  // rather than the camera list: twenty configured cameras of which
+  // three are publishing should offer three chips, not twenty.
+  const byCamera = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of allTracks) {
+      counts.set(t.camera_id, (counts.get(t.camera_id) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [allTracks]);
+  const tracks = only
+    ? allTracks.filter((t) => t.camera_id === only)
+    : allTracks;
+  const shown = showAll ? tracks : tracks.slice(0, 50);
   const summary = history.data?.summary as
     | { total: number; by_type: Record<string, number>; median_duration_sec: number | null }
     | undefined;
 
-  if (tracks.length === 0) {
+  if (allTracks.length === 0) {
     return (
       <div className="text-sm text-slate-500">
         No completed tracks yet — an object is recorded once it leaves view.
@@ -920,6 +966,39 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
           track={selected}
           onClose={() => setSelected(null)}
         />
+      )}
+      {/* Which cameras this is, before what they saw. With one camera
+          it is a label; with twenty it is the only way to read the
+          table at all. */}
+      {byCamera.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setOnly(null)}
+            className={`text-[11px] px-2 py-1 rounded border ${
+              only === null
+                ? "border-sky-600 bg-sky-900/40 text-white"
+                : "border-white/10 text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            All {byCamera.length} cameras
+          </button>
+          {byCamera.map(([id, n]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setOnly(id === only ? null : id)}
+              className={`text-[11px] px-2 py-1 rounded border ${
+                only === id
+                  ? "border-sky-600 bg-sky-900/40 text-white"
+                  : "border-white/10 text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              {cams.lookup(id)}{" "}
+              <span className="font-mono text-slate-500">{n}</span>
+            </button>
+          ))}
+        </div>
       )}
       {summary && (
         <div className="text-xs text-slate-400 flex flex-wrap gap-4">
@@ -950,6 +1029,7 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
           <thead className="text-slate-400 text-xs uppercase tracking-wider">
             <tr>
               <th className="text-left px-2 py-1">When</th>
+              <th className="text-left px-2 py-1">Camera</th>
               <th className="text-left px-2 py-1">Type</th>
               <th className="text-left px-2 py-1">Dwell</th>
               <th className="text-left px-2 py-1">Closest</th>
@@ -957,7 +1037,7 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
             </tr>
           </thead>
           <tbody>
-            {tracks.slice(0, 50).map((t) => (
+            {shown.map((t) => (
               <tr
                 key={`${t.obj_id}-${t.started_at}`}
                 onClick={() => setSelected(t)}
@@ -970,6 +1050,9 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
               >
                 <td className="px-2 py-1 font-mono text-xs text-slate-300">
                   {new Date(t.started_at).toLocaleString()}
+                </td>
+                <td className="px-2 py-1 text-xs text-slate-300 max-w-[12rem] truncate">
+                  {cams.lookup(t.camera_id)}
                 </td>
                 <td className="px-2 py-1">
                   <span
@@ -993,6 +1076,15 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
           </tbody>
         </table>
       </div>
+      {tracks.length > shown.length && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="text-xs px-3 py-1.5 rounded border border-white/15 text-slate-300 hover:border-sky-600"
+        >
+          Showing {shown.length} of {tracks.length} — show the rest
+        </button>
+      )}
     </div>
   );
 }
