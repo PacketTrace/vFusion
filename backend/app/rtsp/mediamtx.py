@@ -243,3 +243,50 @@ def _write_text(text: str) -> bool:
     except OSError as e:
         logger.warning("could not write mediamtx config: %s", e)
         return False
+
+
+async def path_health(expected: list[str]) -> dict[str, object]:
+    """Which of the paths we expect the server actually has.
+
+    The encoder being alive says nothing about whether the server is
+    serving what a client asks for. A Command Connector added over
+    ONVIF pulls two paths, and if the config lost the sub path it
+    reconnects every second and is refused every second — while
+    vFusion, watching only its own ffmpeg process, reports that
+    everything is fine. That is precisely the failure this exists to
+    make visible.
+
+    ``ready`` is MediaMTX's own word for a path with a live publisher;
+    a path that is configured but unpublished is present and not ready,
+    which is a different problem with a different fix.
+    """
+    import httpx
+
+    url = f"http://{settings.INTERNAL_HOST}:9997/v3/paths/list"
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(url)
+    except Exception as e:  # noqa: BLE001
+        return {"known": False, "why": f"cannot reach the RTSP server's API: {e}"}
+    if resp.status_code != 200:
+        return {"known": False, "why": f"the RTSP server's API answered {resp.status_code}"}
+    try:
+        items = (resp.json() or {}).get("items") or []
+    except ValueError:
+        return {"known": False, "why": "the RTSP server's API returned something that is not JSON"}
+
+    present: dict[str, bool] = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("name"):
+            present[str(item["name"])] = bool(item.get("ready"))
+
+    missing = [p for p in expected if p not in present]
+    not_ready = [p for p in expected if p in present and not present[p]]
+    return {
+        "known": True,
+        "expected": expected,
+        "present": sorted(present),
+        "missing": missing,
+        "not_ready": not_ready,
+        "ok": not missing and not not_ready,
+    }

@@ -48,6 +48,11 @@ async def status() -> dict:
         # and nobody is watching. Collapsing those into one value is what
         # made the previous attempt at this unreadable.
         **dict(zip(("viewers", "viewers_error"), await pump_mod.viewers())),
+        # Whether the RTSP server is actually serving the paths we claim
+        # to publish. "publishing" only means our ffmpeg is alive, which
+        # stayed true through a day of the Connector being refused a
+        # path the config had dropped.
+        "paths": await pump_mod.health(),
         "queued": sum(1 for i in items if not i.get("played_at")),
         "played": sum(1 for i in items if i.get("played_at")),
         # What ONVIF clients have tried lately. "Invalid credentials"

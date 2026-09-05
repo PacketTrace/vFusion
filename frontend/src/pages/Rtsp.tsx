@@ -16,6 +16,18 @@ import { copyToClipboard } from "../lib/clipboard";
  */
 
 type Status = {
+  // What the RTSP server is actually serving, as opposed to what our
+  // own encoder is doing. ``known`` is false when its API could not be
+  // reached, which is a third state and not the same as unhealthy.
+  paths?: {
+    known: boolean;
+    why?: string;
+    expected?: string[];
+    present?: string[];
+    missing?: string[];
+    not_ready?: string[];
+    ok?: boolean;
+  };
   enabled: boolean;
   stream: string;
   advertise_host: string;
@@ -226,10 +238,41 @@ export default function Rtsp() {
         </p>
       </div>
 
+      {status.data?.paths?.known && !status.data.paths.ok && (
+        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3">
+          <div className="text-sm text-rose-200">
+            The stream is publishing, but the RTSP server is not serving{" "}
+            {(status.data.paths.missing ?? []).length > 0
+              ? `a path clients are asking for: ${(status.data.paths.missing ?? []).join(", ")}`
+              : `a published path yet: ${(status.data.paths.not_ready ?? []).join(", ")}`}
+            .
+          </div>
+          <p className="text-xs text-slate-300 mt-1">
+            A Command Connector added over ONVIF pulls both the main and the
+            sub path, and is refused every second while one is missing — which
+            is what marks the camera offline. Saving the virtual camera
+            settings regenerates the server config and restarts it.
+          </p>
+        </div>
+      )}
+
       {s?.pump.publishing && (
         <div className="flex items-center gap-3">
-          <span className="on-air text-[11px] font-bold tracking-[0.2em] uppercase px-3 py-1.5 rounded-md">
-            On air
+          <span
+            className={
+              status.data?.paths?.known && !status.data.paths.ok
+                ? "text-[11px] font-bold tracking-[0.2em] uppercase px-3 py-1.5 rounded-md bg-rose-900/60 text-rose-200 border border-rose-700"
+                : "on-air text-[11px] font-bold tracking-[0.2em] uppercase px-3 py-1.5 rounded-md"
+            }
+            title={
+              status.data?.paths?.known && !status.data.paths.ok
+                ? `The RTSP server is missing: ${(status.data.paths.missing ?? []).join(", ") || (status.data.paths.not_ready ?? []).join(", ")}`
+                : undefined
+            }
+          >
+            {status.data?.paths?.known && !status.data.paths.ok
+              ? "Off air"
+              : "On air"}
           </span>
           <span className="text-[11px] text-slate-500">
             {s.viewers === null

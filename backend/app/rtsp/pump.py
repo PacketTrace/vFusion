@@ -659,10 +659,26 @@ def _encoder_cmd(main: str, sub: str, onvif: bool, afd: int) -> list[str]:
 pump = Pump()
 
 
-async def viewers() -> tuple[int | None, str]:
-    """How many clients are pulling either published path."""
-    state = settings.get()
+def expected_paths(state: dict[str, Any] | None = None) -> list[str]:
+    """The paths a client is entitled to ask for, given this mode."""
+    state = state or settings.get()
     streams = [state.get("stream") or settings.DEFAULT_STREAM]
     if settings.is_onvif(state):
         streams.append(settings.sub_stream(state))
-    return await mediamtx.viewers(streams)
+    return streams
+
+
+async def viewers() -> tuple[int | None, str]:
+    """How many clients are pulling either published path."""
+    return await mediamtx.viewers(expected_paths())
+
+
+async def health() -> dict[str, Any]:
+    """Whether the server is actually serving what we claim to publish.
+
+    ``publishing`` in status() means one thing: our ffmpeg is alive. It
+    has been reporting a healthy stream while the Command Connector was
+    refused every second for a path the config had dropped. This asks
+    the server instead of asking ourselves.
+    """
+    return await mediamtx.path_health(expected_paths())
