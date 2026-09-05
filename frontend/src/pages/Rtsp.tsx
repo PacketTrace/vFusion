@@ -493,7 +493,7 @@ export default function Rtsp() {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="…or paste a video URL"
+            placeholder="…or paste a video URL — direct .mp4, .m3u8, or most hosted video"
             className="flex-1 min-w-[18rem] px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
           />
           <button
@@ -503,6 +503,11 @@ export default function Rtsp() {
           >
             {fetchUrl.isPending ? "Starting…" : "Fetch"}
           </button>
+          <p className="w-full text-[11px] text-slate-500 mt-1">
+            Downloaded once and played from disk, so it loops cleanly and does
+            not expire mid-stream. Make sure you have the right to use whatever
+            you point it at — it ends up recorded on a Command Connector.
+          </p>
         </form>
 
         {(s?.fetches ?? []).filter((f) => f.state !== "done").length > 0 && (
