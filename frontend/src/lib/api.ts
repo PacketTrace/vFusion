@@ -351,6 +351,8 @@ export interface ComposedAnalytic {
 export interface SavedAnalytic extends ComposedAnalytic {
   id: string;
   created_at: string;
+  /** Absent on analytics saved before audio existed — those are video. */
+  medium?: string;
 }
 
 /** A prompt that ships with the product. Read-only: it lives in code,
@@ -526,9 +528,13 @@ export interface ActionFieldSpec {
   help?: string;
   connection_type?: string;
   default_template?: string;
+  /** "video" (default) or "audio". Prompts are not interchangeable
+   *  across media, so the picker only offers matching ones. */
+  medium?: string;
   templates?: {
     name: string;
     value: string;
+    medium?: string;
     // Optional pairing — when the operator picks this template the UI
     // can offer a one-click "Add Helix logging step" affordance that
     // inserts a pre-wired verkada_helix_event node downstream. The

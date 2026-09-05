@@ -440,6 +440,7 @@ async def analyze_clip(
     model_chain: list[str],
     active_timeout: int,
     progress: Any = None,
+    mime_type: str | None = None,
 ) -> dict[str, Any]:
     """All Gemini SDK calls happen in worker threads — the SDK is sync-only
     and we don't want to block the asyncio loop. Split into upload /
@@ -467,7 +468,12 @@ async def analyze_clip(
         from google import genai
 
         client = genai.Client(api_key=api_key)
-        file_obj = client.files.upload(file=str(clip_path))
+        # The SDK infers the type with mimetypes.guess_type() and raises
+        # if that comes back None. It does for .m4a on a slim Linux
+        # image, which has no mime entry for it -- so audio callers pass
+        # the type rather than relying on the container's mime database.
+        config = {"mime_type": mime_type} if mime_type else None
+        file_obj = client.files.upload(file=str(clip_path), config=config)
         return client, file_obj
 
     def _wait_active(client: Any, file_obj: Any) -> tuple[Any, int, list[str]]:

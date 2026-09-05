@@ -445,6 +445,11 @@ export default function Byoa() {
         name: editingAnalytic?.name,
         summary: editingAnalytic?.summary,
         prompt,
+        // Preserve the analytic's own medium when there is one; a first
+        // save from audio mode takes the mode's. Getting this wrong puts
+        // the prompt in the wrong picker, where it is not so much
+        // missing as quietly offered in the one place it cannot work.
+        medium: editingAnalytic?.medium ?? (mode === "audio" ? "audio" : "video"),
         helix_event_type: editingAnalytic?.helix_event_type,
         helix_attribute_mapping: editingAnalytic?.helix_attribute_mapping,
       }),

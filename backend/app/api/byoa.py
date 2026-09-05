@@ -855,6 +855,12 @@ class SaveAnalyticRequest(BaseModel):
     name: str
     summary: str | None = None
     prompt: str
+    # Which analytic this prompt is for. An audio prompt asks about
+    # sound and a video prompt asks about pixels; offering one where the
+    # other belongs is how a node ends up configured to look for a
+    # package while listening to a microphone. Existing records have no
+    # medium and read back as "video", which is what they all are.
+    medium: str = "video"
     helix_event_type: dict[str, Any]
     helix_attribute_mapping: dict[str, str]
 

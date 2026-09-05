@@ -166,7 +166,14 @@ SCHEMA: dict[str, Any] = {
             "label": "Prompt",
             "type": "text",
             "required": False,
-            "help": "Leave blank for the Audio extractor prompt (sound / transcript / description).",
+            "help": "Pre-filled with the Audio extractor prompt (sound / transcript / description). Edit it, or pick another audio template.",
+            # Filled in when the node is created rather than left blank
+            # for the backend default. A step whose prompt box is empty
+            # gives no clue what it is about to ask, and the picker had
+            # nothing selected -- so the analytic looked unconfigured
+            # even though it would have run correctly.
+            "default_template": AUDIO_EXTRACTOR_PROMPT,
+            "medium": "audio",
             "templates": AUDIO_PROMPT_TEMPLATES,
         },
         {
@@ -380,6 +387,9 @@ async def run(
             model_chain,
             active_timeout,
             progress=progress,
+            # AAC in an MP4 container, which is what the ffmpeg args
+            # above produce.
+            mime_type="audio/mp4",
         )
     except Exception as e:  # noqa: BLE001
         if progress:

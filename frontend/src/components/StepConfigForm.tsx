@@ -272,17 +272,31 @@ export default function StepConfigForm({
     ...analyticList.map((a) => ({
       name: a.name,
       value: a.prompt,
+      medium: a.medium ?? "video",
       helix_event_type: a.helix_event_type,
       helix_attribute_mapping: a.helix_attribute_mapping,
     })),
-    ...userTplList.map((t) => ({ name: t.name, value: t.value })),
+    // User prompt templates predate the audio analytic and carry no
+    // medium; they are all video.
+    ...userTplList.map((t) => ({
+      name: t.name,
+      value: t.value,
+      medium: "video",
+    })),
   ];
   const mergeTemplates = (f: ActionFieldSpec): ActionFieldSpec => {
-    if (!f.templates || extraTemplates.length === 0) return f;
+    if (!f.templates) return f;
+    // Only prompts for this field's medium. A video analytic offered
+    // inside an audio step is not a harmless extra option — picking one
+    // silently configures the step to hunt for a package in a sound
+    // recording, and it reads as configured because the box has text.
+    const medium = f.medium ?? "video";
+    const extras = extraTemplates.filter((t) => (t.medium ?? "video") === medium);
+    if (extras.length === 0) return f;
     // Deduped by name: an analytic saved under a built-in's name would
     // otherwise appear twice with no way to tell which is which.
     const seen = new Set<string>();
-    const merged = [...extraTemplates, ...f.templates].filter((t) => {
+    const merged = [...extras, ...f.templates].filter((t) => {
       if (seen.has(t.name)) return false;
       seen.add(t.name);
       return true;
