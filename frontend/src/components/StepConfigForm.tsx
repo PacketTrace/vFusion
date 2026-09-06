@@ -18,11 +18,15 @@ import {
 import { useCameras } from "../lib/cameras";
 import EndpointPicker from "./EndpointPicker";
 import HelixEventTypeEditor from "./HelixEventTypeEditor";
+import { autoWireAttributes } from "../lib/promptKeys";
 import VariablePicker from "./VariablePicker";
 
 interface PriorStep {
   name: string;
   output_sample: unknown;
+  /** Keys this step will put in output.json — read from a captured run
+   *  if it has one, otherwise from its prompt. See lib/promptKeys. */
+  jsonKeys?: string[];
 }
 
 interface Props {
@@ -1026,8 +1030,52 @@ function HelixAttributesField({
     setOne(f.name, next);
   };
 
+  // The analyze step above and this one are two halves of one idea, and
+  // nothing connected them: you would write a prompt asking for
+  // {"animal": …, "behavior": …}, pick a type with Animal and Behavior
+  // on it, and get two empty boxes. The nearest upstream step that
+  // produces JSON is asked what keys it will produce, and any Helix
+  // attribute with the same name is wired to it.
+  //
+  // Nearest wins, since a flow with two analyze steps means the one just
+  // above is the one being logged.
+  const source = [...priorSteps]
+    .reverse()
+    .find((p) => (p.jsonKeys?.length ?? 0) > 0);
+
+  const suggestions = source
+    ? autoWireAttributes(Object.keys(schema), source.name, source.jsonKeys ?? [])
+    : {};
+  // Only offer what is not already filled in. Overwriting a considered
+  // value with a guess is the one thing this must never do.
+  const unfilled = Object.entries(suggestions).filter(
+    ([k]) => !(value[k] ?? "").trim(),
+  );
+
+  const applyAll = () => {
+    const next = { ...value };
+    for (const [k, ref] of unfilled) next[k] = ref;
+    setOne(f.name, next);
+  };
+
   return (
     <div className="space-y-2">
+      {unfilled.length > 0 && (
+        <div className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-sky-100">
+            <span className="font-medium">{source!.name}</span> produces{" "}
+            {unfilled.map(([k]) => k).join(", ")} — wire{" "}
+            {unfilled.length === 1 ? "it" : "them"} up?
+          </span>
+          <button
+            type="button"
+            onClick={applyAll}
+            className="ml-auto text-[11px] px-2 py-1 rounded border border-sky-400/40 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100"
+          >
+            Fill {unfilled.length === 1 ? "it" : `all ${unfilled.length}`} in
+          </button>
+        </div>
+      )}
       {Object.entries(schema).map(([k, t]) => (
         <div key={k} className="space-y-1">
           <div className="text-[11px] font-medium text-slate-300 flex items-center gap-2">
@@ -1039,8 +1087,22 @@ function HelixAttributesField({
               value={value[k] ?? ""}
               onChange={(e) => setKey(k, e.target.value)}
               className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-              placeholder={`{{ steps.<name>.output.* }}`}
+              placeholder={
+                suggestions[k] && !(value[k] ?? "").trim()
+                  ? suggestions[k]
+                  : `{{ steps.<name>.output.* }}`
+              }
             />
+            {suggestions[k] && !(value[k] ?? "").trim() && (
+              <button
+                type="button"
+                onClick={() => setKey(k, suggestions[k])}
+                title={`Use ${suggestions[k]}`}
+                className="text-[11px] px-2 py-1.5 rounded border border-sky-400/40 text-sky-200 hover:bg-sky-500/20 shrink-0"
+              >
+                use
+              </button>
+            )}
             {triggerFamily && (
               <VariablePicker
                 family={triggerFamily}

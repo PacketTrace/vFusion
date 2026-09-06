@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import DescribeFlowPanel from "../components/DescribeFlowPanel";
+import { keysFromPrompt, keysFromSample } from "../lib/promptKeys";
 import { useUnsavedGuard } from "../lib/useUnsavedGuard";
 import {
   Background,
@@ -1175,27 +1176,6 @@ function FlowEditorInner() {
           >
             Save as template
           </button>
-          {/* The AI affordance. Tinted rather than another grey button —
-              it does something categorically different from its
-              neighbours, which only rearrange or persist what is
-              already on the canvas. Still cooler than Save, which is
-              the one thing on this bar that is committing anything. */}
-          <button
-            type="button"
-            onClick={() => setDescribing(true)}
-            title="Draft this flow — trigger, steps and Helix type — from a sentence"
-            className="group text-sm px-3 py-1.5 rounded-md flex items-center gap-1.5 text-violet-100 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 hover:border-violet-400/50 transition-colors"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="w-3.5 h-3.5 fill-violet-300 group-hover:fill-violet-200 transition-colors"
-            >
-              <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
-              <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
-            </svg>
-            Draft with AI
-          </button>
           <button
             onClick={handleSave}
             disabled={save.isPending}
@@ -1350,6 +1330,29 @@ function FlowEditorInner() {
         </div>
 
         <aside className="w-[28rem] border-l border-white/10 bg-black/40 backdrop-blur-md flex flex-col min-h-0">
+          {/* Anchored above the panel's own scroll area, so it stays put
+              however far you pan the canvas or scroll a long config.
+              Tinted rather than another grey button: it generates,
+              where everything on the toolbar only rearranges or
+              persists what is already there. */}
+          <div className="px-4 pt-3 pb-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setDescribing(true)}
+              title="Draft this flow — trigger, steps and Helix type — from a sentence"
+              className="group w-full text-sm px-3 py-2 rounded-md flex items-center justify-center gap-1.5 text-violet-100 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 hover:border-violet-400/50 transition-colors"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="w-3.5 h-3.5 fill-violet-300 group-hover:fill-violet-200 transition-colors"
+              >
+                <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
+                <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
+              </svg>
+              Draft with AI
+            </button>
+          </div>
           <div className="px-4 py-3 border-b border-white/10 shrink-0">
             <div className="text-xs uppercase tracking-wider text-slate-500">
               Configure
@@ -1662,7 +1665,7 @@ function priorStepsFor(
   edges: FlowEdge[],
   specs: Record<string, ActionSpec> | undefined,
   nodeSamples?: Record<string, unknown> | null,
-): Array<{ name: string; output_sample: unknown }> {
+): Array<{ name: string; output_sample: unknown; jsonKeys: string[] }> {
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
   const incoming = new Map<string, FlowEdge[]>();
   for (const e of edges) {
@@ -1685,16 +1688,29 @@ function priorStepsFor(
     }
   }
   return result.map((n) => {
+    // What this step will put in output.json, so the Helix step below
+    // can wire itself to it. A real run beats the prompt; the prompt
+    // beats nothing, which is what the form had before.
+    const prompt = typeof n.config?.prompt === "string" ? n.config.prompt : "";
     // Prefer a real captured sample (from "Run this step") over the
     // action's canned output_sample so the variable picker shows keys
     // that actually exist for this flow.
     const captured = nodeSamples ? nodeSamples[n.id] : undefined;
     if (captured !== undefined && captured !== null) {
-      return { name: n.name, output_sample: captured };
+      const fromRun = keysFromSample(captured);
+      return {
+        name: n.name,
+        output_sample: captured,
+        jsonKeys: fromRun.length ? fromRun : keysFromPrompt(prompt),
+      };
     }
     const spec =
       n.kind === "condition" ? specs?._condition : specs?.[n.action_type ?? ""];
-    return { name: n.name, output_sample: spec?.output_sample };
+    return {
+      name: n.name,
+      output_sample: spec?.output_sample,
+      jsonKeys: keysFromPrompt(prompt),
+    };
   });
 }
 
