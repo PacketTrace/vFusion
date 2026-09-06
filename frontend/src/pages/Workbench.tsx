@@ -19,8 +19,12 @@ const TABS = [
 ] as const;
 
 const BLURB: Record<string, string> = {
+  // Says what it is FOR, not what it does. "One-shot Gemini run"
+  // described the mechanics of a thing whose whole point is the
+  // question it answers: will this idea work on these cameras, in this
+  // lighting, on this scene — before you build anything around it.
   analytics:
-    "One-shot Gemini run. Pick a camera, write a prompt, see what comes back without baking it into a flow first.",
+    "A smoke test for an idea. Run a prompt once against your own cameras and see whether it actually works here — the right answer, on your scenes, in your lighting — before building a flow on top of it.",
   api: "Run any Verkada endpoint against a connection you already have, and read the response properly.",
   video: "Clips for the virtual camera and for live Helix demos — upload your own, or generate footage that looks like it came off a fixed camera.",
 };

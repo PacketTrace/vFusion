@@ -590,13 +590,26 @@ export default function Byoa() {
     validationRef.current = message;
     setErr(message);
   };
+  // Re-check on every render and show whatever is wrong NOW, rather than
+  // only clearing once everything is valid.
+  //
+  // The old version cleared on !validate(), so with two problems
+  // outstanding — no camera and no Helix type — picking the camera left
+  // "Pick a camera." on screen, because validation still failed for the
+  // other reason. The banner pointed at something already fixed and
+  // said nothing about what actually remained.
+  //
   // No dependency list on purpose: the check is a handful of string
   // comparisons, and enumerating every field it reads is a list that
   // would silently go stale the next time one is added.
   useEffect(() => {
-    if (err && err === validationRef.current && !validate()) {
-      validationRef.current = null;
-      setErr(null);
+    // Ours to manage only. A failure returned by the server stays until
+    // the next attempt rather than vanishing because a dropdown moved.
+    if (!err || err !== validationRef.current) return;
+    const next = validate();
+    if (next !== err) {
+      validationRef.current = next;
+      setErr(next);
     }
   });
   const run = useMutation({
@@ -1003,8 +1016,10 @@ export default function Byoa() {
             a heading that was pointing at the wrong idea. */}
         <SectionHeading>Try it on something real</SectionHeading>
         <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
-          One run against live, historical, audio or uploaded footage, so you
-          can see what comes back before wiring it into a flow.
+          One run against live, historical, audio or uploaded footage. A prompt
+          that reads well can still fail on a real camera — the angle is wrong,
+          the thing is too small, the scene is too dark. This is where you find
+          that out, for the price of one call.
         </p>
 
         {/* Connections collapse to a line. They are plumbing — set once,
