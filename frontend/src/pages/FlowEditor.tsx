@@ -4,7 +4,6 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import DescribeFlowPanel from "../components/DescribeFlowPanel";
-import FlowAssistant from "../components/FlowAssistant";
 import { useUnsavedGuard } from "../lib/useUnsavedGuard";
 import {
   Background,
@@ -1546,24 +1545,6 @@ function FlowEditorInner() {
               />
             )}
 
-            <FlowAssistant
-              currentFlow={{
-                name,
-                trigger_type: triggerType,
-                trigger_config: trigger,
-                nodes,
-                edges,
-              }}
-              selection={
-                selected.kind === "trigger"
-                  ? "The trigger"
-                  : selected.kind === "node" && selectedNode
-                    ? `${selectedNode.kind === "condition" ? "Condition" : "Action"} step named "${selectedNode.name}"`
-                    : selected.kind === "edge" && selectedEdge
-                      ? `The edge from ${selectedEdge.source} to ${selectedEdge.target}`
-                      : null
-              }
-            />
           </div>
         </aside>
       </div>

@@ -52,6 +52,11 @@ SOURCES: list[Source] = [
         "Designing a Helix event type and its data generator.",
     ),
     Source(
+        "Helix type assist",
+        "Drafting a Helix event type's name and attributes from a sentence "
+        "while building a flow.",
+    ),
+    Source(
         "Help",
         "The help chat. Each question re-sends the whole corpus, so it is "
         "the same price whether you ask one thing or ten.",

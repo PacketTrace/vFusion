@@ -1,7 +1,14 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiDelete, apiPost, apiPut, HelixEventType } from "../lib/api";
+import {
+  apiDelete,
+  apiGet,
+  apiPost,
+  apiPut,
+  Connection,
+  HelixEventType,
+} from "../lib/api";
 
 
 export type AttrType = "string" | "integer" | "float";
@@ -36,6 +43,7 @@ export default function HelixEventTypeEditor({
   mode,
   existing,
   seed,
+  triggerSummary,
   onClose,
   onCreated,
 }: {
@@ -50,6 +58,13 @@ export default function HelixEventTypeEditor({
    * (the existing row's fields take precedence).
    */
   seed?: { name?: string | null; event_schema?: Record<string, string> | null };
+  /**
+   * What the surrounding flow starts on, in operator words — e.g.
+   * "Access / Door Event · door_opened". Passed to the drafting
+   * assistant so it suggests attributes the trigger can actually fill,
+   * rather than fields nobody has a source for.
+   */
+  triggerSummary?: string | null;
   onClose: () => void;
   onCreated?: (created: HelixEventType) => void;
 }) {
@@ -123,6 +138,54 @@ export default function HelixEventTypeEditor({
     },
   });
 
+  // Drafting assistant. This form is the hardest moment in building a
+  // flow by hand: an empty attribute row tells you nothing about what a
+  // good attribute is, how many to have, or that Helix truncates a long
+  // value — and the cost of guessing wrong is a type that already has
+  // events posted against it.
+  const [intent, setIntent] = useState("");
+  const [assistOpen, setAssistOpen] = useState(false);
+  const [assistErr, setAssistErr] = useState<string | null>(null);
+  const [assistCost, setAssistCost] = useState<number | null>(null);
+  const [whys, setWhys] = useState<Record<string, string>>({});
+
+  const connections = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<Connection[]>("/api/connections"),
+    enabled: assistOpen,
+  });
+  const geminiConn = (connections.data ?? []).find(
+    (c) => c.type === "gemini" && c.setup_complete,
+  );
+
+  const draft = useMutation({
+    mutationFn: () =>
+      apiPost<{
+        name: string;
+        attributes: { key: string; type: AttrType; why?: string | null }[];
+        cost_usd: number | null;
+      }>("/api/helix-assist", {
+        intent,
+        gemini_connection_id: geminiConn?.id,
+        trigger_summary: triggerSummary ?? null,
+      }),
+    onSuccess: (res) => {
+      setAssistErr(null);
+      setAssistCost(res.cost_usd);
+      // Replaces rather than appends. A draft is a coherent set — mixing
+      // it into whatever half-typed rows were already there produces a
+      // type that is neither what you started nor what was suggested.
+      setName(res.name);
+      setAttrs(res.attributes.map((a) => ({ key: a.key, type: a.type })));
+      setWhys(
+        Object.fromEntries(
+          res.attributes.filter((a) => a.why).map((a) => [a.key, a.why!]),
+        ),
+      );
+    },
+    onError: (e: Error) => setAssistErr(e.message),
+  });
+
   const setAttr = (i: number, patch: Partial<AttrRow>) => {
     setAttrs((cur) => cur.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
   };
@@ -153,6 +216,78 @@ export default function HelixEventTypeEditor({
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+          {mode === "create" && (
+            <div className="rounded-lg border border-violet-400/25 bg-violet-500/10">
+              {!assistOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setAssistOpen(true)}
+                  className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-violet-100 hover:bg-violet-500/10 rounded-lg transition-colors"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="w-3.5 h-3.5 fill-violet-300 shrink-0">
+                    <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
+                    <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
+                  </svg>
+                  Draft it from a description
+                  <span className="text-violet-300/70 text-xs ml-auto">
+                    describe what to log
+                  </span>
+                </button>
+              ) : (
+                <div className="p-3 space-y-2">
+                  <textarea
+                    value={intent}
+                    onChange={(e) => setIntent(e.target.value)}
+                    rows={2}
+                    autoFocus
+                    placeholder="e.g. log who opened the garage door and whether a vehicle was there"
+                    className="w-full px-2.5 py-2 rounded bg-black/30 border border-white/15 text-sm placeholder:text-slate-500 focus:outline-none focus:border-violet-400/60"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={
+                        !intent.trim() || draft.isPending || !geminiConn
+                      }
+                      onClick={() => draft.mutate()}
+                      className="text-sm px-3 py-1.5 rounded-md bg-violet-500/25 hover:bg-violet-500/35 border border-violet-400/40 text-violet-100 disabled:opacity-40"
+                    >
+                      {draft.isPending ? "Drafting…" : "Draft it"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAssistOpen(false)}
+                      className="text-xs text-slate-400 hover:text-slate-200 px-2 py-1"
+                    >
+                      Cancel
+                    </button>
+                    {assistCost !== null && (
+                      <span className="text-[11px] text-slate-500 ml-auto tabular-nums">
+                        ~${assistCost.toFixed(4)}
+                      </span>
+                    )}
+                  </div>
+                  {/* Said before the button is pressed, not after it
+                      fails: the assistant needs a Gemini key and the
+                      rest of this form does not. */}
+                  {connections.data && !geminiConn && (
+                    <div className="text-[11px] text-amber-300/90">
+                      Needs a Gemini connection — add one on Connections. You
+                      can still fill this in by hand.
+                    </div>
+                  )}
+                  {assistErr && (
+                    <div className="text-[11px] text-rose-300">{assistErr}</div>
+                  )}
+                  <div className="text-[11px] text-slate-500">
+                    It fills the name and attributes below. Nothing is created
+                    on Verkada until you press Create.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <label className="block">
             <div className="text-xs font-medium text-slate-300 mb-1">
               Name <span className="text-rose-400">*</span>
@@ -178,7 +313,8 @@ export default function HelixEventTypeEditor({
             </div>
             <div className="space-y-2">
               {attrs.map((a, i) => (
-                <div key={i} className="flex gap-2 items-center">
+                <div key={i}>
+                <div className="flex gap-2 items-center">
                   <input
                     value={a.key}
                     onChange={(e) => setAttr(i, { key: e.target.value })}
@@ -204,6 +340,16 @@ export default function HelixEventTypeEditor({
                   >
                     ×
                   </button>
+                </div>
+                {/* What the draft said this field is for. Keyed by the
+                    attribute name so renaming a field drops its note
+                    rather than leaving a caption describing something
+                    else. */}
+                {whys[a.key] && (
+                  <div className="text-[11px] text-slate-500 mt-1 ml-1">
+                    {whys[a.key]}
+                  </div>
+                )}
                 </div>
               ))}
               <button

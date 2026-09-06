@@ -529,6 +529,10 @@ function renderControl(
         f={f}
         config={config}
         setAll={setAll}
+        triggerSummary={
+          [triggerFamily, triggerNotificationType].filter(Boolean).join(" · ") ||
+          null
+        }
       />
     );
   }
@@ -858,10 +862,13 @@ function HelixEventRefField({
   f,
   config,
   setAll,
+  triggerSummary,
 }: {
   f: ActionFieldSpec;
   config: Record<string, unknown>;
   setAll: (config: Record<string, unknown>) => void;
+  /** What the flow starts on, for the drafting assistant in the editor. */
+  triggerSummary?: string | null;
 }) {
   const connId = f.connection_field
     ? (config[f.connection_field] as string | undefined)
@@ -928,6 +935,11 @@ function HelixEventRefField({
         <HelixEventTypeEditor
           connId={connId}
           mode="create"
+          // The flow already knows what starts it, and the editor was
+          // asking the operator to invent attributes without it. A
+          // draft that knows the trigger is a door event suggests the
+          // door, not a camera nobody has a source for here.
+          triggerSummary={triggerSummary}
           onClose={() => setCreating(false)}
           onCreated={(created) => {
             // Drop the new type's uid into this field + seed the

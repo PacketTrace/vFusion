@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import mqtt_config as mqtt_api
 from app.api import onvif as onvif_api
+from app.api import helix_assist as helix_assist_api
 from app.api import helix_demo as helix_demo_api
 from app.api import api_runner as api_runner_api
 from app.api import cost as cost_api
@@ -183,6 +184,7 @@ app.include_router(prompt_templates.router)
 app.include_router(flow_templates.router)
 app.include_router(flow_builder.router)
 app.include_router(byoa.router)
+app.include_router(helix_assist_api.router)
 app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(mqtt_api.router)
