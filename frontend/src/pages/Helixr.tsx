@@ -948,11 +948,29 @@ function EventTypeList({
             <li
               key={et.id}
               onClick={() => onEdit(et)}
-              className="py-3 cursor-pointer hover:bg-white/5 px-2 -mx-2 rounded transition-colors"
+              className="py-2 cursor-pointer hover:bg-white/5 px-2 -mx-2 rounded transition-colors"
             >
               <div className="flex items-baseline justify-between gap-3">
-                <div className="font-medium text-slate-100">
-                  {et.name ?? "(unnamed)"}
+                {/* Name and shape together on the left; three loose
+                    children under justify-between would push the count
+                    into the middle of the row, away from what it
+                    describes. */}
+                <div className="flex items-baseline gap-2 min-w-0">
+                  <div className="font-medium text-slate-100 truncate">
+                    {et.name ?? "(unnamed)"}
+                  </div>
+                  <span
+                    className="text-[11px] text-slate-500 shrink-0"
+                    title={
+                      attrs.length
+                        ? attrs.map(([k, t]) => `${k}: ${t}`).join("\n")
+                        : undefined
+                    }
+                  >
+                    {attrs.length === 0
+                      ? "no attributes"
+                      : `${attrs.length} attribute${attrs.length === 1 ? "" : "s"}`}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <code className="text-[10px] font-mono text-slate-600">
@@ -1039,19 +1057,7 @@ function EventTypeList({
                   {(del.error as Error).message}
                 </div>
               )}
-              {attrs.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {attrs.map(([k, t]) => (
-                    <span
-                      key={k}
-                      className="text-[11px] font-mono bg-white/5 border border-white/10 rounded px-1.5 py-0.5"
-                    >
-                      <span className="text-slate-200">{k}</span>
-                      <span className="text-slate-500">: {t}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
+
             </li>
           );
         })}
