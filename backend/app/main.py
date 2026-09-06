@@ -10,7 +10,6 @@ from app.api import onvif as onvif_api
 from app.api import helix_assist as helix_assist_api
 from app.api import helix_demo as helix_demo_api
 from app.api import helix_published as helix_published_api
-from app.api import param_lookup as param_lookup_api
 from app.api import helix_send as helix_send_api
 from app.api import api_runner as api_runner_api
 from app.api import cost as cost_api
@@ -190,7 +189,6 @@ app.include_router(byoa.router)
 app.include_router(helix_assist_api.router)
 app.include_router(helix_send_api.router)
 app.include_router(helix_published_api.router)
-app.include_router(param_lookup_api.router)
 app.include_router(mcp_api.router)
 app.include_router(config_api.router)
 app.include_router(mqtt_api.router)

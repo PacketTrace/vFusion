@@ -3,7 +3,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import CameraIdInput from "../components/CameraIdInput";
 import EndpointBrowser from "../components/EndpointBrowser";
-import ParamLookup, { usePathLookups } from "../components/ParamLookup";
 import DoorIdInput from "../components/DoorIdInput";
 import EpochInput from "../components/EpochInput";
 import JsonView from "../components/JsonView";
@@ -207,15 +206,6 @@ export default function ApiRunner() {
   const bodyParams = useMemo(() => bodyFields(detail.data ?? null), [detail.data]);
   const pathParams = params.filter((p) => p.in === "path");
   const queryParams = params.filter((p) => p.in === "query");
-  // Which call produces each id this endpoint needs, wherever it is
-  // asked for. Derived from the crawled spec, not a hand-kept list —
-  // see backend/api/param_lookup.py.
-  const lookups = usePathLookups(detail.data?.path, [
-    ...queryParams.map((p) => p.name),
-    ...bodyParams.map((f) => f.name),
-  ]);
-  const lookupFor = (name: string) =>
-    (lookups.data?.lookups ?? []).find((l) => l.param === name) ?? null;
   const method = (picked?.method ?? "GET").toUpperCase();
   const isWrite = WRITE.has(method);
   const missing = pathParams.filter((p) => !pathValues[p.name]?.trim());
@@ -369,19 +359,6 @@ export default function ApiRunner() {
                       }
                       className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
                     />
-                    {/* An id nobody could type from memory, with the
-                        call that lists them one click away instead of
-                        somewhere else in the endpoint tree. */}
-                    {lookupFor(p.name) && (
-                      <ParamLookup
-                        lookup={lookupFor(p.name)!}
-                        connectionId={connId || null}
-                        token={null}
-                        onPick={(v) =>
-                          setPathValues({ ...pathValues, [p.name]: v })
-                        }
-                      />
-                    )}
                   </>
                 )}
               </Field>
@@ -389,16 +366,6 @@ export default function ApiRunner() {
 
             {queryParams.map((p) => (
               <Field key={p.name} p={p} required={!!p.required}>
-                {lookupFor(p.name) && !isCameraField(p.name) && !isDoorField(p.name) && (
-                  <ParamLookup
-                    lookup={lookupFor(p.name)!}
-                    connectionId={connId || null}
-                    token={null}
-                    onPick={(v) =>
-                      setQueryValues({ ...queryValues, [p.name]: v })
-                    }
-                  />
-                )}
                 {isCameraField(p.name) ? (
                   <CameraIdInput
                     value={queryValues[p.name] ?? ""}
@@ -491,18 +458,6 @@ export default function ApiRunner() {
                         {f.type}
                       </span>
                     </div>
-                    {lookupFor(f.name) &&
-                      !isCameraField(f.name) &&
-                      !isDoorField(f.name) && (
-                        <ParamLookup
-                          lookup={lookupFor(f.name)!}
-                          connectionId={connId || null}
-                          token={null}
-                          onPick={(v) =>
-                            setBodyValues({ ...bodyValues, [f.name]: v })
-                          }
-                        />
-                      )}
                     {isCameraField(f.name) ? (
                       <CameraIdInput
                         value={bodyValues[f.name] ?? ""}
