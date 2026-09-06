@@ -940,42 +940,49 @@ function EventTypeList({
           No event types yet. Click <strong className="text-slate-200">+ Create event type</strong> above to make one.
         </div>
       )}
-      <ul className="divide-y divide-white/10">
+      {/* A grid rather than a list. As rows, the name sat at the far
+          left and the uid plus two buttons at the far right, so reading
+          one type meant crossing the width of the page — fourteen
+          times. Cards put everything about one type inside one small
+          box, and scanning becomes two-dimensional. */}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {list.map((et) => {
           const schema = (et.event_schema ?? {}) as Record<string, string>;
           const attrs = Object.entries(schema);
+          const isConfirming = confirming === et.event_type_uid;
           return (
-            <li
+            <div
               key={et.id}
               onClick={() => onEdit(et)}
-              className="py-2 cursor-pointer hover:bg-white/5 px-2 -mx-2 rounded transition-colors"
+              // ``group`` so the actions can stay hidden until this card
+              // is hovered. At rest the page is names and counts, which
+              // is what you came to read — and a delete you have to
+              // hover to reach is one you cannot hit while scanning.
+              className={`group relative rounded-lg border p-3 cursor-pointer transition-colors ${
+                isConfirming
+                  ? "border-rose-700/60 bg-rose-950/30"
+                  : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.07]"
+              }`}
+              title={et.event_type_uid}
             >
-              <div className="flex items-baseline justify-between gap-3">
-                {/* Name and shape together on the left; three loose
-                    children under justify-between would push the count
-                    into the middle of the row, away from what it
-                    describes. */}
-                <div className="flex items-baseline gap-2 min-w-0">
-                  <div className="font-medium text-slate-100 truncate">
-                    {et.name ?? "(unnamed)"}
-                  </div>
-                  <span
-                    className="text-[11px] text-slate-500 shrink-0"
-                    title={
-                      attrs.length
-                        ? attrs.map(([k, t]) => `${k}: ${t}`).join("\n")
-                        : undefined
-                    }
-                  >
-                    {attrs.length === 0
-                      ? "no attributes"
-                      : `${attrs.length} attribute${attrs.length === 1 ? "" : "s"}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <code className="text-[10px] font-mono text-slate-600">
-                    {et.event_type_uid}
-                  </code>
+              <div className="font-medium text-slate-100 truncate pr-16">
+                {et.name ?? "(unnamed)"}
+              </div>
+              <div
+                className="text-[11px] text-slate-500 mt-0.5"
+                title={
+                  attrs.length
+                    ? attrs.map(([k, t]) => `${k}: ${t}`).join("\n")
+                    : undefined
+                }
+              >
+                {attrs.length === 0
+                  ? "no attributes"
+                  : `${attrs.length} attribute${attrs.length === 1 ? "" : "s"}`}
+              </div>
+
+              {!isConfirming && (
+                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                   {/* Sending by hand is the only way to find out whether
                       a type accepts what you think it does without
                       building a flow and waiting for it to fire. */}
@@ -986,82 +993,73 @@ function EventTypeList({
                       setSending(et);
                     }}
                     title="Post a test event to this type"
-                    className="text-[11px] px-2 py-1 rounded-md border border-white/10 text-slate-400 opacity-70 transition-[opacity,color,border-color] duration-150 ease-out-strong hover:opacity-100 hover:border-sky-600/60 hover:text-sky-300"
+                    className="text-[11px] px-2 py-1 rounded-md border border-white/10 text-slate-400 hover:border-sky-600/60 hover:text-sky-300"
                   >
-                    Send event
+                    Send
                   </button>
-                  {confirming === et.event_type_uid ? (
-                    <span
-                      className="flex items-center gap-1.5"
-                      onClick={(e) => e.stopPropagation()}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirming(et.event_type_uid);
+                    }}
+                    aria-label={`Delete ${et.name ?? "event type"}`}
+                    title="Delete this event type from Verkada"
+                    className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-slate-400 hover:border-rose-600/60 hover:text-rose-300"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      aria-hidden="true"
                     >
-                      <button
-                        type="button"
-                        onClick={() => del.mutate(et.event_type_uid)}
-                        disabled={del.isPending}
-                        className="text-[11px] px-2 py-0.5 rounded border border-rose-700/70 bg-rose-900/40 text-rose-200 hover:bg-rose-800/60 disabled:opacity-40"
-                      >
-                        {del.isPending ? "Deleting…" : "Delete for good"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirming(null)}
-                        className="text-[11px] text-slate-400 hover:text-slate-200"
-                      >
-                        cancel
-                      </button>
-                    </span>
-                  ) : (
-                    // A text link the width of the word "Delete", sat
-                    // beside a 36-character uid, is genuinely hard to
-                    // find. A bordered icon button with a real hit area
-                    // reads as a control at a glance without competing
-                    // with the type name.
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirming(et.event_type_uid);
-                      }}
-                      aria-label={`Delete ${et.name ?? "event type"}`}
-                      title="Delete this event type from Verkada"
-                      className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-slate-400 opacity-70 transition-[opacity,color,border-color] duration-150 ease-out-strong hover:opacity-100 hover:border-rose-600/60 hover:text-rose-300"
-                    >
-                      <svg
-                        viewBox="0 0 16 16"
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.6 9a1 1 0 0 0 1 1h4.8a1 1 0 0 0 1-1L12 4M6.5 7v4M9.5 7v4" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </div>
-              {confirming === et.event_type_uid && (
-                <div
-                  className="text-[11px] text-amber-300/90 mt-1"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  Deletes {et.name ?? "this type"} from Verkada. Any flow or
-                  analytic posting to it will start failing, and events already
-                  logged against it may go with it.
-                </div>
-              )}
-              {del.isError && confirming === et.event_type_uid && (
-                <div className="text-[11px] text-rose-300 mt-1">
-                  {(del.error as Error).message}
+                      <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.6 9a1 1 0 0 0 1 1h4.8a1 1 0 0 0 1-1L12 4M6.5 7v4M9.5 7v4" />
+                    </svg>
+                  </button>
                 </div>
               )}
 
-            </li>
+              {isConfirming && (
+                <div
+                  className="mt-2 space-y-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-[11px] text-amber-300/90">
+                    Deletes this from Verkada. Any flow or analytic posting to
+                    it will start failing, and events already logged against it
+                    may go with it.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => del.mutate(et.event_type_uid)}
+                      disabled={del.isPending}
+                      className="text-[11px] px-2 py-1 rounded border border-rose-700/70 bg-rose-900/40 text-rose-200 hover:bg-rose-800/60 disabled:opacity-40"
+                    >
+                      {del.isPending ? "Deleting…" : "Delete for good"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(null)}
+                      className="text-[11px] text-slate-400 hover:text-slate-200"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                  {del.isError && (
+                    <div className="text-[11px] text-rose-300">
+                      {(del.error as Error).message}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           );
         })}
-      </ul>
+      </div>
       {sending && (
         <HelixSendModal
           connId={connId}

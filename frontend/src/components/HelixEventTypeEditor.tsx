@@ -88,6 +88,7 @@ export default function HelixEventTypeEditor({
   const seededCount = Object.keys(
     (mode === "create" ? seed?.event_schema : null) ?? {},
   ).length;
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const save = useMutation({
@@ -224,6 +225,28 @@ export default function HelixEventTypeEditor({
             Close
           </button>
         </div>
+
+        {mode === "edit" && existing?.event_type_uid && (
+          <div className="px-5 pt-3 flex items-center gap-2">
+            <span className="text-[11px] text-slate-500 shrink-0">
+              Event type uid
+            </span>
+            <code className="text-[11px] font-mono text-slate-400 truncate">
+              {existing.event_type_uid}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(existing.event_type_uid);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              className="ml-auto text-[11px] px-2 py-0.5 rounded border border-white/15 text-slate-400 hover:text-slate-200 shrink-0"
+            >
+              {copied ? "copied" : "copy"}
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
           {mode === "create" && (
