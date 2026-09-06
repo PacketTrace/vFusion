@@ -44,8 +44,6 @@ PROMPT = """You design Verkada Helix event types.
 Helix attaches structured events to a camera's timeline. Someone is
 building an automation and needs the event type it will write into.
 
-They described what they want to log:
-
 __INTENT__
 
 __CONTEXT__
@@ -80,12 +78,23 @@ Rules that matter:
   to the operator as help text and is not sent to Verkada.
 """
 
-CONTEXT_BLOCK = """They are building this inside a flow that starts on:
+CONTEXT_BLOCK = """This event type is the last step of a flow that is
+already built. Here is what the steps above it do, in order:
 
 __TRIGGER__
 
-Attributes that can be filled from that trigger are more useful than
-ones nobody has a source for."""
+Design the type for THIS flow, not for the subject in general. The steps
+above have already decided what is being looked for and what shape the
+answer comes back in:
+
+- If a step returns named JSON keys, there should be one attribute per
+  key, named to match. That is what the flow will actually fill; an
+  attribute with no key feeding it stays blank forever.
+- If a condition tests for something specific, the type is about that.
+  A flow that checks whether the animal is a kangaroo wants a kangaroo
+  sighting log, and should say so in the name.
+- Do not add attributes nothing upstream can populate, however sensible
+  they sound on their own."""
 
 
 class AssistRequest(BaseModel):
@@ -118,7 +127,16 @@ def _compose(api_key: str, intent: str, trigger: str | None) -> tuple[dict[str, 
         if trigger and trigger.strip()
         else ""
     )
-    prompt = PROMPT.replace("__INTENT__", intent.strip()).replace(
+    described = (
+        f"They described what they want to log:\n\n{intent.strip()}"
+        if intent.strip()
+        # With a flow to read, a blank description is not missing
+        # information — saying "they described it like this: <nothing>"
+        # would invite the model to invent a brief.
+        else "They did not describe it in words. Read the flow below "
+        "instead — it already says what this is for."
+    )
+    prompt = PROMPT.replace("__INTENT__", described).replace(
         "__CONTEXT__", context
     )
     client = genai.Client(api_key=api_key)
@@ -190,8 +208,11 @@ async def draft_event_type(
     body: AssistRequest,
     session: AsyncSession = Depends(get_session),
 ) -> AssistResponse:
-    if not body.intent.strip():
-        raise HTTPException(status_code=400, detail="Describe what you want to log.")
+    if not body.intent.strip() and not (body.trigger_summary or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Describe what you want to log, or open this from a flow.",
+        )
 
     conn = (
         await session.execute(

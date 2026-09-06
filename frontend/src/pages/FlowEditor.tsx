@@ -1665,7 +1665,16 @@ function priorStepsFor(
   edges: FlowEdge[],
   specs: Record<string, ActionSpec> | undefined,
   nodeSamples?: Record<string, unknown> | null,
-): Array<{ name: string; output_sample: unknown; jsonKeys: string[] }> {
+): Array<{
+  name: string;
+  output_sample: unknown;
+  jsonKeys: string[];
+  /** One line saying what this step does, in the flow's own words. The
+   *  Helix drafting assistant reads these: a condition testing for
+   *  "kangaroo" is the single most useful fact about what the event
+   *  type downstream is for, and nothing was passing it on. */
+  summary?: string;
+}> {
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
   const incoming = new Map<string, FlowEdge[]>();
   for (const e of edges) {
@@ -1692,6 +1701,13 @@ function priorStepsFor(
     // can wire itself to it. A real run beats the prompt; the prompt
     // beats nothing, which is what the form had before.
     const prompt = typeof n.config?.prompt === "string" ? n.config.prompt : "";
+    const cfg = (n.config ?? {}) as Record<string, unknown>;
+    const summary =
+      n.kind === "condition"
+        ? `condition: if ${String(cfg.left ?? "?")} ${String(cfg.operator ?? "?")} ${String(cfg.right ?? "?")}`
+        : prompt
+          ? `${n.action_type ?? "step"} asks: ${prompt.slice(0, 400)}`
+          : undefined;
     // Prefer a real captured sample (from "Run this step") over the
     // action's canned output_sample so the variable picker shows keys
     // that actually exist for this flow.
@@ -1702,6 +1718,7 @@ function priorStepsFor(
         name: n.name,
         output_sample: captured,
         jsonKeys: fromRun.length ? fromRun : keysFromPrompt(prompt),
+        summary,
       };
     }
     const spec =
@@ -1710,6 +1727,7 @@ function priorStepsFor(
       name: n.name,
       output_sample: spec?.output_sample,
       jsonKeys: keysFromPrompt(prompt),
+      summary,
     };
   });
 }

@@ -27,6 +27,8 @@ interface PriorStep {
   /** Keys this step will put in output.json — read from a captured run
    *  if it has one, otherwise from its prompt. See lib/promptKeys. */
   jsonKeys?: string[];
+  /** One line on what this step does, for the Helix drafting assistant. */
+  summary?: string;
 }
 
 interface Props {
@@ -533,6 +535,7 @@ function renderControl(
         f={f}
         config={config}
         setAll={setAll}
+        priorSteps={priorSteps}
         triggerSummary={
           [triggerFamily, triggerNotificationType].filter(Boolean).join(" · ") ||
           null
@@ -862,17 +865,30 @@ function CameraRefField({
 }
 
 
+/** "vision_to_text" -> "Vision To Text". Helix attribute names are
+ *  column headings in Command, not code identifiers. */
+const titleCase = (k: string) =>
+  k
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+
 function HelixEventRefField({
   f,
   config,
   setAll,
   triggerSummary,
+  priorSteps = [],
 }: {
   f: ActionFieldSpec;
   config: Record<string, unknown>;
   setAll: (config: Record<string, unknown>) => void;
   /** What the flow starts on, for the drafting assistant in the editor. */
   triggerSummary?: string | null;
+  priorSteps?: PriorStep[];
 }) {
   const connId = f.connection_field
     ? (config[f.connection_field] as string | undefined)
@@ -889,6 +905,26 @@ function HelixEventRefField({
   // we auto-select the new type so the operator doesn't have to find
   // it in the dropdown manually. Same modal the Helix page uses.
   const [creating, setCreating] = useState(false);
+
+  // Nearest upstream step that produces JSON — the same one the
+  // attributes wire themselves to, so the type gets the fields the flow
+  // is actually going to fill.
+  const upstream = [...priorSteps]
+    .reverse()
+    .find((p) => (p.jsonKeys?.length ?? 0) > 0);
+  const upstreamKeys = upstream?.jsonKeys ?? [];
+
+  // Everything the flow already knows, in the order it happens.
+  const assistContext =
+    [
+      triggerSummary ? `Trigger: ${triggerSummary}` : null,
+      ...priorSteps.map((p) => (p.summary ? `Step "${p.name}" — ${p.summary}` : null)),
+      upstreamKeys.length
+        ? `The step feeding this one returns these JSON keys: ${upstreamKeys.join(", ")}. The event type should have an attribute for each.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n") || null;
   const current = (config[f.name] as string) ?? "";
   return (
     <>
@@ -939,11 +975,26 @@ function HelixEventRefField({
         <HelixEventTypeEditor
           connId={connId}
           mode="create"
+          // The whole flow, not just the trigger. The steps above
+          // already say what this is for — a prompt asking for an
+          // animal and a condition testing it for "kangaroo" — and none
+          // of it was reaching the form, so the assistant started from
+          // a blank box on a flow that had already answered the
+          // question.
+          seed={
+            upstreamKeys.length
+              ? {
+                  event_schema: Object.fromEntries(
+                    upstreamKeys.map((k) => [titleCase(k), "string"]),
+                  ),
+                }
+              : undefined
+          }
           // The flow already knows what starts it, and the editor was
           // asking the operator to invent attributes without it. A
           // draft that knows the trigger is a door event suggests the
           // door, not a camera nobody has a source for here.
-          triggerSummary={triggerSummary}
+          triggerSummary={assistContext}
           onClose={() => setCreating(false)}
           onCreated={(created) => {
             // Drop the new type's uid into this field + seed the

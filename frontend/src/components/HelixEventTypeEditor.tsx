@@ -144,7 +144,12 @@ export default function HelixEventTypeEditor({
   // value — and the cost of guessing wrong is a type that already has
   // events posted against it.
   const [intent, setIntent] = useState("");
-  const [assistOpen, setAssistOpen] = useState(false);
+  // Opened by default when the flow has already told us what it is for.
+  // Making somebody click into an assistant, on a form the surrounding
+  // flow could have filled, is the gap being closed here.
+  const [assistOpen, setAssistOpen] = useState(
+    mode === "create" && !!triggerSummary,
+  );
   const [assistErr, setAssistErr] = useState<string | null>(null);
   const [assistCost, setAssistCost] = useState<number | null>(null);
   const [whys, setWhys] = useState<Record<string, string>>({});
@@ -235,19 +240,40 @@ export default function HelixEventTypeEditor({
                 </button>
               ) : (
                 <div className="p-3 space-y-2">
+                  {/* What it already knows, shown rather than implied.
+                      Otherwise the box looks blank and the draft looks
+                      like a guess, when it is reading the flow. */}
+                  {triggerSummary && (
+                    <details className="text-[11px] text-slate-400">
+                      <summary className="cursor-pointer hover:text-slate-200 select-none">
+                        Reading {triggerSummary.split("\n").length} thing
+                        {triggerSummary.split("\n").length === 1 ? "" : "s"} from
+                        this flow
+                      </summary>
+                      <pre className="mt-1 whitespace-pre-wrap text-slate-500 font-mono text-[10.5px] max-h-32 overflow-auto">
+                        {triggerSummary}
+                      </pre>
+                    </details>
+                  )}
                   <textarea
                     value={intent}
                     onChange={(e) => setIntent(e.target.value)}
                     rows={2}
                     autoFocus
-                    placeholder="e.g. log who opened the garage door and whether a vehicle was there"
+                    placeholder={
+                      triggerSummary
+                        ? "Optional — anything the flow above doesn't already say"
+                        : "e.g. log who opened the garage door and whether a vehicle was there"
+                    }
                     className="w-full px-2.5 py-2 rounded bg-black/30 border border-white/15 text-sm placeholder:text-slate-500 focus:outline-none focus:border-violet-400/60"
                   />
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       disabled={
-                        !intent.trim() || draft.isPending || !geminiConn
+                        (!intent.trim() && !triggerSummary) ||
+                        draft.isPending ||
+                        !geminiConn
                       }
                       onClick={() => draft.mutate()}
                       className="text-sm px-3 py-1.5 rounded-md bg-violet-500/25 hover:bg-violet-500/35 border border-violet-400/40 text-violet-100 disabled:opacity-40"
