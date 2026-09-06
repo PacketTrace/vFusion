@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import {
-  apiGet,
-  ApiEndpoint,
-  ApiEndpointDetail,
-  ApiEndpointList,
-  ApiSpec,
-} from "../lib/api";
+import { apiGet, ApiEndpoint, ApiEndpointDetail } from "../lib/api";
+import EndpointBrowser from "./EndpointBrowser";
 
 const METHOD_STYLE: Record<string, string> = {
   GET: "bg-sky-900 text-sky-200",
@@ -89,6 +84,15 @@ export default function EndpointPicker({ value, onChange, writeOnly }: Props) {
   );
 }
 
+/**
+ * The modal is now a frame around the shared browser.
+ *
+ * It used to be a second implementation of the same catalog: its own
+ * search with its own debounce, its own namespace chips, its own
+ * grouping. Every improvement went to whichever copy was in front of
+ * me, so the runner grew search aliases and tag categories and this one
+ * did not. One browser, two frames.
+ */
 function PickerModal({
   onClose,
   onPick,
@@ -98,156 +102,66 @@ function PickerModal({
   onPick: (endpoint: ApiEndpointDetail) => void;
   writeOnly?: boolean;
 }) {
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [namespace, setNamespace] = useState("");
+  const [chosen, setChosen] = useState<string | null>(null);
+
+  // The browser lists endpoints; the caller wants the full operation,
+  // so the detail is fetched on pick rather than for all 166 up front.
+  const detail = useQuery({
+    queryKey: ["api-endpoint", chosen],
+    queryFn: () =>
+      apiGet<ApiEndpointDetail>(`/api/verkada/catalog/endpoints/${chosen}`),
+    enabled: !!chosen,
+  });
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const specs = useQuery({
-    queryKey: ["api-specs"],
-    queryFn: () => apiGet<ApiSpec[]>("/api/verkada/catalog/specs"),
-  });
-  const endpoints = useQuery({
-    queryKey: ["api-endpoints-picker", namespace, debouncedSearch],
-    queryFn: () => {
-      const params = new URLSearchParams({ limit: "500" });
-      if (namespace) params.set("namespace", namespace);
-      if (debouncedSearch) params.set("q", debouncedSearch);
-      return apiGet<ApiEndpointList>(
-        `/api/verkada/catalog/endpoints?${params.toString()}`
-      );
-    },
-  });
-
-  const visible = (endpoints.data?.items ?? []).filter((e) =>
-    writeOnly ? ["POST", "PUT", "PATCH", "DELETE"].includes(e.method) : true
-  );
-
-  // Group by (namespace, tag) for the visual organization the user expects.
-  const groupByNs = !namespace;
-  const byNs = new Map<string, Map<string, ApiEndpoint[]>>();
-  for (const e of visible) {
-    const ns = groupByNs ? e.namespace : "";
-    const tag = e.tags?.[0] ?? "(untagged)";
-    if (!byNs.has(ns)) byNs.set(ns, new Map());
-    const m = byNs.get(ns)!;
-    if (!m.has(tag)) m.set(tag, []);
-    m.get(tag)!.push(e);
-  }
-
-  const pick = async (e: ApiEndpoint) => {
-    const detail = await apiGet<ApiEndpointDetail>(
-      `/api/verkada/catalog/endpoints/${e.id}`
-    );
-    onPick(detail);
-  };
+    if (detail.data) onPick(detail.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.data]);
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60]">
-      <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-3xl h-[85vh] flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Pick an endpoint</h3>
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-12 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-white/15 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Pick an endpoint</h2>
+            {writeOnly && (
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Only endpoints that change something — this is an action step.
+              </div>
+            )}
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-sm px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-slate-200"
+            className="text-sm px-2 py-1 rounded text-slate-400 hover:text-slate-200"
           >
             Close
           </button>
         </div>
-
-        <div className="px-4 py-2 border-b border-slate-800 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setNamespace("")}
-            className={`text-xs px-2 py-1 rounded border ${
-              !namespace
-                ? "border-sky-600 bg-sky-950/50 text-sky-200"
-                : "border-slate-700 text-slate-400 hover:border-slate-500"
-            }`}
-          >
-            All
-          </button>
-          {(specs.data ?? []).map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setNamespace(s.namespace)}
-              className={`text-xs px-2 py-1 rounded border ${
-                namespace === s.namespace
-                  ? "border-sky-600 bg-sky-950/50 text-sky-200"
-                  : "border-slate-700 text-slate-300 hover:border-slate-500"
-              }`}
-            >
-              {s.namespace}
-              <span className="text-slate-500 ml-1.5">{s.endpoint_count}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="px-4 py-2 border-b border-slate-800">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="search path, summary, operation_id"
-            className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-700 text-sm focus:outline-none focus:border-sky-600"
-            autoFocus
+        <div className="flex-1 min-h-0 p-3">
+          <EndpointBrowser
+            className="h-full max-h-[60vh] border-0 bg-transparent"
+            selectedId={chosen}
+            filter={
+              writeOnly
+                ? (e: ApiEndpoint) =>
+                    ["POST", "PUT", "PATCH", "DELETE"].includes(e.method)
+                : undefined
+            }
+            onPick={(e: ApiEndpoint) => setChosen(e.id)}
           />
         </div>
-
-        <div className="flex-1 overflow-auto">
-          {[...byNs.entries()].sort().map(([ns, tagMap]) => (
-            <div key={ns}>
-              {groupByNs && (
-                <div className="px-3 py-1.5 bg-slate-900/80 text-[10px] font-bold uppercase tracking-wider text-slate-400 sticky top-0">
-                  {ns}
-                </div>
-              )}
-              {[...tagMap.entries()]
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([tag, items]) => (
-                  <div key={tag}>
-                    <div className="px-3 py-1.5 bg-slate-900/40 text-xs font-semibold uppercase tracking-wider text-slate-300">
-                      {tag}{" "}
-                      <span className="text-[10px] text-slate-500 font-normal normal-case">
-                        ({items.length})
-                      </span>
-                    </div>
-                    <ul className="divide-y divide-slate-800/50">
-                      {items.map((e) => {
-                        const label = e.summary || e.operation_id || e.path;
-                        return (
-                          <li
-                            key={e.id}
-                            onClick={() => pick(e)}
-                            className="px-3 py-2 cursor-pointer hover:bg-slate-800/50 text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
-                                  METHOD_STYLE[e.method] ??
-                                  "bg-slate-800 text-slate-200"
-                                }`}
-                              >
-                                {e.method}
-                              </span>
-                              <span className="text-slate-100 truncate">
-                                {label}
-                              </span>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
-            </div>
-          ))}
-          {!endpoints.isLoading && visible.length === 0 && (
-            <div className="p-6 text-sm text-slate-500">No endpoints match.</div>
-          )}
-        </div>
+        {detail.isFetching && (
+          <div className="px-5 py-2 text-[11px] text-slate-500 border-t border-white/10">
+            Loading the endpoint…
+          </div>
+        )}
       </div>
     </div>
   );
