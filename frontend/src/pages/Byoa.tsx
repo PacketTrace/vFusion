@@ -85,6 +85,20 @@ const DEFAULT_PROMPT = "";
 const PROMPT_PLACEHOLDER = "Do you see a spill on the ground?";
 
 
+/** A top-level section of the bench.
+ *
+ *  These were 11px uppercase, the same treatment as the small labels
+ *  inside cards — so the page's three structural landmarks were set
+ *  smaller than the body text underneath them. Uppercasing a whole
+ *  sentence is what made them read as captions; sentence case at
+ *  heading weight reads as the heading it is. Matches the Section
+ *  helper on the Templates page. */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-sm font-semibold text-slate-100">{children}</h2>
+  );
+}
+
 export default function Byoa() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -736,8 +750,8 @@ export default function Byoa() {
             footage, model — exists to serve the analytic, so asking
             for them before asking what the analytic is put the
             plumbing ahead of the subject. */}
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-          What should it look for
+        <div className="mb-2">
+          <SectionHeading>What should it look for</SectionHeading>
         </div>
         {/* Describe-it and pick-one, side by side rather than stacked.
             They are alternatives, not steps: stacking them read as a
@@ -987,9 +1001,7 @@ export default function Byoa() {
             works at all, before it is wired into anything that runs on
             its own. Saying so is worth more than any tooltip explaining
             a heading that was pointing at the wrong idea. */}
-        <div className="text-[11px] uppercase tracking-wider text-slate-400">
-          Try it on something real
-        </div>
+        <SectionHeading>Try it on something real</SectionHeading>
         <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
           One run against live, historical, audio or uploaded footage, so you
           can see what comes back before wiring it into a flow.
@@ -1368,9 +1380,7 @@ export default function Byoa() {
               from the rest of the section. Everything above chooses what
               to try the analytic on; this decides whether the trial
               leaves anything behind in Verkada. */}
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">
-            What happens to the result
-          </div>
+          <SectionHeading>What happens to the result</SectionHeading>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
