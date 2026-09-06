@@ -1,5 +1,6 @@
 import { Flow } from "../lib/api";
 import { ZONES } from "./EpochInput";
+import { Stepper, TimeChip } from "./EpochPicker";
 
 
 // Schedule trigger config. Three preset kinds — no free-form cron
@@ -174,45 +175,60 @@ export default function ScheduleTriggerForm({ value, onChange }: Props) {
             required
             help={
               value.tz === "UTC"
-                ? "24-hour. This flow was saved before schedules carried a zone, so it is still firing in UTC — pick your own to change that."
-                : `24-hour, ${value.tz.replace(/_/g, " ")}. Follows the clocks, so it stays at this hour through daylight saving.`
+                ? "Saved before schedules carried a zone, so it is still firing in UTC — pick yours below to change that."
+                : "Follows the clocks, so it stays at this hour through daylight saving."
             }
           >
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={value.hour}
-                onChange={(e) =>
-                  onChange({
-                    ...value,
-                    hour: clampInt(e.target.value, 0, 23, value.hour),
-                  })
-                }
-                className="w-16 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono text-center"
-              />
-              <span className="text-slate-500">:</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                value={value.minute}
-                onChange={(e) =>
-                  onChange({
-                    ...value,
-                    minute: clampInt(e.target.value, 0, 59, value.minute),
-                  })
-                }
-                className="w-16 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono text-center"
-              />
-              {/* Beside the time, not in an "advanced" section. Nobody
-                  thinks in UTC, and a schedule labelled with the wrong
-                  zone runs at the wrong hour while looking correct. */}
+            <div className="space-y-3">
+              {/* The same stepper the epoch picker uses, not a lookalike.
+                  Two number inputs asked you to know that 09 meant nine
+                  in the morning and to type it; arrows and Noon do not
+                  ask you to know anything. */}
+              <div className="flex items-center gap-2 justify-center">
+                <Stepper
+                  value={value.hour}
+                  min={0}
+                  max={23}
+                  wrap
+                  onChange={(v) => onChange({ ...value, hour: v })}
+                  label="hours"
+                />
+                <div className="text-2xl text-slate-500 pb-1">:</div>
+                <Stepper
+                  value={value.minute}
+                  min={0}
+                  max={59}
+                  wrap
+                  onChange={(v) => onChange({ ...value, minute: v })}
+                  label="minutes"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                <TimeChip
+                  label="Midnight"
+                  onClick={() => onChange({ ...value, hour: 0, minute: 0 })}
+                />
+                <TimeChip
+                  label="6 AM"
+                  onClick={() => onChange({ ...value, hour: 6, minute: 0 })}
+                />
+                <TimeChip
+                  label="Noon"
+                  onClick={() => onChange({ ...value, hour: 12, minute: 0 })}
+                />
+                <TimeChip
+                  label="6 PM"
+                  onClick={() => onChange({ ...value, hour: 18, minute: 0 })}
+                />
+              </div>
+
+              {/* The zone belongs with the clock it qualifies — an hour
+                  is meaningless without it. */}
               <select
                 value={value.tz}
                 onChange={(e) => onChange({ ...value, tz: e.target.value })}
-                className="flex-1 min-w-0 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
               >
                 {[...new Set([value.tz, ...ZONES])].map((z) => (
                   <option key={z} value={z}>
@@ -282,4 +298,17 @@ function Field({
       {help && <div className="text-xs text-slate-500 mt-1">{help}</div>}
     </label>
   );
+}
+
+
+/** How to say a schedule's zone in a summary line.
+ *
+ *  A bare "09:00" is a lie by omission once schedules can be local, and
+ *  the old hard-coded "UTC" became one the moment they could. Flows
+ *  saved before zones existed genuinely are UTC and still say so; the
+ *  rest show the city, which is the part anybody reads. */
+export function zoneLabel(tz: unknown): string {
+  const name = typeof tz === "string" && tz.trim() ? tz.trim() : "UTC";
+  if (name === "UTC") return "UTC";
+  return (name.split("/").pop() ?? name).replace(/_/g, " ");
 }

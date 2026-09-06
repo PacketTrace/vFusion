@@ -7,6 +7,7 @@ import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import { useNotificationLabel } from "../lib/taxonomy";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Templates from "./Templates";
+import { zoneLabel } from "../components/ScheduleTriggerForm";
 import Runs from "./Runs";
 
 
@@ -361,7 +362,7 @@ function ScheduleTriggerLabel({
         <span className="text-slate-200">
           {pad(cfg.hour ?? 0)}:{pad(cfg.minute ?? 0)}
         </span>{" "}
-        UTC
+        {zoneLabel(cfg.tz)}
       </span>
     );
   }

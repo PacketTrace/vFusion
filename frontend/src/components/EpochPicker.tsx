@@ -345,7 +345,7 @@ export default function EpochPicker({ value, onChange }: Props) {
 }
 
 
-function Stepper({
+export function Stepper({
   value,
   min,
   max,
@@ -401,7 +401,7 @@ function Stepper({
 }
 
 
-function TimeChip({
+export function TimeChip({
   label,
   onClick,
 }: {

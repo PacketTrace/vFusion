@@ -1,4 +1,5 @@
 import { Handle, Position, NodeProps } from "@xyflow/react";
+import { zoneLabel } from "../ScheduleTriggerForm";
 
 import { Flow } from "../../lib/api";
 import { useNotificationLabel } from "../../lib/taxonomy";
@@ -112,6 +113,7 @@ function ScheduleSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
     const hour = Number((cfg as Record<string, unknown>).hour) || 0;
     const minute = Number((cfg as Record<string, unknown>).minute) || 0;
     const weekday = Number((cfg as Record<string, unknown>).weekday) || 0;
+    const tz = (cfg as Record<string, unknown>).tz;
     return (
       <div className="px-3 py-2 text-xs">
         <div className="text-slate-300">
@@ -119,14 +121,14 @@ function ScheduleSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
             <>
               Runs <span className="font-semibold text-slate-100">{WEEKDAYS[weekday]}</span> at{" "}
               <span className="font-semibold text-slate-100">
-                {pad(hour)}:{pad(minute)} UTC
+                {pad(hour)}:{pad(minute)} {zoneLabel(tz)}
               </span>
             </>
           ) : (
             <>
               Runs daily at{" "}
               <span className="font-semibold text-slate-100">
-                {pad(hour)}:{pad(minute)} UTC
+                {pad(hour)}:{pad(minute)} {zoneLabel(tz)}
               </span>
             </>
           )}
