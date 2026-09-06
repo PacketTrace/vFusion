@@ -121,12 +121,15 @@ export default function DescribeFlowPanel({
             you press Save.
           </p>
         </div>
+        {/* "Build it manually" was the right words when this opened by
+            itself and the canvas was behind it. Opened deliberately from
+            a button, the way out is just closing what you opened. */}
         <button
           type="button"
           onClick={onDismiss}
           className="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded hover:bg-white/10 shrink-0"
         >
-          Build it manually
+          Cancel
         </button>
       </div>
 

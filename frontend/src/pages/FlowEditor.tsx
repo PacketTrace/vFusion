@@ -148,7 +148,12 @@ function FlowEditorInner() {
   // build this myself" — there is no modal in front of Create flow,
   // because a blank canvas is the moment the offer is welcome and the
   // moment it costs nothing to decline.
-  const [describing, setDescribing] = useState(isNew);
+  // Closed on arrival, even for a new flow. Opening straight into a
+  // prompt box makes the canvas feel like it is behind a door somebody
+  // else opened, and the "Build it manually" escape hatch only reads as
+  // an escape hatch because the thing was in the way to begin with.
+  // It's a button now.
+  const [describing, setDescribing] = useState(false);
   const [pendingPairedHelix, setPendingPairedHelix] = useState<{
     def: HelixEventTypeDef;
     mapping: Record<string, string>;
@@ -1091,13 +1096,26 @@ function FlowEditorInner() {
           >
             Save as template
           </button>
+          {/* The AI affordance. Tinted rather than another grey button —
+              it does something categorically different from its
+              neighbours, which only rearrange or persist what is
+              already on the canvas. Still cooler than Save, which is
+              the one thing on this bar that is committing anything. */}
           <button
             type="button"
             onClick={() => setDescribing(true)}
-            title="Draft this flow from a description"
-            className="text-sm px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-slate-100 border border-white/15"
+            title="Draft this flow — trigger, steps and Helix type — from a sentence"
+            className="group text-sm px-3 py-1.5 rounded-md flex items-center gap-1.5 text-violet-100 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 hover:border-violet-400/50 transition-colors"
           >
-            Describe
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="w-3.5 h-3.5 fill-violet-300 group-hover:fill-violet-200 transition-colors"
+            >
+              <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
+              <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
+            </svg>
+            Draft with AI
           </button>
           <button
             onClick={handleSave}
@@ -1149,11 +1167,18 @@ function FlowEditorInner() {
           </ReactFlow>
 
           {describing && (
-            <div className="absolute inset-0 z-20 flex items-start justify-center pt-16 bg-black/50 backdrop-blur-[2px]">
-              <DescribeFlowPanel
-                onDraft={applyDraft}
-                onDismiss={() => setDescribing(false)}
-              />
+            <div
+              className="absolute inset-0 z-20 flex items-start justify-center pt-16 bg-black/50 backdrop-blur-[2px]"
+              // Backdrop dismiss, now that this is something you chose to
+              // open rather than something you arrived inside.
+              onClick={() => setDescribing(false)}
+            >
+              <div onClick={(e) => e.stopPropagation()}>
+                <DescribeFlowPanel
+                  onDraft={applyDraft}
+                  onDismiss={() => setDescribing(false)}
+                />
+              </div>
             </div>
           )}
 
