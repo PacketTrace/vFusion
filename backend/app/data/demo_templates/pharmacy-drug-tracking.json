@@ -1,0 +1,195 @@
+{
+  "name": "Pharmacy — drug tracking",
+  "summary": "Prescription fills at a pharmacy counter: what was dispensed, how much, for whom, and which staff member handled the request.",
+  "helix_event_type": {
+    "name": "💊 Pharmacy Dispense",
+    "event_schema": {
+      "Request Number": "string",
+      "Prescribed Drug": "string",
+      "Amount": "string",
+      "Patient Name": "string",
+      "Employee Name": "string"
+    }
+  },
+  "spec": {
+    "fields": {
+      "Request Number": {
+        "kind": "id",
+        "prefix": "RX-",
+        "digits": 7
+      },
+      "Prescribed Drug": {
+        "kind": "choice",
+        "values": [
+          "Lisinopril",
+          "Atorvastatin",
+          "Metformin",
+          "Amlodipine",
+          "Losartan",
+          "Omeprazole",
+          "Sertraline",
+          "Gabapentin",
+          "Amoxicillin",
+          "Azithromycin",
+          "Prednisone",
+          "Hydrochlorothiazide",
+          "Ciprofloxacin",
+          "Tramadol",
+          "Ibuprofen"
+        ],
+        "weights": [
+          13,
+          12,
+          11,
+          9,
+          9,
+          8,
+          8,
+          7,
+          6,
+          4,
+          4,
+          4,
+          3,
+          1,
+          1
+        ]
+      },
+      "Amount": {
+        "kind": "linked",
+        "to": "Prescribed Drug",
+        "map": {
+          "Lisinopril": [
+            "30 × 10 mg",
+            "90 × 10 mg",
+            "30 × 20 mg",
+            "90 × 20 mg",
+            "30 × 40 mg"
+          ],
+          "Atorvastatin": [
+            "30 × 20 mg",
+            "90 × 20 mg",
+            "30 × 40 mg",
+            "90 × 40 mg",
+            "30 × 80 mg"
+          ],
+          "Metformin": [
+            "60 × 500 mg",
+            "180 × 500 mg",
+            "60 × 850 mg",
+            "60 × 1000 mg"
+          ],
+          "Amlodipine": [
+            "30 × 5 mg",
+            "90 × 5 mg",
+            "30 × 10 mg",
+            "90 × 10 mg"
+          ],
+          "Losartan": [
+            "30 × 50 mg",
+            "90 × 50 mg",
+            "30 × 100 mg"
+          ],
+          "Omeprazole": [
+            "30 × 20 mg",
+            "90 × 20 mg",
+            "30 × 40 mg"
+          ],
+          "Sertraline": [
+            "30 × 50 mg",
+            "90 × 50 mg",
+            "30 × 100 mg"
+          ],
+          "Gabapentin": [
+            "90 × 300 mg",
+            "180 × 300 mg",
+            "90 × 600 mg"
+          ],
+          "Amoxicillin": [
+            "20 × 500 mg",
+            "30 × 500 mg",
+            "21 × 875 mg"
+          ],
+          "Azithromycin": [
+            "6 × 250 mg",
+            "3 × 500 mg"
+          ],
+          "Prednisone": [
+            "21 × 10 mg",
+            "30 × 20 mg",
+            "12 × 5 mg"
+          ],
+          "Hydrochlorothiazide": [
+            "30 × 12.5 mg",
+            "90 × 25 mg"
+          ],
+          "Ciprofloxacin": [
+            "14 × 500 mg",
+            "20 × 250 mg"
+          ],
+          "Tramadol": [
+            "20 × 50 mg",
+            "30 × 50 mg",
+            "60 × 50 mg"
+          ],
+          "Ibuprofen": [
+            "30 × 600 mg",
+            "90 × 800 mg"
+          ]
+        }
+      },
+      "Patient Name": {
+        "kind": "choice",
+        "values": [
+          "Alma Rutherford",
+          "Devon Achebe",
+          "Priscilla Vance",
+          "Ronald Beauchamp",
+          "Ingrid Solberg",
+          "Tobias Ferreira",
+          "Marguerite Oyelaran",
+          "Chester Kowalczyk",
+          "Nadia Rahimi",
+          "Wendell Fitzgerald",
+          "Cecelia Nakagawa",
+          "Emmett Braddock",
+          "Rosalind Achterberg",
+          "Hugo Villalobos",
+          "Beatrice Lindqvist",
+          "Terrell Washington",
+          "Ida Moravec",
+          "Xiomara Duarte"
+        ]
+      },
+      "Employee Name": {
+        "kind": "choice",
+        "values": [
+          "M. Castellanos, RPh",
+          "J. Okoro, RPh",
+          "L. Petrosyan, PharmD",
+          "D. Whitfield, CPhT",
+          "S. Marchetti, CPhT"
+        ],
+        "weights": [
+          28,
+          24,
+          18,
+          16,
+          14
+        ]
+      }
+    },
+    "timing": {
+      "shape": "business",
+      "open_hours": [
+        8,
+        20
+      ],
+      "peaks": [
+        11,
+        17
+      ],
+      "weekends": true
+    }
+  }
+}
