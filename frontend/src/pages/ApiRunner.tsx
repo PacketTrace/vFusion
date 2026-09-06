@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import CameraIdInput from "../components/CameraIdInput";
@@ -177,23 +177,42 @@ function coerce(value: string, type: string): unknown {
   return value;
 }
 
-export default function ApiRunner() {
-  const [picked, setPicked] = useState<ApiEndpoint | null>(null);
+/**
+ * One call: its parameters, its arm-to-run guard, its response.
+ *
+ * Extracted so two can exist at once. Several endpoints need an id that
+ * only another endpoint will tell you, and the alternative was leaving
+ * the call you were composing, going to find it, and coming back to a
+ * form you had already filled in. Two panes means the lookup stays on
+ * screen next to the thing it is for.
+ */
+function RunnerPane({
+  picked,
+  connId,
+  setConnId,
+  verkada,
+  focused,
+  onFocus,
+  showConnection,
+}: {
+  picked: ApiEndpoint | null;
+  connId: string;
+  setConnId: (v: string) => void;
+  verkada: Connection[];
+  /** Split mode only: which pane the sidebar loads into. */
+  focused?: boolean;
+  onFocus?: () => void;
+  showConnection: boolean;
+}) {
   const [pathValues, setPathValues] = useState<Record<string, string>>({});
   const [queryValues, setQueryValues] = useState<Record<string, string>>({});
   const [bodyValues, setBodyValues] = useState<Record<string, string>>({});
   const [rawMode, setRawMode] = useState(false);
   const [bodyText, setBodyText] = useState("");
   const [bodyError, setBodyError] = useState<string | null>(null);
-  const [connId, setConnId] = useState("");
   const [armed, setArmed] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const conns = useQuery({
-    queryKey: ["connections"],
-    queryFn: () => apiGet<Connection[]>("/api/connections"),
-  });
-  const verkada = (conns.data ?? []).filter((c) => c.type === "verkada");
 
   const detail = useQuery({
     queryKey: ["api-endpoint", picked?.id],
@@ -232,8 +251,11 @@ export default function ApiRunner() {
       }),
   });
 
-  function choose(e: ApiEndpoint) {
-    setPicked(e);
+  // The parent decides which endpoint this pane is showing, so the
+  // reset happens when that changes rather than in a click handler —
+  // in split mode the click that loads a pane happens in the sidebar,
+  // outside it.
+  useEffect(() => {
     setPathValues({});
     setQueryValues({});
     setBodyValues({});
@@ -242,7 +264,8 @@ export default function ApiRunner() {
     setBodyError(null);
     setArmed(false);
     run.reset();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked?.id]);
 
   function onRun() {
     setBodyError(null);
@@ -267,28 +290,46 @@ export default function ApiRunner() {
   }
 
   return (
-    <div className="flex gap-4 items-start">
-      {/* Browse first, search second. Search assumes you already know
-          the word; the categories are how you find out what exists —
-          which is the same reason Verkada's own docs lead with them.
-          Shared with the flow editor's endpoint picker so the two
-          cannot drift apart again. */}
-      <EndpointBrowser
-        selectedId={picked?.id ?? null}
-        onPick={choose}
-        className="w-72 shrink-0 max-h-[38rem]"
-      />
-
-      <div className="flex-1 min-w-0 space-y-3">
+    <div
+      onFocusCapture={onFocus}
+      onMouseDown={onFocus}
+      className={
+        focused === undefined
+          ? "flex-1 min-w-0 space-y-3"
+          : `flex-1 min-w-0 space-y-3 rounded-lg p-2 -m-2 transition-[background-color,box-shadow] duration-150 ease-out-strong ${
+              focused
+                ? "bg-sky-500/5 ring-1 ring-sky-500/30"
+                : "ring-1 ring-transparent"
+            }`
+      }
+    >
       {!picked && (
         <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-500">
-          Pick an endpoint on the left. Categories come from Verkada&rsquo;s own
-          tags, so they match how the API is documented.
+          {focused === false ? (
+            // Two empty panes both saying "pick an endpoint on the left"
+            // would not say which one the sidebar is aimed at.
+            <>Click here first, then pick an endpoint on the left.</>
+          ) : (
+            <>
+              Pick an endpoint on the left. Categories come from
+              Verkada&rsquo;s own tags, so they match how the API is
+              documented.
+            </>
+          )}
         </div>
       )}
 
       {picked && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div
+          className={
+            // Request beside response when a pane has the whole width;
+            // stacked when two panes share it, since four columns
+            // across leaves nothing readable in any of them.
+            focused === undefined
+              ? "grid grid-cols-1 lg:grid-cols-2 gap-3"
+              : "grid grid-cols-1 gap-3"
+          }
+        >
           <div className="rounded-lg border border-white/15 bg-white/5 p-3 space-y-3">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span
@@ -546,7 +587,7 @@ export default function ApiRunner() {
               </div>
             )}
 
-            {verkada.length > 1 && (
+            {showConnection && verkada.length > 1 && (
               <select
                 value={connId}
                 onChange={(e) => setConnId(e.target.value)}
@@ -644,10 +685,89 @@ export default function ApiRunner() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export default function ApiRunner() {
+  const [connId, setConnId] = useState("");
+  // One entry per pane. Split mode is off until asked for: two forms
+  // side by side is worse than one when you only need one.
+  const [picked, setPicked] = useState<(ApiEndpoint | null)[]>([null]);
+  const [focus, setFocus] = useState(0);
+
+  const conns = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => apiGet<Connection[]>("/api/connections"),
+  });
+  const verkada = (conns.data ?? []).filter((c) => c.type === "verkada");
+
+  const split = picked.length > 1;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (split) {
+              // Keep the focused pane rather than always the left one —
+              // closing the split should not throw away the call you
+              // were looking at.
+              setPicked([picked[focus] ?? null]);
+              setFocus(0);
+            } else {
+              setPicked([picked[0] ?? null, null]);
+              setFocus(1);
+            }
+          }}
+          className="text-xs px-2.5 py-1.5 rounded-md border border-white/15 text-slate-300 transition-[color,border-color] duration-150 ease-out-strong hover:text-slate-100 hover:border-white/30"
+        >
+          {split ? "Single pane" : "Split into two"}
+        </button>
+        <span className="text-[11px] text-slate-500">
+          {split
+            ? "The sidebar loads into the highlighted pane. Click a pane to aim it."
+            : "Run two calls side by side when one needs an id from the other."}
+        </span>
+      </div>
+
+      <div className="flex gap-4 items-start">
+        {/* Browse first, search second. Search assumes you already know
+            the word; the categories are how you find out what exists —
+            which is the same reason Verkada's own docs lead with them.
+            Shared with the flow editor's endpoint picker so the two
+            cannot drift apart again. */}
+        <EndpointBrowser
+          selectedId={picked[focus]?.id ?? null}
+          onPick={(e) =>
+            setPicked((prev) => prev.map((p, i) => (i === focus ? e : p)))
+          }
+          className="w-72 shrink-0 max-h-[38rem]"
+        />
+
+        {picked.map((p, i) => (
+          <RunnerPane
+            key={i}
+            picked={p}
+            connId={connId}
+            setConnId={setConnId}
+            verkada={verkada}
+            // Undefined in single-pane mode, so the pane renders without
+            // a focus ring there is no choice to make about.
+            focused={split ? focus === i : undefined}
+            onFocus={split ? () => setFocus(i) : undefined}
+            // One connection for both panes — a lookup answering from a
+            // different org than the call using it would be worse than
+            // no lookup at all. Shown once, on the left.
+            showConnection={i === 0}
+          />
+        ))}
       </div>
     </div>
   );
 }
+
 
 /** What the endpoint says it can return. A status you did not expect is
  *  worth being able to look up without leaving the page. */
