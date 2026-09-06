@@ -51,6 +51,32 @@ type Catalog = {
     first_seen: string | null;
   }[];
   tracked_tools: number;
+  /** Our own record of check-ins, good and bad. See connectors/mcp/health.py. */
+  health?: McpHealth;
+};
+
+type McpHealth = {
+  checks: number;
+  last_check_at?: string | null;
+  last_ok?: boolean;
+  last_source?: string | null;
+  last_error?: string | null;
+  /** The most recent CRON check. Distinct from last_check_at, which a
+   *  page view also advances — "checked 3m ago" has to mean the
+   *  schedule, or it just means you are looking at it. */
+  last_scheduled_at?: string | null;
+  ok_count?: number;
+  fail_count?: number;
+  failing_streak?: number;
+  failing_since?: string | null;
+  last_timings?: { handshake_ms?: number; list_ms?: number; total_ms?: number };
+  latency_ms?: {
+    last?: number;
+    median: number;
+    slowest: number;
+    samples: number;
+  };
+  recent?: { at?: string | null; ok: boolean; total_ms?: number | null }[];
 };
 
 // A server's own annotations are the only machine-readable safety signal
@@ -105,6 +131,51 @@ const fmtDate = (iso?: string | null) =>
         year: "numeric",
       })
     : null;
+
+/** "3m ago" / "2h ago" / "4d ago". Absolute dates are the wrong unit for
+ *  freshness — the question is how stale, not what day it was. */
+function ago(iso?: string | null): string | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/** One bar per recent check: height is latency, colour is outcome.
+ *  Reading a list of timestamps to spot a pattern is work; a strip of
+ *  bars makes an outage or a slow drift visible without any. */
+function HealthStrip({ recent }: { recent: NonNullable<McpHealth["recent"]> }) {
+  const worst = Math.max(1, ...recent.map((c) => c.total_ms ?? 0));
+  return (
+    <div className="flex items-end gap-[3px] h-8 mt-1">
+      {recent.map((c, i) => {
+        // A failed check has no latency to be proportional to, so it
+        // draws full height — an outage should be the tallest thing
+        // here, not an absence somebody has to notice.
+        const pct = c.ok ? Math.max(12, ((c.total_ms ?? 0) / worst) * 100) : 100;
+        return (
+          <div
+            key={`${c.at ?? i}`}
+            title={
+              (c.ok ? `${c.total_ms ?? "?"} ms` : "failed") +
+              (c.at ? ` · ${new Date(c.at).toLocaleString()}` : "")
+            }
+            style={{ height: `${pct}%` }}
+            className={`flex-1 min-w-[3px] rounded-sm ${
+              c.ok ? "bg-emerald-500/50" : "bg-rose-500/80"
+            }`}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 const isNew30d = (t: McpTool) =>
   !t._is_baseline &&
@@ -381,6 +452,86 @@ export default function Mcp() {
                 </Fact>
               </Group>
 
+              {/* The third column the grid was always sized for. It held
+                  "what changed" until removals moved to the History tab,
+                  and sat empty after. Freshness belongs here for the
+                  same reason: Connection says what the server is and
+                  Surface says how big, and neither says whether any of
+                  it is still true. */}
+              <Group title="Freshness &amp; health">
+                {(() => {
+                  const h = data.health;
+                  if (!h || !h.checks) {
+                    return (
+                      <Fact label="Checked">
+                        <span className="text-slate-500">
+                          No check-ins recorded yet. The worker polls hourly;
+                          this fills in after the first one.
+                        </span>
+                      </Fact>
+                    );
+                  }
+                  const failing = (h.failing_streak ?? 0) > 0;
+                  return (
+                    <>
+                      <Fact
+                        label="Last scheduled check"
+                        hint="the hourly poll — not this page view"
+                      >
+                        {ago(h.last_scheduled_at) ?? (
+                          <span className="text-slate-500">
+                            none yet — only opened by hand so far
+                          </span>
+                        )}
+                      </Fact>
+                      <Fact label="Status">
+                        {failing ? (
+                          <span className="text-rose-300">
+                            failing — {h.failing_streak} check
+                            {h.failing_streak === 1 ? "" : "s"} in a row,
+                            since {ago(h.failing_since)}
+                          </span>
+                        ) : (
+                          <span className="text-emerald-300">
+                            answering · {h.ok_count}/{h.checks} checks ok
+                          </span>
+                        )}
+                        {failing && h.last_error && (
+                          <div className="mt-1 font-mono text-[11px] text-rose-300/80 break-all">
+                            {h.last_error}
+                          </div>
+                        )}
+                      </Fact>
+                      {h.last_timings && (
+                        <Fact
+                          label="Handshake"
+                          hint="connect + auth, then the catalog"
+                          title="handshake_ms covers DNS, TLS, auth and initialize. list_ms is the server assembling its tool list — that one grows with the catalog."
+                        >
+                          {h.last_timings.handshake_ms ?? "—"} ms connect
+                          <span className="text-slate-600"> · </span>
+                          {h.last_timings.list_ms ?? "—"} ms catalog
+                          {h.latency_ms && h.latency_ms.samples > 1 && (
+                            <span className="text-slate-500">
+                              {" "}
+                              (median {h.latency_ms.median} ms over{" "}
+                              {h.latency_ms.samples})
+                            </span>
+                          )}
+                        </Fact>
+                      )}
+                      {h.recent && h.recent.length > 1 && (
+                        <Fact
+                          label="Recent checks"
+                          hint={`last ${h.recent.length} · taller is slower, red is a failure`}
+                        >
+                          <HealthStrip recent={h.recent} />
+                        </Fact>
+                      )}
+                    </>
+                  );
+                })()}
+              </Group>
             </div>
           </Collapse>
 

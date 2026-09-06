@@ -241,10 +241,22 @@ async def describe_server(
     *,
     timeout_sec: float = DEFAULT_TIMEOUT_SEC,
 ) -> dict[str, Any]:
-    """One-shot: connect, list tools, and return everything the UI needs."""
+    """One-shot: connect, list tools, and return everything the UI needs.
+
+    Timed in two phases, because they fail and slow down for different
+    reasons: ``handshake_ms`` is DNS, TLS, auth and initialize, while
+    ``list_ms`` is the server assembling its catalog. A server that has
+    grown to a few hundred tools shows it in the second number, and a
+    server behind a struggling network shows it in the first.
+    """
+    from app.connectors.mcp.health import Timer
+
+    timer = Timer()
     async with httpx.AsyncClient(timeout=timeout_sec) as client:
         session = await open_session(url, token, client=client)
+        timer.mark("handshake_ms")
         tools = await list_tools(session, client=client)
+        timer.mark("list_ms")
     return {
         "url": url,
         "requested_protocol_version": PROTOCOL_VERSION,
@@ -253,4 +265,5 @@ async def describe_server(
         "instructions": session.instructions,
         "protocol_version": session.protocol_version,
         "tools": tools,
+        "timings": timer.finish(),
     }

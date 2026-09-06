@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.connectors.mcp.client import MCPError, describe_server
+from app.connectors.mcp.health import record as record_health
 from app.connectors.mcp.history import record
 from app.connectors.verkada.client import normalize_base_url
 from app.crypto import decrypt_secret
@@ -67,18 +68,31 @@ async def poll_all_connections() -> list[dict[str, Any]]:
     for name, url, token in targets:
         try:
             described = await describe_server(url, token)
-        except MCPError as e:
-            results.append({"connection": name, "url": url, "error": str(e)})
+        except Exception as e:  # noqa: BLE001 — MCPError, plus network/DNS/TLS
+            # Recorded, not just returned. A failure that only lands in
+            # the cron's return value is a failure nobody sees: the page
+            # would go on showing the last good catalog with no hint
+            # that it had stopped being confirmed.
+            detail = str(e) if isinstance(e, MCPError) else repr(e)
+            await record_health(url, ok=False, source="cron", error=detail)
+            results.append({"connection": name, "url": url, "error": detail})
             continue
-        except Exception as e:  # noqa: BLE001 — network/DNS/TLS
-            results.append({"connection": name, "url": url, "error": repr(e)})
-            continue
-        summary = await record(url, described.get("tools") or [])
+        tools = described.get("tools") or []
+        summary = await record(url, tools)
+        await record_health(
+            url,
+            ok=True,
+            source="cron",
+            timings=described.get("timings"),
+            protocol=described.get("protocol_version"),
+            requested_protocol=described.get("requested_protocol_version"),
+            tool_count=len(tools),
+        )
         results.append(
             {
                 "connection": name,
                 "url": url,
-                "tools": len(described.get("tools") or []),
+                "tools": len(tools),
                 **summary,
             }
         )

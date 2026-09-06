@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.mcp import MCPError, describe_server
+from app.connectors.mcp.health import read as read_health, record as record_health
 from app.connectors.mcp.history import record as record_history
 from app.connectors.verkada.client import normalize_base_url
 from app.crypto import decrypt_secret
@@ -91,12 +92,30 @@ async def _fetch_catalog(
 ) -> dict[str, Any]:
     """Live fetch + history annotation. No DB session needed, so this can
     run detached from the request that triggered it."""
-    described = await describe_server(url, token)
-    history = await record_history(url, described.get("tools") or [])
-    catalog_bytes = len(json.dumps(described.get("tools") or []))
+    try:
+        described = await describe_server(url, token)
+    except Exception as e:  # noqa: BLE001 — recorded, then re-raised
+        # An outage seen from the page is the same outage the cron sees;
+        # logging only the cron's view would leave gaps in the record
+        # exactly when somebody was looking.
+        await record_health(url, ok=False, source="page", error=repr(e))
+        raise
+    tools = described.get("tools") or []
+    history = await record_history(url, tools)
+    health = await record_health(
+        url,
+        ok=True,
+        source="page",
+        timings=described.get("timings"),
+        protocol=described.get("protocol_version"),
+        requested_protocol=described.get("requested_protocol_version"),
+        tool_count=len(tools),
+    )
+    catalog_bytes = len(json.dumps(tools))
     payload = {
         **described,
         **history,
+        "health": health,
         "catalog_bytes": catalog_bytes,
         "catalog_tokens_estimate": catalog_bytes // 4,
         "connection_id": conn_id,
@@ -178,9 +197,15 @@ async def _catalog(
     key = (str(conn.id), url)
     now = time.monotonic()
     if not refresh:
+        # Health is always read live, never served from the cached
+        # payload. The cron keeps polling while a snapshot sits in
+        # memory, so a cached copy carries whatever the health was when
+        # it was taken -- which would let this card report "answering"
+        # through an outage that started afterwards. A freshness
+        # indicator that can go stale is worse than none.
         hit = _catalog_cache.get(key)
         if hit and now - hit[0] < _CATALOG_TTL_SEC:
-            return {**hit[1], "cached": True}
+            return {**hit[1], "health": await read_health(url), "cached": True}
         # Nothing in memory — most likely a restart. Render what we had
         # last time and go get a fresh copy without making anyone wait.
         stale = _snapshot_load(key)
@@ -188,7 +213,12 @@ async def _catalog(
             asyncio.create_task(
                 _refresh_in_background(key, str(conn.id), conn.name, url, token)
             )
-            return {**stale, "cached": True, "stale": True}
+            return {
+                **stale,
+                "health": await read_health(url),
+                "cached": True,
+                "stale": True,
+            }
     try:
         payload = await _fetch_catalog(str(conn.id), conn.name, url, token)
     except MCPError as e:

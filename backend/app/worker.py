@@ -630,11 +630,17 @@ async def crawl_verkada_catalog_cron(ctx: dict[str, Any]) -> list[dict[str, Any]
 
 
 async def poll_mcp_cron(ctx: dict[str, Any]) -> list[dict[str, Any]]:  # noqa: ARG001
-    """Check each configured MCP server for tools added, removed or edited.
+    """Check each configured MCP server for tools added, removed or edited,
+    and record whether it answered at all.
 
-    The MCP page reads the resulting history; polling here means the
-    dates reflect roughly when a tool appeared rather than when someone
-    last opened the page.
+    Hourly. The tool history only needs a few checks a day to date a
+    change usefully, but health does not work that way: at four checks a
+    day an outage is invisible for up to six hours, and "last checked"
+    is never a number you would act on. Availability has to be sampled
+    at the resolution you want to detect it.
+
+    The page reads both results, so the dates reflect roughly when a
+    tool appeared rather than when someone last opened the page.
     """
     return await poll_mcp_servers()
 
@@ -1046,10 +1052,11 @@ class WorkerSettings:
         # Daily 04:11 UTC: refresh Gemini pricing snapshot. run_at_startup
         # so first deploy populates the table before any flow runs.
         cron(refresh_gemini_pricing_cron, hour=4, minute=11, run_at_startup=True),
-        # Every 6 hours: check the MCP catalogs for added/removed/edited
-        # tools. run_at_startup so a fresh deploy lays the baseline down
-        # without waiting for the first scheduled tick.
-        cron(poll_mcp_cron, hour={1, 7, 13, 19}, minute=41, run_at_startup=True),
+        # Hourly at :41 — check the MCP catalogs for added/removed/edited
+        # tools AND record whether the server answered. run_at_startup so
+        # a fresh deploy lays the baseline down without waiting for the
+        # first scheduled tick.
+        cron(poll_mcp_cron, minute=41, run_at_startup=True),
         # Every minute: fire any due schedule-trigger flows.
         cron(tick_schedule_flows, minute=set(range(60))),
         # Hourly: has anyone else used our Verkada key? Cheap when the
