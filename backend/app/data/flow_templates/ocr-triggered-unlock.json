@@ -3,7 +3,7 @@
   "name": "OCR-triggered door unlock",
   "tagline": "🔤 Read a plate or badge → unlock the door + log the match to Helix.",
   "description": "Read text, signage, license plates, or a badge/ID held up to a camera with Gemini, and unlock a door when the OCR'd text matches a target string (a VIP plate, vendor name, employee badge code, etc.). Analyzes a short video clip rather than a single frame, so a quickly-flashed ID still gets caught. Every match also gets logged to Helix as an OCR Match event so you have an audit trail of who/what got let in.",
-  "summary": "Motion webhook \u2192 Gemini OCR on a short clip (JSON) \u2192 condition \u2192 unlock door \u2192 Helix log of what + why",
+  "summary": "Motion webhook → Gemini OCR on a short clip (JSON) → condition → unlock door → Helix log of what + why",
   "default_name": "OCR-triggered door unlock",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -14,7 +14,7 @@
     "helix_event_types": [
       {
         "event_type_uid": "tpl:ocr-match",
-        "name": "\ud83d\udd13 OCR Match Unlock",
+        "name": "🔓 OCR Match Unlock",
         "event_schema": {
           "Observed Text": "string",
           "Match Value": "string",
@@ -52,7 +52,7 @@
         "config": {
           "left": "{{ steps.ocr.output.json.text }}",
           "operator": "contains_all",
-          "right": ""
+          "right": "{{ input.match }}"
         },
         "position": {
           "x": 220,
@@ -120,5 +120,14 @@
     "Cameras",
     "Gemini Vision",
     "Access control"
+  ],
+  "inputs": [
+    {
+      "key": "match",
+      "label": "What text has to be on screen before the door unlocks?",
+      "help": "Matched against everything the camera can read — a badge number, a plate, a word on a sign. Comma-separate to require several. This shipped blank, which is why the template could not be used as-is.",
+      "placeholder": "e.g. ACME-4471",
+      "default": ""
+    }
   ]
 }

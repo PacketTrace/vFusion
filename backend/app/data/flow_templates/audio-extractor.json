@@ -41,10 +41,10 @@
           "gemini_connection_id": null,
           "camera_id": "{{ trigger.data.camera_id }}",
           "start_epoch": "{{ trigger.data.created }}",
-          "duration_sec": "15",
+          "duration_sec": "{{ input.seconds }}",
           "pre_roll_sec": "3",
           "model": "gemini-2.5-flash",
-          "prompt": "Listen to this audio from a security camera and report what you hear. Respond with ONLY a JSON object - no prose, no code fence - with exactly three string keys:\n  \"sound\":       a short label for the dominant sound, lowercase, a few words at most (e.g. \"people talking\", \"dog barking\", \"vehicle engine\", \"door slamming\", \"glass breaking\", \"alarm\", \"wind\"). Use \"silence\" if there is nothing audible.\n  \"transcript\":  the speech, word for word, including who says what if more than one voice is distinguishable. Use \"none\" if nobody speaks, and \"unintelligible\" if there is clearly speech but you cannot make out the words. Do NOT invent words to fill a gap — an honest \"unintelligible\" is worth more than a plausible guess. HARD CAP 200 characters; if the speech runs longer, keep the most meaningful portion rather than trailing off.\n  \"description\": one to two sentences (HARD CAP 200 characters) on what was heard and what it suggests is happening — how many voices, their tone, whether it sounds routine or agitated, any background noise worth noting. Stay factual: describe the audio, do not speculate about what is on camera.\n\nExamples:\n  {\"sound\": \"people talking\", \"transcript\": \"Hey John, how are you doing?\", \"description\": \"Two people having a general conversation, relaxed and friendly. Footsteps and a door closing in the background.\"}\n  {\"sound\": \"dog barking\", \"transcript\": \"none\", \"description\": \"A single dog barking repeatedly close to the microphone, then trailing off. No voices.\"}\n  {\"sound\": \"vehicle engine\", \"transcript\": \"unintelligible\", \"description\": \"An engine idles then pulls away. Someone speaks briefly over it but the words are not clear.\"}\n  {\"sound\": \"silence\", \"transcript\": \"none\", \"description\": \"Nothing audible for the length of the clip apart from faint wind.\"}\n\nIMPORTANT: keep every value at or under 200 characters — Helix truncates anything longer."
+          "prompt": "Listen to this audio from a security camera and report what you hear.\nPay particular attention to: {{ input.listen_for }}. Respond with ONLY a JSON object - no prose, no code fence - with exactly three string keys:\n  \"sound\":       a short label for the dominant sound, lowercase, a few words at most (e.g. \"people talking\", \"dog barking\", \"vehicle engine\", \"door slamming\", \"glass breaking\", \"alarm\", \"wind\"). Use \"silence\" if there is nothing audible.\n  \"transcript\":  the speech, word for word, including who says what if more than one voice is distinguishable. Use \"none\" if nobody speaks, and \"unintelligible\" if there is clearly speech but you cannot make out the words. Do NOT invent words to fill a gap — an honest \"unintelligible\" is worth more than a plausible guess. HARD CAP 200 characters; if the speech runs longer, keep the most meaningful portion rather than trailing off.\n  \"description\": one to two sentences (HARD CAP 200 characters) on what was heard and what it suggests is happening — how many voices, their tone, whether it sounds routine or agitated, any background noise worth noting. Stay factual: describe the audio, do not speculate about what is on camera.\n\nExamples:\n  {\"sound\": \"people talking\", \"transcript\": \"Hey John, how are you doing?\", \"description\": \"Two people having a general conversation, relaxed and friendly. Footsteps and a door closing in the background.\"}\n  {\"sound\": \"dog barking\", \"transcript\": \"none\", \"description\": \"A single dog barking repeatedly close to the microphone, then trailing off. No voices.\"}\n  {\"sound\": \"vehicle engine\", \"transcript\": \"unintelligible\", \"description\": \"An engine idles then pulls away. Someone speaks briefly over it but the words are not clear.\"}\n  {\"sound\": \"silence\", \"transcript\": \"none\", \"description\": \"Nothing audible for the length of the clip apart from faint wind.\"}\n\nIMPORTANT: keep every value at or under 200 characters — Helix truncates anything longer."
         },
         "position": {
           "x": 220,
@@ -81,5 +81,27 @@
         "target": "post_helix"
       }
     ]
-  }
+  },
+  "inputs": [
+    {
+      "key": "listen_for",
+      "label": "Anything in particular worth listening for?",
+      "help": "It transcribes and describes everything either way; this just tells it what matters here.",
+      "placeholder": "e.g. raised voices, glass breaking, a delivery announcement",
+      "default": "speech, and any sound that suggests something is wrong"
+    },
+    {
+      "key": "seconds",
+      "label": "How many seconds of audio?",
+      "type": "select",
+      "options": [
+        "10",
+        "15",
+        "20",
+        "30"
+      ],
+      "help": "Audio is billed by the second and is far cheaper than video — a longer window is inexpensive.",
+      "default": "15"
+    }
+  ]
 }

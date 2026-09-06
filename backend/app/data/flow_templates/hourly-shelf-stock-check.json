@@ -2,8 +2,8 @@
   "id": "hourly-shelf-stock-check",
   "name": "Hourly shelf-stock check",
   "tagline": "📦 Hourly retail shelf check. Alerts floor staff when stock drops.",
-  "description": "No webhook source \u2014 run on a schedule. Every hour, pull a still frame from a retail camera, ask Gemini how full the shelf or rack is, and post the percentage to Helix so Verkada Command can alert floor staff when stock drops.",
-  "summary": "Hourly schedule \u2192 Gemini still-image analyze (JSON) \u2192 Helix event with Stock Level",
+  "description": "No webhook source — run on a schedule. Every hour, pull a still frame from a retail camera, ask Gemini how full the shelf or rack is, and post the percentage to Helix so Verkada Command can alert floor staff when stock drops.",
+  "summary": "Schedule → Gemini estimates stock → condition on your threshold → Helix event",
   "default_name": "Hourly shelf-stock check",
   "flow": {
     "trigger_type": "schedule",
@@ -14,7 +14,7 @@
     "helix_event_types": [
       {
         "event_type_uid": "tpl:shelf-stock",
-        "name": "\ud83d\udce6 Shelf Stock",
+        "name": "📦 Shelf Stock",
         "event_schema": {
           "Stock Level": "integer",
           "Reasoning": "string"
@@ -33,12 +33,24 @@
           "gemini_connection_id": null,
           "camera_id": "",
           "model": "gemini-2.5-flash",
-          "prompt": "Estimate how full the shelf, display, or clothing rack in this image is on a scale of 0-100, where 100 is fully stocked and 0 is empty.\n\nRespond with ONLY a JSON object - no prose, no code fence - with exactly two keys:\n  \"stock_level\": integer 0-100. Use your best estimate; do not pad with words like \"about\".\n  \"reasoning\":   one-sentence note on what you observed (which fixtures, what's missing), max 180 characters.\n\nExamples:\n  {\"stock_level\": 65, \"reasoning\": \"Bottom shelf about two-thirds full, top shelf nearly empty with visible gaps between SKUs.\"}\n  {\"stock_level\": 10, \"reasoning\": \"Only two items remaining on the entire rack, all in one corner.\"}\n  {\"stock_level\": 100, \"reasoning\": \"Fully stocked, no visible gaps anywhere on the display.\"}"
+          "prompt": "You are looking at: {{ input.scene }}.\n\nEstimate how full it is on a scale of 0-100, where 100 is fully stocked and 0 is empty.\n\nRespond with ONLY a JSON object - no prose, no code fence - with exactly two keys:\n  \"stock_level\": integer 0-100. Use your best estimate; do not pad with words like \"about\".\n  \"reasoning\":   one-sentence note on what you observed (which fixtures, what's missing), max 180 characters.\n\nExamples:\n  {\"stock_level\": 65, \"reasoning\": \"Bottom shelf about two-thirds full, top shelf nearly empty with visible gaps between SKUs.\"}\n  {\"stock_level\": 10, \"reasoning\": \"Only two items remaining on the entire rack, all in one corner.\"}\n  {\"stock_level\": 100, \"reasoning\": \"Fully stocked, no visible gaps anywhere on the display.\"}"
         },
         "position": {
           "x": 220,
           "y": 0
         }
+      },
+      {
+        "id": "is_low",
+        "name": "is_low",
+        "label": "Running low?",
+        "kind": "condition",
+        "config": {
+          "left": "{{ steps.analyze.output.json.stock_level }}",
+          "operator": "lt",
+          "right": "{{ input.low_at }}"
+        },
+        "position": null
       },
       {
         "id": "post_helix",
@@ -64,14 +76,44 @@
     ],
     "edges": [
       {
-        "id": "e_analyze_post",
+        "id": "e_analyze_low",
         "source": "analyze",
-        "target": "post_helix"
+        "target": "is_low"
+      },
+      {
+        "id": "e_low_helix",
+        "source": "is_low",
+        "target": "post_helix",
+        "branch": "true"
       }
     ]
   },
   "tags": [
     "Cameras",
     "Gemini Vision"
+  ],
+  "inputs": [
+    {
+      "key": "scene",
+      "label": "What is this camera looking at?",
+      "type": "textarea",
+      "help": "The model does better when it knows what it is counting. A produce cooler and a clothing rack look empty in completely different ways.",
+      "placeholder": "e.g. a clothing rack near the front window of a retail store",
+      "default": "a shelf, display, or clothing rack"
+    },
+    {
+      "key": "low_at",
+      "label": "How empty is too empty?",
+      "type": "select",
+      "options": [
+        "25",
+        "40",
+        "50",
+        "60",
+        "75"
+      ],
+      "help": "Stock level, 0-100, below which this should log an alert.",
+      "default": "40"
+    }
   ]
 }

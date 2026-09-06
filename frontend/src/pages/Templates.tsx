@@ -346,6 +346,13 @@ function FlowTemplatesPanel() {
   } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
+  /** A checklist starts with everything ticked: the template already
+   *  looks for all of it, and the question is what to drop. */
+  const initial = (i: TemplateInput) =>
+    i.type === "checklist"
+      ? (i.checked ?? i.options ?? []).join(", ")
+      : (i.default ?? "");
+
   const finalizeApply = async (
     id: string,
     uidMap: Record<string, string>,
@@ -400,11 +407,7 @@ function FlowTemplatesPanel() {
       const inputs = detail.inputs ?? [];
       if (inputs.length > 0 && !collected) {
         setBusyId(null);
-        setAnswers(
-          Object.fromEntries(
-            inputs.map((i) => [i.key, i.default ?? ""]),
-          ),
-        );
+        setAnswers(Object.fromEntries(inputs.map((i) => [i.key, initial(i)])));
         setAsking({ id, inputs });
         return;
       }
@@ -725,32 +728,104 @@ function FlowTemplatesPanel() {
                 Before we build it
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Answers go straight into the flow, so what lands on the
-                canvas is already yours.
+                These are the assumptions this template makes. Answers go
+                straight into the flow, so what lands on the canvas is
+                already yours — and everything stays editable afterwards.
               </p>
             </div>
             <div className="px-5 py-4 space-y-4">
-              {asking.inputs.map((inp) => (
-                <label key={inp.key} className="block">
-                  <div className="text-xs font-medium text-slate-300 mb-1">
-                    {inp.label}
-                  </div>
-                  <input
-                    autoFocus
-                    value={answers[inp.key] ?? ""}
-                    onChange={(e) =>
-                      setAnswers((a) => ({ ...a, [inp.key]: e.target.value }))
-                    }
-                    placeholder={inp.placeholder ?? undefined}
-                    className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
-                  />
-                  {inp.help && (
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      {inp.help}
+              {asking.inputs.map((inp, idx) => {
+                const value = answers[inp.key] ?? "";
+                const set = (v: string) =>
+                  setAnswers((a) => ({ ...a, [inp.key]: v }));
+                return (
+                  <div key={inp.key}>
+                    <div className="text-xs font-medium text-slate-300 mb-1">
+                      {inp.label}
                     </div>
-                  )}
-                </label>
-              ))}
+
+                    {inp.type === "textarea" ? (
+                      <textarea
+                        autoFocus={idx === 0}
+                        rows={3}
+                        value={value}
+                        onChange={(e) => set(e.target.value)}
+                        placeholder={inp.placeholder ?? undefined}
+                        className="w-full px-3 py-2 rounded bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
+                      />
+                    ) : inp.type === "select" ? (
+                      <select
+                        value={value}
+                        onChange={(e) => set(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                      >
+                        {(inp.options ?? []).map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    ) : inp.type === "checklist" ? (
+                      // Everything it looks for, listed, with the ability
+                      // to drop what does not apply here. Reading the
+                      // list is most of the value — a check you did not
+                      // know it made is one you cannot judge.
+                      <div className="space-y-1">
+                        {(inp.options ?? []).map((o) => {
+                          const on = value
+                            .split(",")
+                            .map((x) => x.trim())
+                            .includes(o);
+                          return (
+                            <label
+                              key={o}
+                              className="flex items-start gap-2 text-sm text-slate-200 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={(e) => {
+                                  const cur = value
+                                    .split(",")
+                                    .map((x) => x.trim())
+                                    .filter(Boolean);
+                                  const next = e.target.checked
+                                    ? [...cur, o]
+                                    : cur.filter((x) => x !== o);
+                                  // Kept in the template's own order so
+                                  // the prompt reads the same however
+                                  // they were ticked.
+                                  set(
+                                    (inp.options ?? [])
+                                      .filter((x) => next.includes(x))
+                                      .join(", "),
+                                  );
+                                }}
+                                className="mt-0.5"
+                              />
+                              <span>{o}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <input
+                        autoFocus={idx === 0}
+                        value={value}
+                        onChange={(e) => set(e.target.value)}
+                        placeholder={inp.placeholder ?? undefined}
+                        className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
+                      />
+                    )}
+
+                    {inp.help && (
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        {inp.help}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div className="px-5 py-3 border-t border-white/10 flex items-center gap-2">
               <button
@@ -765,10 +840,27 @@ function FlowTemplatesPanel() {
               >
                 Build it
               </button>
+              {/* The defaults are a working flow, not a placeholder —
+                  skipping has to be one click, or the questions become
+                  a toll rather than a help. */}
+              <button
+                type="button"
+                onClick={() => {
+                  const id = asking.id;
+                  const defaults = Object.fromEntries(
+                    asking.inputs.map((i) => [i.key, initial(i)]),
+                  );
+                  setAsking(null);
+                  void useTemplate(id, defaults);
+                }}
+                className="text-sm px-2.5 py-1.5 rounded-md border border-white/15 text-slate-300 hover:text-slate-100 hover:border-white/30"
+              >
+                Use as is
+              </button>
               <button
                 type="button"
                 onClick={() => setAsking(null)}
-                className="text-sm px-2 py-1 rounded text-slate-400 hover:text-slate-200"
+                className="ml-auto text-sm px-2 py-1 rounded text-slate-400 hover:text-slate-200"
               >
                 Cancel
               </button>

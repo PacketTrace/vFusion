@@ -37,7 +37,7 @@
           "gemini_connection_id": null,
           "camera_id": "{{ trigger.data.camera_id }}",
           "start_epoch": "{{ trigger.data.created }}",
-          "duration_sec": "10",
+          "duration_sec": "{{ input.seconds }}",
           "pre_roll_sec": "2",
           "model": "gemini-2.5-flash",
           "prompt": "Identify the animal in this security camera video and describe what it is doing. Respond with ONLY a JSON object - no prose, no code fence - with exactly three string keys:\n  \"animal\":   the species in lowercase (e.g. \"bear\", \"deer\", \"coyote\", \"raccoon\"), or \"none\" if no animal is clearly visible.\n  \"breed\":    your best guess at the specific breed or sub-species, in lowercase (e.g. \"black-tailed deer\", \"husky\", \"black bear\", \"red fox\"). Use \"unknown\" if you can't tell with reasonable confidence — don't guess wildly.\n  \"behavior\": one to two sentences (HARD CAP 200 characters total) painting the scene. Cover what the animal is doing, how it's moving, where in the frame it is, and anything notable about its state or surroundings — alone vs in a group, near a door / fence / trash / vehicle, daylight vs night, weather cues, etc. Stay factual — only describe what you can see. Use \"unknown\" if the animal is too brief or unclear to tell.\n\nExamples:\n  {\"animal\": \"deer\", \"breed\": \"black-tailed deer\", \"behavior\": \"Doe grazing on grass near the front walkway, alone, ears alert and head down. Daylight; moves slowly left across the frame.\"}\n  {\"animal\": \"bear\", \"breed\": \"black bear\", \"behavior\": \"Large bear approaching trash bins beside the driveway at night. Pauses, sniffs the lid, then paws at it. No cubs visible.\"}\n  {\"animal\": \"coyote\", \"breed\": \"unknown\", \"behavior\": \"Lone coyote trotting along the back fence after dark, head low, glancing toward the house twice before continuing out of frame.\"}\n\nIMPORTANT: keep \"behavior\" at or under 200 characters — Helix truncates anything longer."
@@ -110,6 +110,19 @@
       "help": "Matched against what Gemini reports, so plain words work — bear, coyote, deer. Leave it blank on the next screen to log every animal instead of alerting on one.",
       "default": "bear",
       "placeholder": "bear"
+    },
+    {
+      "key": "seconds",
+      "label": "How many seconds of video should it look at?",
+      "type": "select",
+      "options": [
+        "5",
+        "10",
+        "15",
+        "20"
+      ],
+      "help": "Longer catches more behaviour and costs more per firing.",
+      "default": "10"
     }
   ]
 }
