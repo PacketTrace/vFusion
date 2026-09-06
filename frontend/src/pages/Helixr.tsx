@@ -9,6 +9,7 @@ import {
   HelixEventType,
 } from "../lib/api";
 import HelixSendModal from "../components/HelixSendModal";
+import PublishedEvents from "../components/PublishedEvents";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
 import LiveDemoPanel from "../components/LiveDemoPanel";
 import { useCameras } from "../lib/cameras";
@@ -111,7 +112,7 @@ export default function Helixr() {
   // Two things live here now: the types themselves, and a way to fill
   // one with believable events so a customer can see Helix working
   // before the integration that would feed it exists.
-  const [sub, setSub] = useState<"types" | "demo">("types");
+  const [sub, setSub] = useState<"types" | "demo" | "published">("types");
 
   return (
     <div className="space-y-6">
@@ -144,6 +145,7 @@ export default function Helixr() {
           <div className="flex items-center gap-1 border-b border-white/10">
             {([
               ["types", "Event types"],
+              ["published", "Published events"],
               ["demo", "Demo data"],
             ] as const).map(([key, label]) => (
               <button
@@ -192,6 +194,11 @@ export default function Helixr() {
               connId={connId}
               onEdit={(et) => setEditing(et)}
             />
+          )}
+          {connId && sub === "published" && (
+            <Card>
+              <PublishedEvents connId={connId} />
+            </Card>
           )}
           {connId && sub === "demo" && <DemoPanel connId={connId} />}
 

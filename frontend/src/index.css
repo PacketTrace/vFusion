@@ -428,3 +428,32 @@ button:not(:disabled):active {
     animation: none;
   }
 }
+
+
+/* Native form controls default to the light colour scheme, which is why
+   the datetime field read as almost-invisible grey on near-black: the
+   "mm/dd/yyyy" placeholder, the calendar icon and the picker popup were
+   all being drawn for a white page. Declaring the scheme lets the
+   browser draw them for this one instead — and it fixes the popup too,
+   which no amount of CSS on the input could reach. */
+:root {
+  color-scheme: dark;
+}
+
+/* The indicator is still dim at the contrast this UI runs at. Brighten
+   it, and give it a hit area that looks like a button. */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background-color: rgb(255 255 255 / 0.12);
+}
