@@ -38,10 +38,10 @@ export default function ActionNode({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`w-72 rounded-lg border-2 bg-slate-900 shadow-xl transition-shadow duration-200 ${runStateClasses(d.runStatus, selected)}`}
+      className={`w-72 rounded-lg border bg-white/5 backdrop-blur-md shadow-xl transition-[border-color,box-shadow] duration-150 ease-out-strong ${runStateClasses(d.runStatus, selected)}`}
     >
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-2 !h-2" />
-      <div className="px-3 py-2 bg-slate-900/80 border-b border-slate-700 rounded-t-md flex items-center gap-2">
+      <div className="px-3 py-2 bg-white/[0.04] border-b border-white/10 rounded-t-md flex items-center gap-2">
         <span className="text-xl leading-none shrink-0" aria-hidden>
           {icon}
         </span>
@@ -120,12 +120,12 @@ export function runStateClasses(
     return "border-rose-500/70 shadow-[0_0_18px_rgba(244,63,94,0.25)]";
   }
   if (status === "skipped") {
-    return "border-slate-700 opacity-50";
+    return "border-white/10 opacity-50";
   }
   if (selected) {
     return "border-sky-400 ring-2 ring-sky-500/40 shadow-[0_0_24px_rgba(56,189,248,0.35)]";
   }
-  return "border-slate-700";
+  return "border-white/15";
 }
 
 

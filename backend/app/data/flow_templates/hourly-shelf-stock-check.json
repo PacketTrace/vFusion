@@ -31,7 +31,7 @@
         "config": {
           "connection_id": null,
           "gemini_connection_id": null,
-          "camera_id": "",
+          "camera_id": "{{ input.camera }}",
           "model": "gemini-2.5-flash",
           "prompt": "You are looking at: {{ input.scene }}.\n\nEstimate how full it is on a scale of 0-100, where 100 is fully stocked and 0 is empty.\n\nRespond with ONLY a JSON object - no prose, no code fence - with exactly two keys:\n  \"stock_level\": integer 0-100. Use your best estimate; do not pad with words like \"about\".\n  \"reasoning\":   one-sentence note on what you observed (which fixtures, what's missing), max 180 characters.\n\nExamples:\n  {\"stock_level\": 65, \"reasoning\": \"Bottom shelf about two-thirds full, top shelf nearly empty with visible gaps between SKUs.\"}\n  {\"stock_level\": 10, \"reasoning\": \"Only two items remaining on the entire rack, all in one corner.\"}\n  {\"stock_level\": 100, \"reasoning\": \"Fully stocked, no visible gaps anywhere on the display.\"}"
         },
@@ -60,7 +60,7 @@
         "action_type": "verkada_helix_event",
         "config": {
           "connection_id": null,
-          "camera_id": "",
+          "camera_id": "{{ input.camera }}",
           "event_type_uid": "tpl:shelf-stock",
           "attributes": {
             "Stock Level": "{{ steps.analyze.output.json.stock_level }}",
@@ -93,6 +93,13 @@
     "Gemini Vision"
   ],
   "inputs": [
+    {
+      "key": "camera",
+      "label": "Which camera is watching the shelf?",
+      "type": "camera",
+      "help": "A scheduled flow has no event to take a camera from, so it needs to be told which one.",
+      "default": ""
+    },
     {
       "key": "scene",
       "label": "What is this camera looking at?",

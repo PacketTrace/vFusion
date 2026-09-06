@@ -257,7 +257,7 @@ export interface TemplateInput {
   /** "text" (default) · "textarea" for a described scene · "select" for
    *  one of a few · "checklist" for "here is what it looks for, untick
    *  what you do not care about". */
-  type?: "text" | "textarea" | "select" | "checklist";
+  type?: "text" | "textarea" | "select" | "checklist" | "camera";
   options?: string[];
   /** Checklist only — which options start ticked. Defaults to all. */
   checked?: string[];

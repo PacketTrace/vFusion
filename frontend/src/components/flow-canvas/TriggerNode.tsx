@@ -33,13 +33,13 @@ export default function TriggerNode({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`w-72 rounded-lg border-2 bg-slate-900 shadow-xl transition-shadow duration-200 ${
+      className={`w-72 rounded-lg border bg-white/5 backdrop-blur-md shadow-xl transition-[border-color,box-shadow] duration-150 ease-out-strong ${
         selected
           ? "border-sky-400 ring-2 ring-sky-500/40 shadow-[0_0_24px_rgba(56,189,248,0.35)]"
-          : "border-slate-700"
+          : "border-white/15"
       }`}
     >
-      <div className="px-3 py-2 bg-sky-950/60 border-b border-slate-700 rounded-t-md flex items-center gap-2">
+      <div className="px-3 py-2 bg-sky-500/10 border-b border-white/10 rounded-t-md flex items-center gap-2">
         <span className="text-xl leading-none shrink-0" aria-hidden>
           {icon}
         </span>
@@ -202,7 +202,7 @@ function Pill({
     <span
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
         subtle
-          ? "bg-slate-800 text-slate-300 border border-slate-700"
+          ? "bg-white/5 text-slate-300 border border-white/15"
           : "bg-sky-900/60 text-sky-100 border border-sky-800"
       }`}
     >

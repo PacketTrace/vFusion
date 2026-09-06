@@ -19,6 +19,7 @@ import {
 } from "../lib/api";
 import AnalyticEditor from "../components/AnalyticEditor";
 import ConfirmDialog from "../components/ConfirmDialog";
+import CameraIdInput from "../components/CameraIdInput";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import TemplateSummaryStrip from "../components/TemplateSummaryStrip";
 
@@ -744,7 +745,13 @@ function FlowTemplatesPanel() {
                       {inp.label}
                     </div>
 
-                    {inp.type === "textarea" ? (
+                    {inp.type === "camera" ? (
+                      // A schedule-triggered flow has no event to take a
+                      // camera from, so this is the one answer without
+                      // which nothing runs at all. Same picker the flow
+                      // editor uses, so the names match.
+                      <CameraIdInput value={value} onChange={set} />
+                    ) : inp.type === "textarea" ? (
                       <textarea
                         autoFocus={idx === 0}
                         rows={3}

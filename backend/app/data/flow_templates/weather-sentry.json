@@ -55,7 +55,7 @@
         "action_type": "verkada_helix_event",
         "config": {
           "connection_id": null,
-          "camera_id": "",
+          "camera_id": "{{ input.camera }}",
           "event_type_uid": "tpl:weather",
           "attributes": {
             "conditions": "{{ steps.fetch_weather.output.json.conditions }}",
@@ -87,6 +87,13 @@
     "Cameras"
   ],
   "inputs": [
+    {
+      "key": "camera",
+      "label": "Which camera should the weather be logged against?",
+      "type": "camera",
+      "help": "Helix events attach to a camera's timeline, so the reading needs one to land on — pick whichever camera the weather matters for.",
+      "default": ""
+    },
     {
       "key": "zip",
       "label": "Which postcode should it read the weather for?",
