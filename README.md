@@ -1,4 +1,7 @@
-# vFusion
+<p align="center">
+  <img src="docs/images/vfusion-wordmark.svg" alt="vFusion" width="720">
+</p>
+
 
 ⚠️ **Beta — built by a Verkada SE, not an official Verkada product.** Expect breaking changes. No warranty; see [LICENSE](LICENSE). This tool can unlock doors and pull camera footage — read **[Before you deploy](#before-you-deploy)** first.
 
