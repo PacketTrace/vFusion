@@ -602,8 +602,12 @@ function FlowTemplatesPanel() {
               suppressed while a single group is showing — a lone
               "On a schedule (4)" above four schedule templates is a
               label for something already obvious. */}
+          {/* The app's floating surfaces are black/40 over a blur — the
+              same treatment the page header uses. slate-950/80 was
+              near-opaque and from the old palette, so this heading sat in
+              a solid band while everything around it was glass. */}
           {grouped.length > 1 && (
-            <div className="flex items-baseline gap-2 sticky top-0 z-10 bg-slate-950/80 backdrop-blur-sm py-1">
+            <div className="flex items-baseline gap-2 sticky top-0 z-10 bg-black/40 backdrop-blur-md py-1.5">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 {group}
               </h3>
