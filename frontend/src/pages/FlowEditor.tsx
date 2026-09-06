@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
+import ConfirmDialog from "../components/ConfirmDialog";
 import DescribeFlowPanel from "../components/DescribeFlowPanel";
 import FlowAssistant from "../components/FlowAssistant";
+import { useUnsavedGuard } from "../lib/useUnsavedGuard";
 import {
   Background,
   Connection as RFConnection,
@@ -257,6 +259,25 @@ function FlowEditorInner() {
     }
     setNodes(existing.data.nodes ?? []);
     setEdges(existing.data.edges ?? []);
+    // Baseline is taken from the server's copy, not from state a render
+    // later: state has not been committed yet at this point, so reading
+    // it here would snapshot the previous flow.
+    movedRef.current = false;
+    savedSnapshot.current = stripPositions({
+      name: existing.data.name,
+      enabled: existing.data.enabled,
+      trigger_type: tt,
+      trigger_config:
+        tt === "schedule"
+          ? scheduleStateToConfig(
+              scheduleStateFromConfig(existing.data.trigger_config),
+            )
+          : triggerStateToConfig(
+              triggerStateFromConfig(existing.data.trigger_config),
+            ),
+      nodes: existing.data.nodes ?? [],
+      edges: existing.data.edges ?? [],
+    } as typeof payloadNow);
     // Arrived here from Automate, which builds a flow but cannot know
     // what should start it. Opened once the flow is actually loaded, so
     // the modal writes into real state rather than the empty defaults it
@@ -265,24 +286,60 @@ function FlowEditorInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
 
+  // Exactly what Save would send. The dirty check compares against this
+  // rather than watching for edits, so undoing a change back to where it
+  // started stops counting as unsaved — and so anything the editor
+  // rewrites on load (node order, a defaulted field) cannot register as
+  // a change nobody made.
+  const payloadNow = useMemo(
+    () => ({
+      name,
+      enabled,
+      trigger_type: triggerType,
+      trigger_config:
+        triggerType === "schedule"
+          ? scheduleStateToConfig(schedule)
+          : triggerStateToConfig(trigger),
+      nodes,
+      edges,
+    }),
+    [name, enabled, triggerType, schedule, trigger, nodes, edges],
+  );
+
+  // Positions are compared separately from everything else. React Flow
+  // emits position changes while it lays the canvas out, not only when
+  // somebody drags something, so a straight JSON compare marks a flow
+  // unsaved the moment it opens -- and a warning that fires on a flow
+  // you have not touched is one people learn to click through, which
+  // costs more than having no warning at all.
+  const stripPositions = (p: typeof payloadNow) =>
+    JSON.stringify({ ...p, nodes: p.nodes.map(({ position: _p, ...n }) => n) });
+
+  // Set at load for an existing flow and after every successful save.
+  // Null on a brand-new flow, where "unsaved" means anything at all has
+  // been put on the canvas.
+  const savedSnapshot = useRef<string | null>(null);
+  // Layout genuinely changed by a person: a drag, or Auto arrange.
+  const movedRef = useRef(false);
+  const unsaved = isNew
+    ? nodes.length > 0 || name.trim().length > 0
+    : savedSnapshot.current !== null &&
+      (savedSnapshot.current !== stripPositions(payloadNow) || movedRef.current);
+
+  const guard = useUnsavedGuard(unsaved);
+
   const save = useMutation({
     mutationFn: () => {
-      const payload = {
-        name,
-        enabled,
-        trigger_type: triggerType,
-        trigger_config:
-          triggerType === "schedule"
-            ? scheduleStateToConfig(schedule)
-            : triggerStateToConfig(trigger),
-        nodes,
-        edges,
-      };
+      const payload = payloadNow;
       return isNew
         ? apiPost<Flow>("/api/flows", payload)
         : apiPut<Flow>(`/api/flows/${flowId}`, payload);
     },
     onSuccess: (flow) => {
+      // Baseline moves to what was just persisted, so the guard stops
+      // firing the moment the work is safe.
+      savedSnapshot.current = stripPositions(payloadNow);
+      movedRef.current = false;
       if (isNew) navigate(`/flows/${flow.id}/edit`, { replace: true });
       setErr(null);
     },
@@ -305,7 +362,12 @@ function FlowEditorInner() {
           },
         },
       ),
-    onSuccess: (res) => navigate(`/flows?tab=runs&selected=${res.run_id}`),
+    // Guarded: this leaves the editor, and a schedule test run fires
+    // the SAVED flow — so on a flow with unsaved edits it would carry
+    // you off to watch a run of something other than what is on screen,
+    // discarding the edits on the way out.
+    onSuccess: (res) =>
+      guard.guardedNavigate(`/flows?tab=runs&selected=${res.run_id}`),
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -631,6 +693,11 @@ function FlowEditorInner() {
           n.id === c.id ? { ...n, position: c.position! } : n,
         );
         dirty = true;
+        // ``dragging`` is set only when a person is moving the node.
+        // React Flow reports position changes for its own layout work
+        // too, and counting those as unsaved edits would make the
+        // leave-warning fire on flows nobody touched.
+        if ((c as { dragging?: boolean }).dragging) movedRef.current = true;
       }
       // Dimension changes were being dropped, and they are the only
       // place the real height of a node is ever reported. Without them
@@ -971,6 +1038,19 @@ function FlowEditorInner() {
 
   return (
     <div className="fixed inset-x-0 top-14 bottom-0 flex flex-col">
+      <ConfirmDialog
+        open={guard.pendingPath !== null}
+        title="Leave without saving?"
+        body={
+          <>
+            This flow has changes that have not been saved. Nothing here is
+            written until you press Save, so leaving now discards them.
+          </>
+        }
+        confirmLabel="Discard and leave"
+        onConfirm={guard.leave}
+        onCancel={guard.stay}
+      />
       <div className="px-4 py-2 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center gap-3 shrink-0">
         <Link to="/flows" className="text-xs text-slate-500 hover:text-slate-200">
           ← Flows
