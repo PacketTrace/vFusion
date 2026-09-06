@@ -71,6 +71,8 @@ Field kinds available:
   {"kind": "text",  "values": [...], "weights": [...]}
   {"kind": "bool",  "rate": 0.15}
   {"kind": "id",    "prefix": "TXN-", "digits": 6}
+  {"kind": "linked", "to": "Company", "map": {"Acme Freight": [...],
+                    "Harbor Point": [...]}}
   {"kind": "ratio_of", "of": "Price", "min_ratio": 0.7, "max_ratio": 1.0}
   {"kind": "event_day"}
   {"kind": "event_time"}
@@ -86,7 +88,18 @@ demo. "time_after" is a clock time some hours later, for the other end
 of a shift or a visit; it wraps past midnight.
 
 "skew": "low" means most values sit near the minimum, which is what
-basket sizes, queue lengths and durations actually look like.
+basket sizes, queue lengths and durations actually look like. "high" is
+the mirror, for anything that piles up just under a limit -- a truck
+loads to just shy of the legal maximum because the trip costs the same
+either way. An "int" may also take "thousands": true and a "suffix"
+like "lb", which a weight needs to be readable and to mean anything.
+
+"linked" draws from the pool belonging to another field's value: the
+drivers who work for THIS company, the doors on THIS site. Use it
+whenever two columns describe the same real thing. Rolled independently
+they contradict each other -- the same driver appears at three
+employers -- which survives a glance at one row and falls apart the
+moment somebody filters by the column they belong to.
 "scale_base" is the quantity at which a scaled value sits mid-range.
 
 __REFINEMENT__

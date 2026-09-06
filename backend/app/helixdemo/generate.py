@@ -124,6 +124,27 @@ def _one_field(
                 rate = float(when.get("rate", rate))
         return "true" if rng.random() < rate else "false"
 
+    if kind == "linked":
+        # A value drawn from the pool belonging to another field's value:
+        # the drivers who work for this company, the doors on this site,
+        # the registers in this store.
+        #
+        # Without it, a row can only roll each column independently, so
+        # the same driver turns up at three different employers across
+        # the timeline. Nobody reads a demo closely enough to notice one
+        # row -- they notice it immediately when they filter by company.
+        driver_field = str(spec.get("to") or "")
+        table = spec.get("map")
+        if not isinstance(table, dict):
+            return ""
+        pool = table.get(str(row.get(driver_field, "")))
+        if not isinstance(pool, list) or not pool:
+            # The driver rolled a value the map has no entry for. Falling
+            # back to some other company's pool would produce exactly the
+            # contradiction this kind exists to prevent, so say nothing.
+            return str(spec.get("fallback") or "")
+        return str(_weighted(rng, pool, spec.get("weights")))
+
     if kind == "ratio_of":
         # A proportion of another number: a total after discount, a tax
         # line, a tip. Distinct from "scales_with", which spreads a
@@ -174,9 +195,20 @@ def _one_field(
             # as many twelve-item sales on the timeline as one-item ones,
             # which nobody's shop looks like.
             value = low + (high - low) * (rng.random() ** 2.2)
+        elif str(spec.get("skew")) == "high":
+            # The mirror: things bounded by a limit pile up just under
+            # it. Trucks load to just shy of the legal maximum because
+            # the trip costs the same either way.
+            value = high - (high - low) * (rng.random() ** 2.2)
         else:
             value = rng.uniform(low, high)
-        return _money(value) if kind == "money" else str(int(round(value)))
+        if kind == "money":
+            return _money(value)
+        # A weight, a distance, a count of cartons: readable at a glance
+        # only with separators, and meaningless without its unit.
+        text = f"{int(round(value)):,}" if spec.get("thousands") else str(int(round(value)))
+        suffix = spec.get("suffix")
+        return f"{text} {suffix}" if suffix else text
 
     if kind == "sample_from":
         pool = list(spec.get("pool") or [])
@@ -239,6 +271,7 @@ def _order(fields: dict[str, Any]) -> list[str]:
         depended.add(str(spec.get("scales_with") or ""))
         depended.add(str(spec.get("count_from") or ""))
         depended.add(str(spec.get("of") or ""))
+        depended.add(str(spec.get("to") or ""))
         when = spec.get("when")
         if isinstance(when, dict):
             depended.add(str(when.get("field") or ""))

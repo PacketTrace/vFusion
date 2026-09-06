@@ -1,0 +1,139 @@
+{
+  "name": "Vehicle scale — truck weigh-ins",
+  "summary": "Truck scale transactions at a yard gate: who was driving, what the vehicle weighed, its plate, and who it hauls for.",
+  "helix_event_type": {
+    "name": "⚖️ Vehicle Scale",
+    "event_schema": {
+      "Transaction ID": "string",
+      "Driver Name": "string",
+      "Vehicle Weight": "string",
+      "License Plate": "string",
+      "Company": "string"
+    }
+  },
+  "spec": {
+    "fields": {
+      "Transaction ID": {
+        "kind": "id",
+        "prefix": "WGH-",
+        "digits": 6
+      },
+      "Company": {
+        "kind": "choice",
+        "values": [
+          "Cascade Freight Systems",
+          "Harbor Point Logistics",
+          "Sundance Bulk Carriers",
+          "Ironwood Transport Co.",
+          "Meridian Ag Haul",
+          "Northgate Distribution"
+        ],
+        "weights": [
+          26,
+          21,
+          17,
+          15,
+          12,
+          9
+        ]
+      },
+      "License Plate": {
+        "kind": "linked",
+        "to": "Company",
+        "map": {
+          "Cascade Freight Systems": [
+            "WA 4471-TG",
+            "WA 8820-RJ",
+            "WA 1163-QP",
+            "OR 7734-BD"
+          ],
+          "Harbor Point Logistics": [
+            "WA 2298-LM",
+            "WA 6605-HK",
+            "ID 3391-VN"
+          ],
+          "Sundance Bulk Carriers": [
+            "MT 5512-WR",
+            "MT 9047-CE",
+            "WA 7726-DA",
+            "WY 1180-KF"
+          ],
+          "Ironwood Transport Co.": [
+            "WA 3358-PB",
+            "OR 6614-ZT",
+            "WA 9902-MC"
+          ],
+          "Meridian Ag Haul": [
+            "WA 8073-FN",
+            "ID 4426-SG",
+            "WA 5590-JL"
+          ],
+          "Northgate Distribution": [
+            "WA 1047-XB",
+            "WA 7218-QE",
+            "OR 3365-TW",
+            "WA 6683-NH"
+          ]
+        }
+      },
+      "Driver Name": {
+        "kind": "linked",
+        "to": "Company",
+        "map": {
+          "Cascade Freight Systems": [
+            "Marcus Ellery",
+            "Dana Whitcomb",
+            "Rafael Ortiz",
+            "Tanya Boskovic"
+          ],
+          "Harbor Point Logistics": [
+            "Gwen Abernathy",
+            "Luis Portillo",
+            "Hector Nakamura"
+          ],
+          "Sundance Bulk Carriers": [
+            "Bryce Lindholm",
+            "Adaeze Okonjo",
+            "Sam Trujillo"
+          ],
+          "Ironwood Transport Co.": [
+            "Nadine Kessler",
+            "Owen Brathwaite",
+            "Priya Chandra",
+            "Dale Ruffin"
+          ],
+          "Meridian Ag Haul": [
+            "Curtis Vandermeer",
+            "Elena Sokolova",
+            "Jerome Pitts"
+          ],
+          "Northgate Distribution": [
+            "Simone Delacroix",
+            "Aaron Kirkland",
+            "Mei-Ling Zhou"
+          ]
+        }
+      },
+      "Vehicle Weight": {
+        "kind": "int",
+        "min": 31000,
+        "max": 79800,
+        "thousands": true,
+        "suffix": "lb",
+        "skew": "high"
+      }
+    },
+    "timing": {
+      "shape": "business",
+      "open_hours": [
+        4,
+        21
+      ],
+      "peaks": [
+        7,
+        15
+      ],
+      "weekends": true
+    }
+  }
+}
