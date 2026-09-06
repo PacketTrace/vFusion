@@ -199,7 +199,7 @@ export default function Flows() {
         {[
           { key: "templates", label: "Templates" },
           { key: "analytics", label: "Analytics" },
-          { key: "flows", label: "Existing" },
+          { key: "flows", label: "Flows" },
           { key: "runs", label: "Runs" },
         ].map((t) => (
           <button

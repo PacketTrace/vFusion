@@ -90,6 +90,37 @@ def _collection_path(path: str, param: str) -> str | None:
     return "/".join(segments[:-1]) or None
 
 
+# Supplied by the client on every call, so it never counts against an
+# endpoint being runnable with nothing filled in.
+_AMBIENT = {"org_id"}
+
+
+def _required_params(row: VerkadaApiEndpoint) -> set[str]:
+    """Parameters this operation will not run without.
+
+    The bug this exists to fix: ``GET /access/v1/access_groups/group``
+    has no {placeholders}, so it looked like a listing call — and it is
+    the get-ONE endpoint, which requires group_id as a query parameter.
+    Offering it as the way to find a group_id asks Verkada for the id
+    using the id, and answers 400.
+    """
+    raw = row.raw
+    if not isinstance(raw, dict):
+        return set()
+    out: set[str] = set()
+    for prm in raw.get("parameters") or []:
+        if not isinstance(prm, dict):
+            continue
+        if prm.get("required") and prm.get("name") not in _AMBIENT:
+            out.add(str(prm.get("name")))
+    return out
+
+
+def _runnable_bare(row: VerkadaApiEndpoint) -> bool:
+    """Can this be called with nothing filled in?"""
+    return not _params_in(row.path) and not _required_params(row)
+
+
 def _mentions_param(row: VerkadaApiEndpoint, param: str) -> bool:
     """Does this operation's response talk about ``param``?
 
@@ -125,18 +156,34 @@ def _by_name(rows: list[VerkadaApiEndpoint], param: str) -> VerkadaApiEndpoint |
     noun = _noun_of(param)
     if not noun:
         return None
-    wanted = {noun, noun + "s", noun + "es"}
+    plurals = {noun + "s", noun + "es"}
+    wanted = {noun} | plurals
     # Also the plural of the last word: "access_user" -> "access_users".
     parts = noun.split("_")
     if parts:
         wanted.add("_".join(parts[:-1] + [parts[-1] + "s"]))
-    hits = [
-        r
-        for r in rows
-        if not _params_in(r.path) and r.path.rsplit("/", 1)[-1] in wanted
-    ]
-    hits.sort(key=lambda r: len(r.path))
-    return hits[0] if hits else None
+
+    def score(r: VerkadaApiEndpoint) -> tuple[int, int] | None:
+        seg = r.path.rsplit("/", 1)[-1]
+        if seg in wanted:
+            return (0, len(r.path))
+        # "/access/v1/access_groups" is the collection for group_id even
+        # though its last segment is not "groups" — Verkada prefixes the
+        # resource. Endswith catches it without matching unrelated paths.
+        if any(seg.endswith(pl) for pl in plurals):
+            return (1, len(r.path))
+        return None
+
+    scored = []
+    for r in rows:
+        # Must be runnable with nothing filled in, or it is not a lookup.
+        if not _runnable_bare(r):
+            continue
+        rank = score(r)
+        if rank is not None:
+            scored.append((rank, r))
+    scored.sort(key=lambda t: t[0])
+    return scored[0][1] if scored else None
 
 
 @router.get("", response_model=LookupResponse)
@@ -184,7 +231,9 @@ async def lookups_for(
     for param in params_list:
         collection = _collection_path(path, param)
         row = by_path.get(collection) if collection else None
-        if row is not None:
+        # A collection that itself demands a required parameter is the
+        # same trap one level up.
+        if row is not None and not _required_params(row):
             out.append(
                 Lookup(
                     param=param,
@@ -215,9 +264,7 @@ async def lookups_for(
         # no ids of its own to supply -- a lookup that needs a lookup is
         # not a lookup.
         candidates = [
-            r
-            for r in rows
-            if not _params_in(r.path) and _mentions_param(r, param)
+            r for r in rows if _runnable_bare(r) and _mentions_param(r, param)
         ]
         # Shortest path first: the plain collection beats a report or a
         # filtered sub-view that happens to include the same field.

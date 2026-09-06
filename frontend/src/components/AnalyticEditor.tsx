@@ -197,11 +197,7 @@ export default function AnalyticEditor({
             disabled={!name.trim() || !prompt.trim() || save.isPending}
             className="px-4 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white text-sm disabled:opacity-40"
           >
-            {save.isPending
-              ? "Saving…"
-              : isCopy
-                ? "Save as mine"
-                : "Save changes"}
+            {save.isPending ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
