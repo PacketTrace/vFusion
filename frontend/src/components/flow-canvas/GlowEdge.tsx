@@ -105,9 +105,13 @@ export default function GlowEdge(props: EdgeProps) {
             style={{
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              background: "#0f172a",
-              padding: "1px 5px",
-              borderRadius: 4,
+              // Was a solid slate chip, which read as a sticker laid on
+              // top rather than part of the diagram.
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              backdropFilter: "blur(6px)",
+              padding: "1px 6px",
+              borderRadius: 5,
               color: d.labelColor ?? "#94a3b8",
               fontSize: 11,
               fontWeight: 600,

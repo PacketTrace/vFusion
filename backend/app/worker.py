@@ -33,6 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.assets import cleanup_expired as cleanup_expired_assets
 from app.config import settings
+from app.connectors.mcp.poll import check_all_connections as check_mcp_servers
 from app.connectors.mcp.poll import poll_all_connections as poll_mcp_servers
 from app.connectors.verkada.catalog import crawl_all as crawl_verkada_catalog
 from app.connectors.verkada.footage import cleanup_old_clips
@@ -645,6 +646,16 @@ async def poll_mcp_cron(ctx: dict[str, Any]) -> list[dict[str, Any]]:  # noqa: A
     return await poll_mcp_servers()
 
 
+async def mcp_health_cron(ctx: dict[str, Any]) -> list[dict[str, Any]]:  # noqa: ARG001
+    """Is each MCP server answering. Handshake only, once a minute.
+
+    An outage is only visible at the resolution you check for it: at one
+    check an hour, a server can be down for fifty-nine minutes and leave
+    no trace at all.
+    """
+    return await check_mcp_servers()
+
+
 async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
     """Sweep expired filesystem assets + (optionally) old DB rows.
 
@@ -1052,10 +1063,12 @@ class WorkerSettings:
         # Daily 04:11 UTC: refresh Gemini pricing snapshot. run_at_startup
         # so first deploy populates the table before any flow runs.
         cron(refresh_gemini_pricing_cron, hour=4, minute=11, run_at_startup=True),
-        # Hourly at :41 — check the MCP catalogs for added/removed/edited
-        # tools AND record whether the server answered. run_at_startup so
-        # a fresh deploy lays the baseline down without waiting for the
-        # first scheduled tick.
+        # Every minute: is the MCP server answering, and how fast. A
+        # handshake, not a catalog pull — see check_all_connections.
+        cron(mcp_health_cron, minute=set(range(60)), run_at_startup=True),
+        # Hourly at :41 — the tool catalog itself, for added / removed /
+        # edited tools. run_at_startup so a fresh deploy lays the
+        # baseline down without waiting for the first scheduled tick.
         cron(poll_mcp_cron, minute=41, run_at_startup=True),
         # Every minute: fire any due schedule-trigger flows.
         cron(tick_schedule_flows, minute=set(range(60))),

@@ -65,8 +65,11 @@ type McpHealth = {
    *  page view also advances — "checked 3m ago" has to mean the
    *  schedule, or it just means you are looking at it. */
   last_scheduled_at?: string | null;
-  ok_count?: number;
-  fail_count?: number;
+  /** Uptime across every check ever recorded, not across the buffer. */
+  uptime_pct?: number | null;
+  measuring_since?: string | null;
+  outage_count?: number;
+  last_outage?: { from?: string; to?: string | null; checks?: number } | null;
   failing_streak?: number;
   failing_since?: string | null;
   last_timings?: { handshake_ms?: number; list_ms?: number; total_ms?: number };
@@ -150,6 +153,18 @@ function ago(iso?: string | null): string | null {
 /** One bar per recent check: height is latency, colour is outcome.
  *  Reading a list of timestamps to spot a pattern is work; a strip of
  *  bars makes an outage or a slow drift visible without any. */
+/** How long an outage lasted, from its own timestamps — a check count
+ *  is only a duration if you already know the interval. */
+function outageLength(o: { from?: string; to?: string | null }): string {
+  if (!o.from || !o.to) return "";
+  const ms = new Date(o.to).getTime() - new Date(o.from).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const mins = Math.max(1, Math.round(ms / 60000));
+  if (mins < 60) return `down ${mins} min`;
+  const hours = Math.round((mins / 60) * 10) / 10;
+  return `down ${hours}h`;
+}
+
 function HealthStrip({ recent }: { recent: NonNullable<McpHealth["recent"]> }) {
   const worst = Math.max(1, ...recent.map((c) => c.total_ms ?? 0));
   return (
@@ -484,22 +499,53 @@ export default function Mcp() {
                           </span>
                         )}
                       </Fact>
-                      <Fact label="Status">
+                      <Fact
+                        label="Uptime"
+                        hint={
+                          h.measuring_since
+                            ? `measured since ${new Date(h.measuring_since).toLocaleDateString()}`
+                            : undefined
+                        }
+                      >
                         {failing ? (
                           <span className="text-rose-300">
-                            failing — {h.failing_streak} check
-                            {h.failing_streak === 1 ? "" : "s"} in a row,
-                            since {ago(h.failing_since)}
+                            down — {h.failing_streak} check
+                            {h.failing_streak === 1 ? "" : "s"} in a row, since{" "}
+                            {ago(h.failing_since)}
                           </span>
                         ) : (
                           <span className="text-emerald-300">
-                            answering · {h.ok_count}/{h.checks} checks ok
+                            {h.uptime_pct != null
+                              ? `${h.uptime_pct}%`
+                              : "answering"}
                           </span>
                         )}
                         {failing && h.last_error && (
                           <div className="mt-1 font-mono text-[11px] text-rose-300/80 break-all">
                             {h.last_error}
                           </div>
+                        )}
+                      </Fact>
+                      <Fact label="Last outage">
+                        {!h.last_outage ? (
+                          <span className="text-slate-500">
+                            none recorded
+                          </span>
+                        ) : h.last_outage.to ? (
+                          <>
+                            {ago(h.last_outage.from)} ·{" "}
+                            {outageLength(h.last_outage)}
+                            {(h.outage_count ?? 0) > 1 && (
+                              <span className="text-slate-500">
+                                {" "}
+                                · {h.outage_count} in total
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-rose-300">
+                            ongoing since {ago(h.last_outage.from)}
+                          </span>
                         )}
                       </Fact>
                       {h.last_timings && (
@@ -523,7 +569,7 @@ export default function Mcp() {
                       {h.recent && h.recent.length > 1 && (
                         <Fact
                           label="Recent checks"
-                          hint={`last ${h.recent.length} · taller is slower, red is a failure`}
+                          hint={`last ${h.recent.length} minutes · taller is slower, red is a failure`}
                         >
                           <HealthStrip recent={h.recent} />
                         </Fact>

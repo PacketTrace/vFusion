@@ -31,10 +31,15 @@ logger = logging.getLogger(__name__)
 
 HEALTH_PATH = Path(os.environ.get("MCP_HEALTH_FILE", "/app/data/mcp/health.json"))
 
-# How many check results to keep per server. At hourly polling this is a
-# little over three days -- long enough to show a pattern, short enough
-# that the file stays small and the page can render every point.
-MAX_CHECKS = 96
+# Raw results kept per server. At one check a minute this is the last
+# ninety minutes -- enough to draw a recent strip, and no more, because
+# a week of raw checks is ten thousand entries to answer a question
+# ("what is the uptime") that two counters answer exactly.
+MAX_CHECKS = 90
+
+# Outages kept per server. Long enough to see a pattern, bounded so a
+# flapping server cannot grow the file without limit.
+MAX_OUTAGES = 20
 
 _lock = asyncio.Lock()
 
@@ -101,30 +106,83 @@ async def record(
 
     async with _lock:
         data = _load()
-        checks = data.get(url) or []
+        # Older files stored a bare list per url. Read them forward
+        # rather than discarding the history somebody has been
+        # accumulating.
+        rec = data.get(url)
+        if isinstance(rec, list):
+            rec = {"checks": rec, "totals": {}, "outages": []}
+        if not isinstance(rec, dict):
+            rec = {"checks": [], "totals": {}, "outages": []}
+
+        checks: list[dict[str, Any]] = list(rec.get("checks") or [])
+        totals: dict[str, Any] = dict(rec.get("totals") or {})
+        outages: list[dict[str, Any]] = list(rec.get("outages") or [])
+
+        # Counters, not a count of what we kept. Uptime over three days
+        # should not depend on how many raw rows the file happens to
+        # hold, and trimming the window must not rewrite history.
+        totals.setdefault("since", entry["at"])
+        totals["ok"] = int(totals.get("ok") or 0) + (1 if ok else 0)
+        totals["fail"] = int(totals.get("fail") or 0) + (0 if ok else 1)
+
+        # An outage is a period, not a tally. One row per stretch of
+        # failure, opened on the first and closed on recovery, which is
+        # the shape of the question people actually ask: when was it
+        # down, and for how long.
+        was_ok = bool(checks[-1].get("ok")) if checks else True
+        if not ok and was_ok:
+            outages.append({"from": entry["at"], "to": None, "checks": 1})
+        elif not ok and outages and outages[-1].get("to") is None:
+            outages[-1]["checks"] = int(outages[-1].get("checks") or 0) + 1
+        elif ok and outages and outages[-1].get("to") is None:
+            outages[-1]["to"] = entry["at"]
+
         checks.append(entry)
-        data[url] = checks[-MAX_CHECKS:]
+        data[url] = {
+            "checks": checks[-MAX_CHECKS:],
+            "totals": totals,
+            "outages": outages[-MAX_OUTAGES:],
+        }
         _save(data)
         return summarize(data[url])
 
 
-def summarize(checks: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the page shows: how fresh, how healthy, how fast."""
+def summarize(rec: Any) -> dict[str, Any]:
+    """What the page shows: is it up, how fast, and when was it not.
+
+    Not "33 of 33 checks ok". That number was the size of the buffer as
+    much as anything about the server, and it grew less meaningful the
+    more often we checked. Uptime is a percentage over a stated period,
+    and an outage is a time and a duration.
+    """
+    if isinstance(rec, list):  # pre-counters file
+        rec = {"checks": rec, "totals": {}, "outages": []}
+    if not isinstance(rec, dict):
+        return {"checks": 0}
+
+    checks: list[dict[str, Any]] = list(rec.get("checks") or [])
+    totals: dict[str, Any] = dict(rec.get("totals") or {})
+    outages: list[dict[str, Any]] = list(rec.get("outages") or [])
     if not checks:
         return {"checks": 0}
 
     last = checks[-1]
     scheduled = [c for c in checks if c.get("source") == "cron"]
-    ok_checks = [c for c in checks if c.get("ok")]
+    ok_total = int(totals.get("ok") or 0)
+    fail_total = int(totals.get("fail") or 0)
+    seen = ok_total + fail_total
+
     latencies = [
         int(c["timings"]["total_ms"])
-        for c in ok_checks
-        if isinstance(c.get("timings"), dict) and c["timings"].get("total_ms")
+        for c in checks
+        if c.get("ok")
+        and isinstance(c.get("timings"), dict)
+        and c["timings"].get("total_ms")
     ]
 
-    # Consecutive failures ending at the most recent check. "3 of the
-    # last 96 failed" reads very differently depending on whether they
-    # were three months ago or are still happening.
+    # Consecutive failures ending at the most recent check — the
+    # difference between "it broke once last Tuesday" and "it is broken".
     failing_since: str | None = None
     streak = 0
     for c in reversed(checks):
@@ -133,6 +191,8 @@ def summarize(checks: list[dict[str, Any]]) -> dict[str, Any]:
         streak += 1
         failing_since = c.get("at")
 
+    ongoing = [o for o in outages if o.get("to") is None]
+    closed = [o for o in outages if o.get("to")]
     out: dict[str, Any] = {
         "checks": len(checks),
         "last_check_at": last.get("at"),
@@ -140,12 +200,16 @@ def summarize(checks: list[dict[str, Any]]) -> dict[str, Any]:
         "last_source": last.get("source"),
         "last_error": last.get("error"),
         "last_scheduled_at": scheduled[-1].get("at") if scheduled else None,
-        "ok_count": len(ok_checks),
-        "fail_count": len(checks) - len(ok_checks),
         "failing_streak": streak,
         "failing_since": failing_since if streak else None,
         "last_timings": last.get("timings"),
-        # Newest last, so the UI can draw it left-to-right without
+        # Uptime across everything ever recorded, with the date it
+        # started, so the number means something specific.
+        "uptime_pct": round(100.0 * ok_total / seen, 2) if seen else None,
+        "measuring_since": totals.get("since"),
+        "outage_count": len(outages),
+        "last_outage": (ongoing or closed or [None])[-1],
+        # Newest last, so the UI draws it left-to-right without
         # reversing anything.
         "recent": [
             {
@@ -153,7 +217,7 @@ def summarize(checks: list[dict[str, Any]]) -> dict[str, Any]:
                 "ok": bool(c.get("ok")),
                 "total_ms": (c.get("timings") or {}).get("total_ms"),
             }
-            for c in checks[-24:]
+            for c in checks[-60:]
         ],
     }
     if latencies:
@@ -170,7 +234,7 @@ def summarize(checks: list[dict[str, Any]]) -> dict[str, Any]:
 async def read(url: str) -> dict[str, Any]:
     """Health for one server without recording a check."""
     async with _lock:
-        return summarize(_load().get(url) or [])
+        return summarize(_load().get(url) or {})
 
 
 class Timer:

@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.connectors.mcp.client import MCPError, describe_server
+from app.connectors.mcp.client import MCPError, describe_server, ping_server
 from app.connectors.mcp.health import record as record_health
 from app.connectors.mcp.history import record
 from app.connectors.verkada.client import normalize_base_url
@@ -103,4 +103,63 @@ async def poll_all_connections() -> list[dict[str, Any]]:
             summary.get("last_changed_at"),
             summary.get("new_tools_30d"),
         )
+    return results
+
+
+async def _targets() -> list[tuple[str, str, str]]:
+    """(name, url, token) for every configured org."""
+    out: list[tuple[str, str, str]] = []
+    async with SessionLocal() as session:
+        conns = (
+            (
+                await session.execute(
+                    select(Connection).where(
+                        Connection.type == "verkada",
+                        Connection.setup_complete.is_(True),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for conn in conns:
+            try:
+                secret = decrypt_secret(conn.encrypted_secret)
+            except Exception:  # noqa: BLE001 — one bad row must not stop the sweep
+                continue
+            token = secret.get("api_key")
+            if not token:
+                continue
+            url = f"{normalize_base_url(secret.get('region') or None)}/mcp"
+            out.append((conn.name, url, token))
+    return out
+
+
+async def check_all_connections() -> list[dict[str, Any]]:
+    """Is it answering, and how fast. Handshake only.
+
+    Split from the catalog poll because the two questions have different
+    natural rates. An outage is only visible at the resolution you check
+    for it, so availability wants a check a minute; the tool list changes
+    maybe weekly, and pulling it 1,440 times a day to notice that would
+    be rude to Verkada and pointless to us.
+    """
+    results: list[dict[str, Any]] = []
+    for name, url, token in await _targets():
+        try:
+            pong = await ping_server(url, token)
+        except Exception as e:  # noqa: BLE001 — MCPError, plus network/DNS/TLS
+            detail = str(e) if isinstance(e, MCPError) else repr(e)
+            await record_health(url, ok=False, source="cron", error=detail)
+            results.append({"connection": name, "url": url, "error": detail})
+            continue
+        await record_health(
+            url,
+            ok=True,
+            source="cron",
+            timings=pong.get("timings"),
+            protocol=pong.get("protocol_version"),
+            requested_protocol=pong.get("requested_protocol_version"),
+        )
+        results.append({"connection": name, "url": url, **(pong.get("timings") or {})})
     return results

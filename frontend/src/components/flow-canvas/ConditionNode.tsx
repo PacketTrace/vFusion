@@ -177,7 +177,7 @@ function ValuePill({ raw }: { raw: string }) {
     const path = tplMatch[1];
     return (
       <span
-        className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-900/60 border border-sky-800 text-sky-100 font-mono text-[11px]"
+        className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/30 text-sky-200 font-mono text-[11px]"
         title={`{{ ${path} }}`}
       >
         {prettyVarPath(path)}

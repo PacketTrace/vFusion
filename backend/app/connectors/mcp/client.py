@@ -235,6 +235,35 @@ async def call_tool(
     return result
 
 
+async def ping_server(
+    url: str,
+    token: str,
+    *,
+    timeout_sec: float = DEFAULT_TIMEOUT_SEC,
+) -> dict[str, Any]:
+    """Handshake only — is it answering, and how fast.
+
+    Separate from ``describe_server`` because the two questions have
+    very different costs. Availability wants sampling at the resolution
+    you care about detecting an outage; the tool catalog changes maybe
+    weekly. Pulling the full tool list once a minute would be asking
+    Verkada for a few hundred kilobytes fourteen hundred times a day to
+    answer a question the handshake already answered.
+    """
+    from app.connectors.mcp.health import Timer
+
+    timer = Timer()
+    async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        session = await open_session(url, token, client=client)
+        timer.mark("handshake_ms")
+    return {
+        "url": url,
+        "protocol_version": session.protocol_version,
+        "requested_protocol_version": PROTOCOL_VERSION,
+        "timings": timer.finish(),
+    }
+
+
 async def describe_server(
     url: str,
     token: str,

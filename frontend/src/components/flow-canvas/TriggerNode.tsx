@@ -60,7 +60,7 @@ export default function TriggerNode({ data, selected }: NodeProps) {
             }}
             disabled={!!d.runActive}
             title="Fire this flow now with a synthetic trigger and watch the run light up the canvas"
-            className="nodrag shrink-0 text-[11px] font-semibold px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+            className="nodrag shrink-0 text-[11px] font-semibold px-2 py-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 transition-[color,border-color,background-color] duration-150 ease-out-strong hover:bg-emerald-500/20 hover:border-emerald-400/60 hover:text-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
           >
             <span aria-hidden>▶</span>
             {d.runActive && (d.runOverallStatus === "running" || d.runOverallStatus === "pending")
@@ -203,7 +203,7 @@ function Pill({
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] ${
         subtle
           ? "bg-white/5 text-slate-300 border border-white/15"
-          : "bg-sky-900/60 text-sky-100 border border-sky-800"
+          : "bg-sky-500/10 text-sky-200 border border-sky-500/30"
       }`}
     >
       {children}

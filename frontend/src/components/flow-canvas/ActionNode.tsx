@@ -137,7 +137,7 @@ export function runStateClasses(
 export function NeedsConfigBadge({ fields }: { fields: string[] }) {
   return (
     <span
-      className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-amber-600 text-white"
+      className="text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300"
       title={`Required fields still empty: ${fields.join(", ")}`}
     >
       needs config
@@ -155,15 +155,29 @@ function RunBadge({
   status: NonNullable<ActionNodeData["runStatus"]>;
 }) {
   const map: Record<string, { color: string; label: string }> = {
-    running: { color: "bg-sky-600 text-white", label: "running" },
-    success: { color: "bg-emerald-600 text-white", label: "done" },
-    failed: { color: "bg-rose-600 text-white", label: "failed" },
-    skipped: { color: "bg-slate-600 text-slate-200", label: "skipped" },
+    // Tinted, not filled. These are the same four states the Runs page
+    // shows, and they read there without shouting.
+    running: {
+      color: "border border-sky-500/40 bg-sky-500/10 text-sky-300",
+      label: "running",
+    },
+    success: {
+      color: "border border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+      label: "done",
+    },
+    failed: {
+      color: "border border-rose-500/40 bg-rose-500/10 text-rose-300",
+      label: "failed",
+    },
+    skipped: {
+      color: "border border-white/15 bg-white/5 text-slate-400",
+      label: "skipped",
+    },
   };
   const m = map[status];
   return (
     <span
-      className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${m.color}`}
+      className={`text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${m.color}`}
     >
       {m.label}
     </span>
