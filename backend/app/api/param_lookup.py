@@ -109,13 +109,60 @@ def _mentions_param(row: VerkadaApiEndpoint, param: str) -> bool:
         return False
 
 
+def _noun_of(param: str) -> str:
+    """``user_id`` -> ``user``. The resource an id points at."""
+    return re.sub(r"_?(id|uid|uuid)$", "", param).strip("_")
+
+
+def _by_name(rows: list[VerkadaApiEndpoint], param: str) -> VerkadaApiEndpoint | None:
+    """A GET whose path names the resource this id points at.
+
+    For a query parameter there is no path segment to strip, so the
+    convention that works for ``/x/{x_id}`` has nothing to bite on.
+    ``user_id`` still has to lead somewhere, and the endpoint that lists
+    users is the one whose path ends in ``user`` or ``users``.
+    """
+    noun = _noun_of(param)
+    if not noun:
+        return None
+    wanted = {noun, noun + "s", noun + "es"}
+    # Also the plural of the last word: "access_user" -> "access_users".
+    parts = noun.split("_")
+    if parts:
+        wanted.add("_".join(parts[:-1] + [parts[-1] + "s"]))
+    hits = [
+        r
+        for r in rows
+        if not _params_in(r.path) and r.path.rsplit("/", 1)[-1] in wanted
+    ]
+    hits.sort(key=lambda r: len(r.path))
+    return hits[0] if hits else None
+
+
 @router.get("", response_model=LookupResponse)
 async def lookups_for(
     path: str = Query(..., description="The endpoint path being run"),
+    params: str | None = Query(
+        default=None,
+        description=(
+            "Comma-separated parameter names to resolve, beyond the "
+            "{placeholders} in the path. Query parameters take ids too — "
+            "user_id is a query parameter on most access endpoints — and "
+            "resolving only path parameters left exactly the fields "
+            "nobody can fill."
+        ),
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> LookupResponse:
-    params = _params_in(path)
-    if not params:
+    wanted = _params_in(path)
+    for extra in (params or "").split(","):
+        name = extra.strip()
+        # Only things that look like an identifier. Offering to "look
+        # up" page_size would be noise on every endpoint.
+        if name and name not in wanted and re.search(r"(^|_)(id|uid|uuid)$", name):
+            wanted.append(name)
+    params_list = wanted
+    if not params_list:
         return LookupResponse(lookups=[], unresolved=[])
 
     rows = (
@@ -134,7 +181,7 @@ async def lookups_for(
 
     out: list[Lookup] = []
     unresolved: list[str] = []
-    for param in params:
+    for param in params_list:
         collection = _collection_path(path, param)
         row = by_path.get(collection) if collection else None
         if row is not None:
@@ -146,6 +193,20 @@ async def lookups_for(
                     summary=row.summary,
                     confidence="exact",
                     reason=f"{row.path} is the collection this id belongs to",
+                )
+            )
+            continue
+
+        named = _by_name(rows, param)
+        if named is not None:
+            out.append(
+                Lookup(
+                    param=param,
+                    method="GET",
+                    path=named.path,
+                    summary=named.summary,
+                    confidence="exact",
+                    reason=f"{named.path} lists the {_noun_of(param)}s this id refers to",
                 )
             )
             continue

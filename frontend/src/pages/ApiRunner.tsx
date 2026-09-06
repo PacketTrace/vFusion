@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import CameraIdInput from "../components/CameraIdInput";
@@ -37,76 +37,6 @@ interface RunResult {
   elapsed_ms: number;
   body?: unknown;
   error?: string;
-}
-
-interface TokenResult {
-  ok: boolean;
-  elapsed_ms: number;
-  endpoint?: string;
-  sent_header?: string;
-  use_header?: string;
-  token?: string;
-  connection?: string;
-  error?: string;
-  issued_at?: number;
-  expires_in?: number | null;
-  expires_at?: number | string | null;
-  raw?: Record<string, unknown>;
-}
-
-/**
- * How long this token has left, or how old it is.
- *
- * Counts down when the response said when it expires, and counts up
- * when it did not. The second is not a worse version of the first — it
- * is the honest answer to "how stale is this", and it beats a
- * hardcoded thirty minutes that is wrong the day Verkada changes it.
- */
-function TokenAge({ auth }: { auth: TokenResult }) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const issued = auth.issued_at ?? now;
-  const expiresAt =
-    typeof auth.expires_at === "number"
-      ? auth.expires_at
-      : typeof auth.expires_at === "string"
-        ? Date.parse(auth.expires_at) / 1000
-        : auth.expires_in
-          ? issued + auth.expires_in
-          : null;
-
-  if (expiresAt && Number.isFinite(expiresAt)) {
-    const left = Math.max(0, Math.round(expiresAt - now));
-    const mm = Math.floor(left / 60);
-    const ss = String(left % 60).padStart(2, "0");
-    return (
-      <span
-        className={
-          left === 0
-            ? "text-rose-300"
-            : left < 120
-              ? "text-amber-300"
-              : "text-slate-500"
-        }
-      >
-        {left === 0 ? "expired" : `expires in ${mm}:${ss}`}
-      </span>
-    );
-  }
-
-  const age = Math.max(0, Math.round(now - issued));
-  return (
-    <span
-      className={age > 1500 ? "text-amber-300" : "text-slate-500"}
-      title="Verkada did not say when this expires, so this is how long ago it was issued. If a call starts returning 401, get a new one."
-    >
-      issued {age < 60 ? `${age}s` : `${Math.floor(age / 60)}m ${age % 60}s`} ago
-    </span>
-  );
 }
 
 interface Param {
@@ -298,10 +228,6 @@ export default function ApiRunner() {
   // Which categories are expanded. Nothing is open on arrival: a wall of
   // 121 endpoints is the thing the categories exist to prevent.
   const [open, setOpen] = useState<Set<string>>(new Set());
-  // The token from the exchange, held here so the next call visibly
-  // uses the thing you just watched arrive.
-  const [token, setToken] = useState<string | null>(null);
-  const [showToken, setShowToken] = useState(false);
 
   const conns = useQuery({
     queryKey: ["connections"],
@@ -367,32 +293,25 @@ export default function ApiRunner() {
   const params = useMemo(() => paramsOf(detail.data ?? null), [detail.data]);
   const bodyParams = useMemo(() => bodyFields(detail.data ?? null), [detail.data]);
   const pathParams = params.filter((p) => p.in === "path");
-  // Which call produces each id in this path. Derived from the crawled
-  // spec, not a hand-kept list — see backend/api/param_lookup.py.
-  const lookups = usePathLookups(detail.data?.path);
+  const queryParams = params.filter((p) => p.in === "query");
+  // Which call produces each id this endpoint needs, wherever it is
+  // asked for. Derived from the crawled spec, not a hand-kept list —
+  // see backend/api/param_lookup.py.
+  const lookups = usePathLookups(detail.data?.path, [
+    ...queryParams.map((p) => p.name),
+    ...bodyParams.map((f) => f.name),
+  ]);
   const lookupFor = (name: string) =>
     (lookups.data?.lookups ?? []).find((l) => l.param === name) ?? null;
-  const queryParams = params.filter((p) => p.in === "query");
   const method = (picked?.method ?? "GET").toUpperCase();
   const isWrite = WRITE.has(method);
   const missing = pathParams.filter((p) => !pathValues[p.name]?.trim());
 
-  const auth = useMutation({
-    mutationFn: () =>
-      apiPost<TokenResult>("/api/api-runner/token", {
-        connection_id: connId || null,
-      }),
-    onSuccess: (r) => {
-      setToken(r.ok && r.token ? r.token : null);
-      setShowToken(false);
-    },
-  });
 
   const run = useMutation({
     mutationFn: () =>
       apiPost<RunResult>("/api/api-runner/run", {
         connection_id: connId || null,
-        token,
         method,
         path: picked?.path,
         path_params: pathValues,
@@ -535,92 +454,6 @@ export default function ApiRunner() {
       </div>
 
       <div className="flex-1 min-w-0 space-y-3">
-        <div className="rounded-lg border border-white/15 bg-white/5 p-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              type="button"
-              onClick={() => auth.mutate()}
-              disabled={auth.isPending}
-              className="text-sm px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-slate-200 disabled:opacity-40"
-            >
-              {auth.isPending
-                ? "Exchanging…"
-                : token
-                  ? "Get a new token"
-                  : "Get a token"}
-            </button>
-            <span className="text-[11px] text-slate-500">
-              Verkada&rsquo;s API is two calls: <code>POST /token</code> with
-              your API key, then every request carrying it in{" "}
-              <code>x-verkada-auth</code>. vFusion normally does the first
-              invisibly — here you can watch it.
-            </span>
-          </div>
-
-          {auth.data && !auth.data.ok && (
-            <div className="mt-2 text-xs text-rose-300">
-              The exchange failed: {auth.data.error}
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                An auth problem, not an endpoint problem — the key was
-                rejected before any call was made.
-              </div>
-            </div>
-          )}
-
-          {auth.data?.ok && (
-            <div className="mt-2 space-y-1">
-              <div className="flex items-center gap-2 flex-wrap text-[11px]">
-                <span className="font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
-                  200
-                </span>
-                <span className="text-slate-400 font-mono">
-                  POST {auth.data.endpoint}
-                </span>
-                <span className="text-slate-500">
-                  {auth.data.elapsed_ms} ms · {auth.data.connection}
-                </span>
-                <TokenAge auth={auth.data} />
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <code className="text-[11px] text-slate-300 bg-black/30 border border-white/10 rounded px-2 py-1 break-all max-w-full">
-                  {showToken
-                    ? auth.data.token
-                    : `${(auth.data.token ?? "").slice(0, 8)}${"\u2022".repeat(24)}`}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => setShowToken((v) => !v)}
-                  className="text-[11px] text-sky-400 hover:text-sky-300"
-                >
-                  {showToken ? "hide" : "reveal"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void copyToClipboard(auth.data?.token ?? "");
-                  }}
-                  className="text-[11px] text-slate-400 hover:text-slate-200"
-                >
-                  copy
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Short-lived, and grants exactly what the key already does.
-                Calls below now send this one instead of exchanging again, so
-                a 401 on a call means the endpoint refused you rather than
-                the key being wrong.
-              </p>
-            </div>
-          )}
-
-          {!auth.data && (
-            <p className="text-[11px] text-slate-600 mt-2">
-              Optional — running a call without one exchanges a token behind
-              the scenes, exactly as a flow step does.
-            </p>
-          )}
-        </div>
-
       {!picked && (
         <div className="rounded-lg border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-500">
           Pick an endpoint on the left. Categories come from Verkada&rsquo;s own
@@ -707,7 +540,7 @@ export default function ApiRunner() {
                       <ParamLookup
                         lookup={lookupFor(p.name)!}
                         connectionId={connId || null}
-                        token={token}
+                        token={null}
                         onPick={(v) =>
                           setPathValues({ ...pathValues, [p.name]: v })
                         }
@@ -720,6 +553,16 @@ export default function ApiRunner() {
 
             {queryParams.map((p) => (
               <Field key={p.name} p={p} required={!!p.required}>
+                {lookupFor(p.name) && !isCameraField(p.name) && !isDoorField(p.name) && (
+                  <ParamLookup
+                    lookup={lookupFor(p.name)!}
+                    connectionId={connId || null}
+                    token={null}
+                    onPick={(v) =>
+                      setQueryValues({ ...queryValues, [p.name]: v })
+                    }
+                  />
+                )}
                 {isCameraField(p.name) ? (
                   <CameraIdInput
                     value={queryValues[p.name] ?? ""}
@@ -812,6 +655,18 @@ export default function ApiRunner() {
                         {f.type}
                       </span>
                     </div>
+                    {lookupFor(f.name) &&
+                      !isCameraField(f.name) &&
+                      !isDoorField(f.name) && (
+                        <ParamLookup
+                          lookup={lookupFor(f.name)!}
+                          connectionId={connId || null}
+                          token={null}
+                          onPick={(v) =>
+                            setBodyValues({ ...bodyValues, [f.name]: v })
+                          }
+                        />
+                      )}
                     {isCameraField(f.name) ? (
                       <CameraIdInput
                         value={bodyValues[f.name] ?? ""}

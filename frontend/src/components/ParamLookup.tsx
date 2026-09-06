@@ -19,17 +19,27 @@ type ResolveResponse = {
   note: string | null;
 };
 
-/** Which call produces each id in a path. Cached per path — the answer
- *  comes from the crawled spec and does not change while you are
- *  looking at one endpoint. */
-export function usePathLookups(path: string | undefined) {
+/** Which call produces each id this endpoint needs. Cached per endpoint
+ *  — the answer comes from the crawled spec and does not change while
+ *  you are looking at one call.
+ *
+ *  ``extraParams`` covers query and body fields. An id is an id wherever
+ *  it is asked for: user_id on the unlock endpoint is a body field, and
+ *  resolving only {placeholders} left exactly the boxes nobody can
+ *  fill. */
+export function usePathLookups(
+  path: string | undefined,
+  extraParams: string[] = [],
+) {
+  const extra = [...new Set(extraParams)].sort().join(",");
   return useQuery({
-    queryKey: ["param-lookups", path],
+    queryKey: ["param-lookups", path, extra],
     queryFn: () =>
       apiGet<LookupResponse>(
-        `/api/param-lookup?path=${encodeURIComponent(path!)}`,
+        `/api/param-lookup?path=${encodeURIComponent(path!)}` +
+          (extra ? `&params=${encodeURIComponent(extra)}` : ""),
       ),
-    enabled: !!path && path.includes("{"),
+    enabled: !!path && (path.includes("{") || extra.length > 0),
     staleTime: 5 * 60_000,
   });
 }
