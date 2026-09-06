@@ -457,3 +457,31 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
   background-color: rgb(255 255 255 / 0.12);
 }
+
+
+/* Actions that appear when their card is hovered.
+ *
+ * Hover-to-reveal is right for a page you scan: at rest it is names and
+ * counts, and a delete you have to reach for is one you cannot hit by
+ * accident. But a touch device has no hover — the first tap would land
+ * on the card behind them and open the editor instead, so the actions
+ * would be genuinely unreachable. There, they stay visible.
+ *
+ * The transition lives inside the media query too: with no hover there
+ * is nothing to transition, and animating an element that is always
+ * visible is motion for its own sake. */
+.hover-actions {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hover-actions {
+    opacity: 0;
+    transition: opacity 150ms var(--ease-out);
+  }
+
+  .group:hover .hover-actions,
+  .hover-actions:focus-within {
+    opacity: 1;
+  }
+}

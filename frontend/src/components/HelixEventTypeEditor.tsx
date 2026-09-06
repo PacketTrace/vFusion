@@ -255,7 +255,7 @@ export default function HelixEventTypeEditor({
                 <button
                   type="button"
                   onClick={() => setAssistOpen(true)}
-                  className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-violet-100 hover:bg-violet-500/10 rounded-lg transition-colors"
+                  className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-violet-100 hover:bg-violet-500/10 rounded-lg transition-[background-color] duration-150 ease-out-strong"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" className="w-3.5 h-3.5 fill-violet-300 shrink-0">
                     <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />

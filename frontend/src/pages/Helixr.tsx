@@ -958,7 +958,7 @@ function EventTypeList({
               // is hovered. At rest the page is names and counts, which
               // is what you came to read — and a delete you have to
               // hover to reach is one you cannot hit while scanning.
-              className={`group relative rounded-lg border p-3 cursor-pointer transition-colors ${
+              className={`group relative rounded-lg border p-3 cursor-pointer transition-[background-color,border-color] duration-150 ease-out-strong ${
                 isConfirming
                   ? "border-rose-700/60 bg-rose-950/30"
                   : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.07]"
@@ -982,7 +982,7 @@ function EventTypeList({
               </div>
 
               {!isConfirming && (
-                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <div className="hover-actions absolute top-2 right-2 flex items-center gap-1">
                   {/* Sending by hand is the only way to find out whether
                       a type accepts what you think it does without
                       building a flow and waiting for it to fire. */}
@@ -993,7 +993,7 @@ function EventTypeList({
                       setSending(et);
                     }}
                     title="Post a test event to this type"
-                    className="text-[11px] px-2 py-1 rounded-md border border-white/10 text-slate-400 hover:border-sky-600/60 hover:text-sky-300"
+                    className="text-[11px] px-2 py-1 rounded-md border border-white/10 text-slate-400 transition-[color,border-color] duration-150 ease-out-strong hover:border-sky-600/60 hover:text-sky-300"
                   >
                     Send
                   </button>
@@ -1005,7 +1005,7 @@ function EventTypeList({
                     }}
                     aria-label={`Delete ${et.name ?? "event type"}`}
                     title="Delete this event type from Verkada"
-                    className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-slate-400 hover:border-rose-600/60 hover:text-rose-300"
+                    className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-slate-400 transition-[color,border-color] duration-150 ease-out-strong hover:border-rose-600/60 hover:text-rose-300"
                   >
                     <svg
                       viewBox="0 0 16 16"

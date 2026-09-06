@@ -1340,12 +1340,12 @@ function FlowEditorInner() {
               type="button"
               onClick={() => setDescribing(true)}
               title="Draft this flow — trigger, steps and Helix type — from a sentence"
-              className="group w-full text-sm px-3 py-2 rounded-md flex items-center justify-center gap-1.5 text-violet-100 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 hover:border-violet-400/50 transition-colors"
+              className="group w-full text-sm px-3 py-2 rounded-md flex items-center justify-center gap-1.5 text-violet-100 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 hover:border-violet-400/50 transition-[background-color,border-color] duration-150 ease-out-strong"
             >
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
-                className="w-3.5 h-3.5 fill-violet-300 group-hover:fill-violet-200 transition-colors"
+                className="w-3.5 h-3.5 fill-violet-300 group-hover:fill-violet-200 transition-[fill] duration-150 ease-out-strong"
               >
                 <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
                 <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
