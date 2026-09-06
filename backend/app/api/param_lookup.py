@@ -79,15 +79,31 @@ def _params_in(path: str) -> list[str]:
     return _PARAM_RE.findall(path or "")
 
 
-def _collection_path(path: str, param: str) -> str | None:
-    """``/a/b/{x_id}`` -> ``/a/b``, but only when the parameter is the
-    last segment. A parameter in the middle
-    (``/a/{x_id}/b``) is a sub-resource; dropping it produces a path
-    that means something else entirely."""
+def _collection_paths(path: str, param: str) -> list[str]:
+    """``/a/b/{x_id}`` -> the paths that would list those, best first.
+
+    Only when the parameter is the last segment: a parameter in the
+    middle (``/a/{x_id}/b``) is a sub-resource, and dropping it produces
+    a path that means something else entirely.
+
+    Both the singular and the plural, because Verkada uses both.
+    ``/v2/cameras/people/smart_list/{list_id}`` is listed by
+    ``/v2/cameras/people/smart_lists`` -- strip the parameter and you get
+    ``smart_list``, which is not an endpoint, and the id nobody can type
+    gets no lookup at all.
+    """
     segments = (path or "").split("/")
     if not segments or segments[-1] != "{" + param + "}":
-        return None
-    return "/".join(segments[:-1]) or None
+        return []
+    base = segments[:-1]
+    if not base:
+        return []
+    out = ["/".join(base)]
+    last = base[-1]
+    for plural in (last + "s", last + "es"):
+        if not last.endswith("s"):
+            out.append("/".join(base[:-1] + [plural]))
+    return [p for p in out if p]
 
 
 # Supplied by the client on every call, so it never counts against an
@@ -229,11 +245,15 @@ async def lookups_for(
     out: list[Lookup] = []
     unresolved: list[str] = []
     for param in params_list:
-        collection = _collection_path(path, param)
-        row = by_path.get(collection) if collection else None
-        # A collection that itself demands a required parameter is the
-        # same trap one level up.
-        if row is not None and not _required_params(row):
+        row = None
+        for collection in _collection_paths(path, param):
+            candidate = by_path.get(collection)
+            # A collection that itself demands a required parameter is
+            # the same trap one level up.
+            if candidate is not None and not _required_params(candidate):
+                row = candidate
+                break
+        if row is not None:
             out.append(
                 Lookup(
                     param=param,
