@@ -549,11 +549,17 @@ async def apply_flow_template(
 
     # Fill the template's own blanks before anything else looks at it,
     # so every later step sees a flow with real values.
+    # ``fallback`` is what the flow should say when the question is left
+    # blank. Distinct from ``default``: a default pre-fills the box and
+    # is the operator's answer until they change it, while a fallback
+    # never appears in the form. Asking "which door is this?" with "a
+    # door" already typed in is a question that answers itself.
     answers = {
         str(spec.get("key")): (
             (body.inputs.get(str(spec.get("key"))) if body else None)
             or str(spec.get("default") or "")
         ).strip()
+        or str(spec.get("fallback") or "")
         for spec in (tpl.get("inputs") or [])
         if isinstance(spec, dict) and spec.get("key")
     }

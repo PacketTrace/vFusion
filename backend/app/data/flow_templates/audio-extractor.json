@@ -88,7 +88,8 @@
       "label": "Anything in particular worth listening for?",
       "help": "It transcribes and describes everything either way; this just tells it what matters here.",
       "placeholder": "e.g. raised voices, glass breaking, a delivery announcement",
-      "default": "speech, and any sound that suggests something is wrong"
+      "default": "",
+      "fallback": "anything that suggests something is wrong"
     },
     {
       "key": "seconds",

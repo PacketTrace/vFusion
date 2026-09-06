@@ -105,7 +105,8 @@
       "type": "textarea",
       "help": "Saying what belongs there is what stops the daily false alarm — a mat, a bin that lives beside the frame, a propped-open door that is meant to be.",
       "placeholder": "e.g. the rear fire exit; a floor mat in front of it is normal",
-      "default": "a door"
+      "default": "",
+      "fallback": "the door in view"
     }
   ]
 }

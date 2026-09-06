@@ -15,7 +15,7 @@ import { useMemo, useState } from "react";
  * next, with nothing on screen to say which.
  */
 
-const ZONES: string[] = (() => {
+export const ZONES: string[] = (() => {
   const browser = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const common = [
     browser,

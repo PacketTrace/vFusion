@@ -656,6 +656,9 @@ export interface Flow {
     hour?: number;
     minute?: number;
     weekday?: number;
+    /** IANA zone for daily/weekly. Absent on flows saved before
+     *  schedules carried one — those fire in UTC. */
+    tz?: string;
   };
   node_samples?: Record<string, unknown>;
   last_scheduled_at?: string | null;

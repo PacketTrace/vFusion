@@ -99,7 +99,8 @@
       "type": "textarea",
       "help": "The model does better when it knows what it is counting. A produce cooler and a clothing rack look empty in completely different ways.",
       "placeholder": "e.g. a clothing rack near the front window of a retail store",
-      "default": "a shelf, display, or clothing rack"
+      "default": "",
+      "fallback": "a shelf, display, or clothing rack"
     },
     {
       "key": "low_at",

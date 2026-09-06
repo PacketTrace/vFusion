@@ -77,6 +77,8 @@ export default function TriggerSetupModal({
           hour: 6,
           minute: 0,
           weekday: 0,
+          // Local, like every schedule somebody sets by hand.
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         },
       });
       return;

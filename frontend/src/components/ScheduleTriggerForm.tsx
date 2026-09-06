@@ -1,4 +1,5 @@
 import { Flow } from "../lib/api";
+import { ZONES } from "./EpochInput";
 
 
 // Schedule trigger config. Three preset kinds — no free-form cron
@@ -11,8 +12,17 @@ export interface ScheduleConfigState {
   hour: number; // for daily / weekly (0-23)
   minute: number; // for daily / weekly (0-59)
   weekday: number; // for weekly (0=Monday … 6=Sunday)
+  /** IANA zone the hour is meant in. "Every morning at 9" means nine
+   *  where you are, and has to keep meaning that when the clocks
+   *  change — which is why this is a zone name and not an offset. */
+  tz: string;
 }
 
+
+/** The browser's own zone. Nobody sets a schedule for somewhere they
+ *  are not, and asking is a question with an obvious answer. */
+const LOCAL_TZ =
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 const DEFAULT: ScheduleConfigState = {
   kind: "interval",
@@ -20,6 +30,7 @@ const DEFAULT: ScheduleConfigState = {
   hour: 6,
   minute: 0,
   weekday: 0,
+  tz: LOCAL_TZ,
 };
 
 
@@ -36,6 +47,15 @@ export function scheduleStateFromConfig(
     hour: clampInt((c as Record<string, unknown>).hour, 0, 23, DEFAULT.hour),
     minute: clampInt((c as Record<string, unknown>).minute, 0, 59, DEFAULT.minute),
     weekday: clampInt((c as Record<string, unknown>).weekday, 0, 6, DEFAULT.weekday),
+    // A flow saved before zones existed has no tz and has been firing
+    // in UTC. Showing it as local would relabel its schedule by several
+    // hours without changing when it runs — so it keeps saying UTC
+    // until somebody edits it.
+    tz:
+      typeof (c as Record<string, unknown>).tz === "string" &&
+      (c as Record<string, unknown>).tz
+        ? ((c as Record<string, unknown>).tz as string)
+        : "UTC",
   };
 }
 
@@ -47,13 +67,14 @@ export function scheduleStateToConfig(
     return { kind: "interval", every_minutes: Math.max(1, s.everyMinutes) };
   }
   if (s.kind === "daily") {
-    return { kind: "daily", hour: s.hour, minute: s.minute };
+    return { kind: "daily", hour: s.hour, minute: s.minute, tz: s.tz };
   }
   return {
     kind: "weekly",
     hour: s.hour,
     minute: s.minute,
     weekday: s.weekday,
+    tz: s.tz,
   };
 }
 
@@ -148,7 +169,15 @@ export default function ScheduleTriggerForm({ value, onChange }: Props) {
               </select>
             </Field>
           )}
-          <Field label="Time of day (UTC)" required help="24-hour, UTC.">
+          <Field
+            label="Time of day"
+            required
+            help={
+              value.tz === "UTC"
+                ? "24-hour. This flow was saved before schedules carried a zone, so it is still firing in UTC — pick your own to change that."
+                : `24-hour, ${value.tz.replace(/_/g, " ")}. Follows the clocks, so it stays at this hour through daylight saving.`
+            }
+          >
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
@@ -177,6 +206,20 @@ export default function ScheduleTriggerForm({ value, onChange }: Props) {
                 }
                 className="w-16 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono text-center"
               />
+              {/* Beside the time, not in an "advanced" section. Nobody
+                  thinks in UTC, and a schedule labelled with the wrong
+                  zone runs at the wrong hour while looking correct. */}
+              <select
+                value={value.tz}
+                onChange={(e) => onChange({ ...value, tz: e.target.value })}
+                className="flex-1 min-w-0 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              >
+                {[...new Set([value.tz, ...ZONES])].map((z) => (
+                  <option key={z} value={z}>
+                    {z.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
             </div>
           </Field>
         </>

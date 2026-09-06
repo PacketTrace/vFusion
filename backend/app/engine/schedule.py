@@ -15,7 +15,16 @@ schedule flow and enqueues a run if the answer is yes. We compare
 against the flow's ``last_scheduled_at`` to make sure we don't double-
 fire across ticks for daily/weekly windows.
 
-All comparisons are in UTC. A future enhancement can let the user pick
+Daily and weekly schedules carry a ``tz`` (an IANA name like
+``America/Los_Angeles``). "Every morning at 9" means nine o'clock where
+the person is, and it has to keep meaning that when the clocks change --
+which is why the zone is stored rather than a fixed offset. Without one
+we fall back to UTC, which is what every flow saved before this did.
+
+Interval schedules need no zone: "every 15 minutes" is the same fifteen
+minutes everywhere.
+
+A future enhancement can let the user pick
 a timezone in the trigger_config — for now, daily-at-06:00 means 06:00
 UTC.
 """
@@ -50,6 +59,18 @@ def is_due(
     kind = config.get("kind")
     now_utc = now.astimezone(timezone.utc)
     last_utc = last.astimezone(timezone.utc) if last is not None else None
+    # The wall clock the operator set the schedule against. An unknown
+    # or missing zone falls back to UTC rather than failing: a flow that
+    # silently stops firing is worse than one firing at the old hour.
+    local = now_utc
+    tz_name = str(config.get("tz") or "").strip()
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            local = now_utc.astimezone(ZoneInfo(tz_name))
+        except Exception:  # noqa: BLE001 — unknown zone, keep UTC
+            local = now_utc
 
     if kind == "interval":
         every = max(1, _coerce_int(config.get("every_minutes"), 0))
@@ -62,7 +83,7 @@ def is_due(
         minute = _coerce_int(config.get("minute"), -1)
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             return False
-        if now_utc.hour != hour or now_utc.minute != minute:
+        if local.hour != hour or local.minute != minute:
             return False
         if last_utc is None:
             return True
@@ -79,9 +100,9 @@ def is_due(
             and 0 <= weekday <= 6
         ):
             return False
-        if now_utc.weekday() != weekday:
+        if local.weekday() != weekday:
             return False
-        if now_utc.hour != hour or now_utc.minute != minute:
+        if local.hour != hour or local.minute != minute:
             return False
         if last_utc is None:
             return True
