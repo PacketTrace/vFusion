@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import CameraIdInput from "../components/CameraIdInput";
+import ParamLookup, { usePathLookups } from "../components/ParamLookup";
 import DoorIdInput from "../components/DoorIdInput";
 import EpochInput from "../components/EpochInput";
 import JsonView from "../components/JsonView";
@@ -366,6 +367,11 @@ export default function ApiRunner() {
   const params = useMemo(() => paramsOf(detail.data ?? null), [detail.data]);
   const bodyParams = useMemo(() => bodyFields(detail.data ?? null), [detail.data]);
   const pathParams = params.filter((p) => p.in === "path");
+  // Which call produces each id in this path. Derived from the crawled
+  // spec, not a hand-kept list — see backend/api/param_lookup.py.
+  const lookups = usePathLookups(detail.data?.path);
+  const lookupFor = (name: string) =>
+    (lookups.data?.lookups ?? []).find((l) => l.param === name) ?? null;
   const queryParams = params.filter((p) => p.in === "query");
   const method = (picked?.method ?? "GET").toUpperCase();
   const isWrite = WRITE.has(method);
@@ -683,13 +689,31 @@ export default function ApiRunner() {
                     }
                   />
                 ) : (
-                  <input
-                    value={pathValues[p.name] ?? ""}
-                    onChange={(e) =>
-                      setPathValues({ ...pathValues, [p.name]: e.target.value })
-                    }
-                    className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
-                  />
+                  <>
+                    <input
+                      value={pathValues[p.name] ?? ""}
+                      onChange={(e) =>
+                        setPathValues({
+                          ...pathValues,
+                          [p.name]: e.target.value,
+                        })
+                      }
+                      className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
+                    />
+                    {/* An id nobody could type from memory, with the
+                        call that lists them one click away instead of
+                        somewhere else in the endpoint tree. */}
+                    {lookupFor(p.name) && (
+                      <ParamLookup
+                        lookup={lookupFor(p.name)!}
+                        connectionId={connId || null}
+                        token={token}
+                        onPick={(v) =>
+                          setPathValues({ ...pathValues, [p.name]: v })
+                        }
+                      />
+                    )}
+                  </>
                 )}
               </Field>
             ))}
