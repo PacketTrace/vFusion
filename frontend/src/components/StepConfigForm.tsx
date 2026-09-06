@@ -906,22 +906,42 @@ function HelixEventRefField({
   // it in the dropdown manually. Same modal the Helix page uses.
   const [creating, setCreating] = useState(false);
 
+  // Attributes this step is ALREADY sending. The strongest signal there
+  // is and the one that was being ignored: a flow can arrive here with
+  // {"Camera Name": "{{ … }}", "Status": "Audio Enabled"} written into
+  // the step, and the create-a-type form would still open on a blank
+  // attribute row and ask the operator to type them back in.
+  const written = attrsField
+    ? Object.keys(
+        (config[attrsField] &&
+        typeof config[attrsField] === "object" &&
+        !Array.isArray(config[attrsField])
+          ? (config[attrsField] as Record<string, unknown>)
+          : {}) ?? {},
+      ).filter((k) => k.trim())
+    : [];
+
   // Nearest upstream step that produces JSON — the same one the
   // attributes wire themselves to, so the type gets the fields the flow
   // is actually going to fill.
   const upstream = [...priorSteps]
     .reverse()
     .find((p) => (p.jsonKeys?.length ?? 0) > 0);
-  const upstreamKeys = upstream?.jsonKeys ?? [];
+  // What is written beats what is inferred: those names are the ones the
+  // POST will carry, so a type built from anything else would not match
+  // the request this very step is about to make.
+  const upstreamKeys = written.length ? written : (upstream?.jsonKeys ?? []);
 
   // Everything the flow already knows, in the order it happens.
   const assistContext =
     [
       triggerSummary ? `Trigger: ${triggerSummary}` : null,
       ...priorSteps.map((p) => (p.summary ? `Step "${p.name}" — ${p.summary}` : null)),
-      upstreamKeys.length
-        ? `The step feeding this one returns these JSON keys: ${upstreamKeys.join(", ")}. The event type should have an attribute for each.`
-        : null,
+      written.length
+        ? `This Helix step is already configured to send these attributes: ${written.join(", ")}. The event type MUST have one attribute per name, spelled exactly as written — the POST will carry those keys and Helix rejects anything the type does not declare.`
+        : upstreamKeys.length
+          ? `The step feeding this one returns these JSON keys: ${upstreamKeys.join(", ")}. The event type should have an attribute for each.`
+          : null,
     ]
       .filter(Boolean)
       .join("\n") || null;
@@ -985,7 +1005,13 @@ function HelixEventRefField({
             upstreamKeys.length
               ? {
                   event_schema: Object.fromEntries(
-                    upstreamKeys.map((k) => [titleCase(k), "string"]),
+                    upstreamKeys.map((k) => [
+                      // Verbatim when the operator (or the draft) wrote
+                      // it: renaming "Camera Name" would leave the type
+                      // and the POST disagreeing about the field.
+                      written.length ? k : titleCase(k),
+                      "string",
+                    ]),
                   ),
                 }
               : undefined

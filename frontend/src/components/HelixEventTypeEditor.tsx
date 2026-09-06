@@ -83,6 +83,11 @@ export default function HelixEventTypeEditor({
     }
     return [{ key: "", type: "string" }];
   });
+  // How many attributes arrived pre-filled, so the form can say so
+  // rather than looking like the operator typed them.
+  const seededCount = Object.keys(
+    (mode === "create" ? seed?.event_schema : null) ?? {},
+  ).length;
   const [err, setErr] = useState<string | null>(null);
 
   const save = useMutation({
@@ -233,9 +238,11 @@ export default function HelixEventTypeEditor({
                     <path d="M12 2.5l1.9 5.1 5.1 1.9-5.1 1.9L12 16.5l-1.9-5.1L5 9.5l5.1-1.9L12 2.5z" />
                     <path d="M18.5 15l.85 2.15L21.5 18l-2.15.85L18.5 21l-.85-2.15L15.5 18l2.15-.85L18.5 15z" />
                   </svg>
-                  Draft it from a description
+                  {seededCount > 0 ? "Name it with AI" : "Draft it from a description"}
                   <span className="text-violet-300/70 text-xs ml-auto">
-                    describe what to log
+                    {seededCount > 0
+                      ? "attributes already filled in"
+                      : "describe what to log"}
                   </span>
                 </button>
               ) : (
@@ -330,13 +337,23 @@ export default function HelixEventTypeEditor({
             <div className="text-xs font-medium text-slate-300 mb-2">
               Attributes <span className="text-rose-400">*</span>
             </div>
-            <div className="text-[11px] text-slate-500 mb-3">
-              Each attribute becomes a typed field on events posted against
-              this type. Pick a name and the data type. For example, an event
-              for "person detected" might have{" "}
-              <code className="font-mono">person_name</code> (string) and{" "}
-              <code className="font-mono">confidence</code> (float).
-            </div>
+            {mode === "create" && seededCount > 0 ? (
+              <div className="text-[11px] text-emerald-300/90 mb-3">
+                Filled in from the step below — these are the {seededCount}{" "}
+                attribute{seededCount === 1 ? "" : "s"} it is already
+                configured to send. Names have to match exactly, so they are
+                copied as written; Helix rejects a key the type does not
+                declare.
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-500 mb-3">
+                Each attribute becomes a typed field on events posted against
+                this type. Pick a name and the data type. For example, an event
+                for "person detected" might have{" "}
+                <code className="font-mono">person_name</code> (string) and{" "}
+                <code className="font-mono">confidence</code> (float).
+              </div>
+            )}
             <div className="space-y-2">
               {attrs.map((a, i) => (
                 <div key={i}>
