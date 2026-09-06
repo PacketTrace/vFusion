@@ -132,6 +132,10 @@ export default function StepConfigForm({
   // Used by the field auto-wire effect below — knows which trigger
   // fields exist so we can default things like camera_id to
   // {{ trigger.data.camera_id }} when names match.
+  // Whether {{ trigger.data.camera_id }} would resolve to anything on
+  // this flow. An access-family trigger carries a door_id and no camera,
+  // so offering "the camera from the event" there would be offering a
+  // ref that quietly resolves to nothing.
   const triggerSample = useQuery({
     queryKey: ["trigger-fields", triggerFamily, triggerNotificationType],
     queryFn: () => {
@@ -309,6 +313,18 @@ export default function StepConfigForm({
     });
     return { ...f, templates: merged };
   };
+  const triggerHas = (field: string) =>
+    (triggerSample.data ?? []).some(
+      (t) =>
+        t.path === `trigger.data.${field}` &&
+        t.sample !== null &&
+        t.sample !== undefined,
+    );
+  const triggerHasCameraId = triggerHas("camera_id");
+  // The same gap on the door picker: an access-triggered flow that acts
+  // on the door the event came from had to be told so by hand.
+  const triggerHasDoorId = triggerHas("door_id");
+
   const renderOne = (f: ActionFieldSpec) => {
     const fm = mergeTemplates(f);
     return (
@@ -336,6 +352,8 @@ export default function StepConfigForm({
           currentStepName,
           lockedVerkadaConnectionId,
           triggerCameraId,
+          triggerHasCameraId,
+          triggerHasDoorId,
         )}
       </Field>
     );
@@ -376,6 +394,8 @@ function renderControl(
   currentStepName: Props["currentStepName"],
   lockedVerkadaConnectionId: Props["lockedVerkadaConnectionId"],
   triggerCameraId: string | undefined,
+  triggerHasCameraId: boolean,
+  triggerHasDoorId: boolean,
 ): JSX.Element {
   if (f.type === "connection_ref") {
     // Lock verkada-type pickers to the flow's existing Verkada
@@ -428,6 +448,9 @@ function renderControl(
           className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
         >
           <option value="">— pick a door —</option>
+          {triggerHasDoorId && (
+            <option value={TRIGGER_DOOR_REF}>⚡ The door from the event</option>
+          )}
           {doors.map((d) => (
             <option key={d.door_id} value={d.door_id}>
               {d.name ?? "(unnamed)"}
@@ -435,12 +458,18 @@ function renderControl(
             </option>
           ))}
         </select>
-        <input
-          value={(config[f.name] as string) ?? ""}
-          onChange={(e) => setOne(f.name, e.target.value)}
-          className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
-          placeholder="or paste door_id UUID"
-        />
+        {((config[f.name] as string) ?? "").trim() === TRIGGER_DOOR_REF ? (
+          <div className="text-[11px] text-slate-400 mt-1">
+            Whichever door the event came from — resolved per firing.
+          </div>
+        ) : (
+          <input
+            value={(config[f.name] as string) ?? ""}
+            onChange={(e) => setOne(f.name, e.target.value)}
+            className="w-full px-2 py-1.5 mt-1 rounded bg-white/5 border border-white/10 text-xs font-mono"
+            placeholder="or paste door_id UUID"
+          />
+        )}
       </>
     );
   }
@@ -452,6 +481,7 @@ function renderControl(
         setOne={setOne}
         camerasList={camerasList}
         triggerCameraId={triggerCameraId}
+        triggerHasCameraId={triggerHasCameraId}
       />
     );
   }
@@ -726,6 +756,11 @@ function renderControl(
 // seed the sibling "attributes" field with one empty entry per schema key,
 // so the user lands in a structured editor pre-keyed by the event schema.
 
+/** What "the camera from the event" writes. One spelling, used by the
+ *  option, the selected-state check and the resolves-to hint. */
+const TRIGGER_CAMERA_REF = "{{ trigger.data.camera_id }}";
+const TRIGGER_DOOR_REF = "{{ trigger.data.door_id }}";
+
 // ---- Camera picker ----------------------------------------------------------
 //
 // Dropdown of synced cameras for the picked Verkada connection + a paste
@@ -741,12 +776,16 @@ function CameraRefField({
   setOne,
   camerasList,
   triggerCameraId,
+  triggerHasCameraId,
 }: {
   f: ActionFieldSpec;
   config: Record<string, unknown>;
   setOne: (name: string, value: unknown) => void;
   camerasList: VerkadaCamera[];
   triggerCameraId?: string;
+  /** The trigger produces a camera_id, so "the camera from the event"
+   *  is a real option rather than a ref that resolves to nothing. */
+  triggerHasCameraId?: boolean;
 }) {
   const connId =
     typeof config.connection_id === "string" ? config.connection_id : "";
@@ -760,6 +799,9 @@ function CameraRefField({
   // represent.
   const rawValue = (config[f.name] as string) ?? "";
   const isRef = rawValue.includes("{{");
+  // The dropdown represents this one, so the paste box would be a
+  // second control holding the same value.
+  const isTriggerRef = rawValue.trim() === TRIGGER_CAMERA_REF;
   const [showRaw, setShowRaw] = useState(false);
 
   // Same heuristic the BYOA picker uses — treat anything not literally
@@ -800,11 +842,29 @@ function CameraRefField({
         </div>
       )}
       <select
-        value={(config[f.name] as string) ?? ""}
+        value={
+          // A trigger ref is a real selection, not an empty one. Without
+          // this the dropdown reads "pick a camera" while the field is
+          // already answered.
+          isRef && rawValue.includes("trigger.data.camera_id")
+            ? TRIGGER_CAMERA_REF
+            : ((config[f.name] as string) ?? "")
+        }
         onChange={(e) => setOne(f.name, e.target.value)}
         className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
       >
         <option value="">— pick a camera —</option>
+        {/* First, because on a webhook flow it is nearly always the
+            answer — and it was previously only reachable by knowing to
+            type {{ trigger.data.camera_id }} into a box you had to
+            click a link to reveal. An option rather than a checkbox:
+            "the camera from the event" and "this specific camera" are
+            mutually exclusive, and two controls could say both. */}
+        {triggerHasCameraId && (
+          <option value={TRIGGER_CAMERA_REF}>
+            ⚡ The camera from the event
+          </option>
+        )}
         {sorted.map((c) => (
           <option key={c.camera_id} value={c.camera_id}>
             {c.name ?? "(unnamed)"}
@@ -813,7 +873,7 @@ function CameraRefField({
           </option>
         ))}
       </select>
-      {showRaw || isRef ? (
+      {(showRaw || isRef) && !isTriggerRef ? (
         <input
           autoFocus={showRaw && !isRef}
           value={rawValue}
@@ -836,18 +896,28 @@ function CameraRefField({
         // trigger is pinned to one camera we already know the answer,
         // so say it rather than leaving it looking unconfigured.
         const value = (config[f.name] as string) ?? "";
-        if (!value.includes("trigger.data.camera_id") || !triggerCameraId) {
-          return null;
+        if (!value.includes("trigger.data.camera_id")) return null;
+        // Pinned trigger: we already know which camera, so name it
+        // rather than leaving a template that reads as unconfigured.
+        if (triggerCameraId) {
+          const cam = camerasList.find((c) => c.camera_id === triggerCameraId);
+          return (
+            <div className="text-[11px] text-slate-400 mt-1">
+              Resolves to{" "}
+              <span className="text-slate-200">
+                {cam?.name ?? `${triggerCameraId.slice(0, 8)}…`}
+                {cam?.site ? ` — ${cam.site}` : ""}
+              </span>{" "}
+              — the camera this flow's trigger is filtered to.
+            </div>
+          );
         }
-        const cam = camerasList.find((c) => c.camera_id === triggerCameraId);
+        // Unpinned: it is a different camera each firing, which is the
+        // point, and worth saying so the blank dropdown does not read
+        // as unfinished.
         return (
           <div className="text-[11px] text-slate-400 mt-1">
-            Resolves to{" "}
-            <span className="text-slate-200">
-              {cam?.name ?? `${triggerCameraId.slice(0, 8)}…`}
-              {cam?.site ? ` — ${cam.site}` : ""}
-            </span>{" "}
-            — the camera this flow's trigger is filtered to.
+            Whichever camera the event came from — resolved per firing.
           </div>
         );
       })()}
