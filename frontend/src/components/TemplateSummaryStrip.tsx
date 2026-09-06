@@ -48,7 +48,7 @@ export default function TemplateSummaryStrip({
     // ``py-2`` keeps the spotlight scale-up (105%) from clipping at
     // the top / bottom — bumped down from py-3 to keep template
     // cards compact for at-a-glance reading.
-    <div className="flex items-stretch gap-1 overflow-x-auto px-3 py-2">
+    <div className="flex items-center gap-1 overflow-x-auto px-3 py-1.5">
       {steps.map((s, i) => (
         <div key={i} className="flex items-stretch gap-1 shrink-0">
           <StepPill step={s} highlighted={i === active} />
@@ -73,19 +73,22 @@ function StepPill({
   // condition amber, action neutral with a slight purple for Gemini.
   const tone = toneFor(step);
   return (
+    // Icon only. The labels said "Watch the video" beside a tagline
+    // already reading "Spot animals on camera" — the same sentence
+    // twice, and two lines of 9px text per pill was most of the height
+    // of every card. The chain still shows the shape of the flow, which
+    // is what it was for; the words are on hover and in Details.
     <div
-      className={`flex flex-col items-center justify-center w-16 px-1 py-1 rounded border text-center transition duration-300 ease-out-strong ${tone} ${
+      className={`grid h-8 w-8 place-items-center rounded border transition duration-300 ease-out-strong ${tone} ${
         highlighted
-          ? "scale-105 shadow-[0_0_12px_rgba(56,189,248,0.45)] border-sky-400/80"
+          ? "scale-110 shadow-[0_0_12px_rgba(56,189,248,0.45)] border-sky-400/80"
           : ""
       }`}
       title={label}
+      aria-label={label}
     >
-      <span className="text-sm leading-none mb-0.5" aria-hidden>
+      <span className="text-sm leading-none" aria-hidden>
         {icon}
-      </span>
-      <span className="text-[9px] leading-[1.1] text-slate-200 line-clamp-2 break-words">
-        {label}
       </span>
     </div>
   );
@@ -97,7 +100,7 @@ function FlowArrow({ highlighted }: { highlighted: boolean }) {
   // beats. Dash animation drifts left->right; highlighted segments
   // brighten + speed up to draw the eye through the sequence.
   return (
-    <div className="flex items-center w-6">
+    <div className="flex items-center w-4">
       <svg
         viewBox="0 0 24 8"
         preserveAspectRatio="none"

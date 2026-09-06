@@ -241,8 +241,19 @@ export interface FlowTemplateListItem {
   /** Read off the flow body server-side rather than declared, so a
    *  template cannot be filed wrong. See backend flow_facets.py. */
   facets?: FlowTemplateFacets;
+  /** Questions the template asks before it is applied. A template with
+   *  a hardcoded subject is wrong for almost everyone who uses it. */
+  inputs?: TemplateInput[];
   default_name: string;
   created_at?: string | null;
+}
+
+export interface TemplateInput {
+  key: string;
+  label: string;
+  help?: string | null;
+  default?: string | null;
+  placeholder?: string | null;
 }
 
 export interface FlowTemplateFacets {

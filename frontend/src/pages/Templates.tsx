@@ -12,6 +12,7 @@ import {
   apiPost,
   FlowTemplateDetail,
   FlowTemplateListItem,
+  TemplateInput,
   HelixEventTypeDef,
   BuiltinAnalytic,
   SavedAnalytic,
@@ -333,13 +334,23 @@ function FlowTemplatesPanel() {
   // defs here and let the modal collect a uid_map before the actual
   // /apply POST runs. ``null`` means no modal is open.
   const [pendingApply, setPendingApply] = useState<
-    { id: string; defs: HelixEventTypeDef[] } | null
+    { id: string; defs: HelixEventTypeDef[]; inputs: Record<string, string> } | null
   >(null);
+
+  // A template that ships a hardcoded subject is wrong for almost
+  // everybody who uses it. Templates can declare inputs; this holds the
+  // one being asked about, and the answers so far.
+  const [asking, setAsking] = useState<{
+    id: string;
+    inputs: TemplateInput[];
+  } | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const finalizeApply = async (
     id: string,
     uidMap: Record<string, string>,
     verkadaConnectionId: string,
+    inputs: Record<string, string> = {},
   ) => {
     setBusyId(id);
     setErr(null);
@@ -357,6 +368,7 @@ function FlowTemplatesPanel() {
         {
           helix_uid_map: uidMap,
           verkada_connection_id: verkadaConnectionId || null,
+          inputs,
         },
       );
       navigate(`/flows/${created.id}/edit`);
@@ -365,10 +377,17 @@ function FlowTemplatesPanel() {
     } finally {
       setBusyId(null);
       setPendingApply(null);
+      setAsking(null);
     }
   };
 
-  const useTemplate = async (id: string) => {
+  // ``collected`` is present on the second pass, after the questions
+  // have been answered — an explicit argument rather than a flag stashed
+  // in the answers, which would be state pretending to be control flow.
+  const useTemplate = async (
+    id: string,
+    collected?: Record<string, string>,
+  ) => {
     setErr(null);
     // Peek at the template body first. If it embeds Helix event-type
     // defs, route through the bootstrap modal so the operator can
@@ -376,10 +395,23 @@ function FlowTemplatesPanel() {
     setBusyId(id);
     try {
       const detail = await apiGet<FlowTemplateDetail>(`/api/flow-templates/${id}`);
+      // Asked before the Helix step, because it is a question about
+      // what the flow is for and the other is plumbing.
+      const inputs = detail.inputs ?? [];
+      if (inputs.length > 0 && !collected) {
+        setBusyId(null);
+        setAnswers(
+          Object.fromEntries(
+            inputs.map((i) => [i.key, i.default ?? ""]),
+          ),
+        );
+        setAsking({ id, inputs });
+        return;
+      }
       const defs = detail.flow.helix_event_types ?? [];
       if (defs.length > 0) {
         setBusyId(null);
-        setPendingApply({ id, defs });
+        setPendingApply({ id, defs, inputs: collected ?? {} });
         return;
       }
     } catch (e) {
@@ -394,7 +426,7 @@ function FlowTemplatesPanel() {
     // let the backend fall back to the legacy single-connection
     // heuristic. Multi-connection deploys see a null slot; same
     // behavior as before this fix.
-    await finalizeApply(id, {}, "");
+    await finalizeApply(id, {}, "", collected ?? {});
   };
 
   const deleteTemplate = useMutation({
@@ -679,13 +711,84 @@ function FlowTemplatesPanel() {
         ))
       )}
 
+      {asking && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-24 px-4"
+          onClick={() => setAsking(null)}
+        >
+          <div
+            className="bg-slate-900 border border-white/15 rounded-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-white/10">
+              <h2 className="text-lg font-semibold text-white">
+                Before we build it
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Answers go straight into the flow, so what lands on the
+                canvas is already yours.
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              {asking.inputs.map((inp) => (
+                <label key={inp.key} className="block">
+                  <div className="text-xs font-medium text-slate-300 mb-1">
+                    {inp.label}
+                  </div>
+                  <input
+                    autoFocus
+                    value={answers[inp.key] ?? ""}
+                    onChange={(e) =>
+                      setAnswers((a) => ({ ...a, [inp.key]: e.target.value }))
+                    }
+                    placeholder={inp.placeholder ?? undefined}
+                    className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
+                  />
+                  {inp.help && (
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {inp.help}
+                    </div>
+                  )}
+                </label>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-white/10 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = asking.id;
+                  const collected = { ...answers };
+                  setAsking(null);
+                  void useTemplate(id, collected);
+                }}
+                className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white"
+              >
+                Build it
+              </button>
+              <button
+                type="button"
+                onClick={() => setAsking(null)}
+                className="text-sm px-2 py-1 rounded text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingApply && (
         <HelixBootstrapModal
           defs={pendingApply.defs}
           intent="apply"
           onCancel={() => setPendingApply(null)}
           onConfirm={(uidMap, connId) =>
-            finalizeApply(pendingApply.id, uidMap, connId)
+            finalizeApply(
+              pendingApply.id,
+              uidMap,
+              connId,
+              pendingApply.inputs,
+            )
           }
         />
       )}

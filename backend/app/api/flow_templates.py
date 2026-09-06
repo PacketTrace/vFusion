@@ -27,6 +27,7 @@ shape → ``flows`` row. Imports of arbitrary JSON go through
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -119,6 +120,7 @@ async def list_flow_templates(
                 "trigger_type": flow.get("trigger_type"),
                 # Derived from the flow, not declared. See flow_facets.
                 "facets": facets(flow),
+                "inputs": tpl.get("inputs") or [],
                 "default_name": tpl.get("default_name", tpl.get("name", tpl["id"])),
             }
         )
@@ -471,6 +473,34 @@ async def _rebind_connections(
     return out
 
 
+# Templates that need an answer before they mean anything.
+#
+# The animal template shipped a condition testing for "bear". It was a
+# worked example, but it read as the product's opinion — and the only
+# way to watch for anything else was to find the condition node, work
+# out that it was the branch doing the filtering, and edit a literal.
+# A template with a hardcoded subject is a template that is wrong for
+# almost everybody who uses it.
+#
+# Substituted at apply time, not at run time, so the flow that lands on
+# the canvas has real values in it rather than another layer of
+# indirection to understand.
+_INPUT_TOKEN = re.compile(r"\{\{\s*input\.([a-zA-Z0-9_]+)\s*\}\}")
+
+
+def _fill_inputs(value: Any, answers: dict[str, str]) -> Any:
+    """Replace {{ input.key }} anywhere in a template's config."""
+    if isinstance(value, str):
+        return _INPUT_TOKEN.sub(
+            lambda m: answers.get(m.group(1), m.group(0)), value
+        )
+    if isinstance(value, list):
+        return [_fill_inputs(v, answers) for v in value]
+    if isinstance(value, dict):
+        return {k: _fill_inputs(v, answers) for k, v in value.items()}
+    return value
+
+
 class ApplyTemplateBody(BaseModel):
     """Optional body for template apply — currently just the Helix uid
     rewrite map produced by ``POST /api/flows/helix-bootstrap``.
@@ -487,6 +517,8 @@ class ApplyTemplateBody(BaseModel):
     # multi-org deploy leaves the slot null and confuses operators
     # who thought they had already picked one.
     verkada_connection_id: str | None = None
+    # Answers to the template's declared ``inputs``.
+    inputs: dict[str, str] = Field(default_factory=dict)
 
 
 @router.post("/{template_id}/apply")
@@ -514,6 +546,20 @@ async def apply_flow_template(
     verkada_override = body.verkada_connection_id if body is not None else None
     tpl = await _resolve_template(template_id, session)
     flow = tpl.get("flow") or {}
+
+    # Fill the template's own blanks before anything else looks at it,
+    # so every later step sees a flow with real values.
+    answers = {
+        str(spec.get("key")): (
+            (body.inputs.get(str(spec.get("key"))) if body else None)
+            or str(spec.get("default") or "")
+        ).strip()
+        for spec in (tpl.get("inputs") or [])
+        if isinstance(spec, dict) and spec.get("key")
+    }
+    if answers:
+        flow = _fill_inputs(flow, answers)
+
     nodes_in = flow.get("nodes") or []
     # Strip positions — editor falls back to computeLayout.
     nodes_stripped = [

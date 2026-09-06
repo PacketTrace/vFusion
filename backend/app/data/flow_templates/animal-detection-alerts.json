@@ -1,9 +1,9 @@
 {
   "id": "animal-detection-alerts",
   "name": "Animal species detection",
-  "tagline": "🦌 Spot animals on camera. Log species, breed, and behavior to Helix.",
-  "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal species is in the frame and what it's doing, and post the result to Helix so Verkada Command can alert when it sees a specific species (e.g. bear).",
-  "summary": "Webhook -> Gemini analyze (JSON) -> condition on \"bear\" -> Helix event with Animal + Breed + Behavior",
+  "tagline": "🦌 Spot animals on camera. Alert on the one you pick; log species, breed and behaviour to Helix.",
+  "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal is in the frame and what it is doing, and post the result to Helix. You choose which animal raises the alert when you use the template — it is not fixed to any one species.",
+  "summary": "Webhook → Gemini analyze (JSON) → condition on the animal you chose → Helix event with Animal + Breed + Behavior",
   "default_name": "Animal species detection",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -17,7 +17,7 @@
     "helix_event_types": [
       {
         "event_type_uid": "tpl:animal-watch",
-        "name": "\ud83e\udd8c Animal Watch",
+        "name": "🦌 Animal Watch",
         "event_schema": {
           "Animal": "string",
           "Breed": "string",
@@ -48,14 +48,14 @@
         }
       },
       {
-        "id": "is_bear",
-        "name": "is_bear",
-        "label": "Is it a bear?",
+        "id": "is_match",
+        "name": "is_match",
+        "label": "Is it the one we watch for?",
         "kind": "condition",
         "config": {
           "left": "{{ steps.analyze.output.json.animal }}",
           "operator": "contains",
-          "right": "bear"
+          "right": "{{ input.species }}"
         },
         "position": {
           "x": 220,
@@ -89,11 +89,11 @@
       {
         "id": "e_analyze_cond",
         "source": "analyze",
-        "target": "is_bear"
+        "target": "is_match"
       },
       {
         "id": "e_cond_post",
-        "source": "is_bear",
+        "source": "is_match",
         "target": "post_helix",
         "branch": "true"
       }
@@ -102,5 +102,14 @@
   "tags": [
     "Cameras",
     "Gemini Vision"
+  ],
+  "inputs": [
+    {
+      "key": "species",
+      "label": "Which animal should this alert on?",
+      "help": "Matched against what Gemini reports, so plain words work — bear, coyote, deer. Leave it blank on the next screen to log every animal instead of alerting on one.",
+      "default": "bear",
+      "placeholder": "bear"
+    }
   ]
 }
