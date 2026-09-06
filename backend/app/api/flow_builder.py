@@ -153,6 +153,22 @@ __TAXONOMY__
 === ACTION CATALOG ===
 __ACTIONS__
 
+=== VERKADA API CATALOG ===
+The endpoints the "verkada_api_call" action can reach. When the request
+needs something no other action covers -- reading a camera setting,
+listing users, checking a device -- use verkada_api_call and name the
+endpoint here in its config as "method" and "path", copied EXACTLY from
+this list:
+
+  {"type": "verkada_api_call",
+   "config": {"method": "GET", "path": "/cameras/v1/devices"}}
+
+Do not invent a path. If nothing here does what is needed, say so in
+assumptions rather than guessing at one -- a made-up endpoint fails at
+run time with a 403 that looks like a permissions problem.
+
+__ENDPOINTS__
+
 === THIS ORG'S DEVICES ===
 __ORG__
 
@@ -165,6 +181,75 @@ __RUNMODE__
 === USER REQUEST ===
 __INTENT__
 """
+
+
+async def _endpoint_catalog(session: AsyncSession) -> tuple[str, dict[tuple[str, str], str]]:
+    """The API catalog as prompt text, plus a (method, path) -> id map.
+
+    The action stores an ``endpoint_id`` UUID, but asking the model to
+    emit one means 166 uuids in the prompt and a fabricated uuid when it
+    gets one wrong -- which fails with nothing to correct. Naming the
+    method and path is checkable: it either matches a row or it does
+    not, and a near miss can be reported.
+    """
+    from app.models import VerkadaApiEndpoint
+
+    rows = (
+        (
+            await session.execute(
+                select(VerkadaApiEndpoint).where(
+                    VerkadaApiEndpoint.deleted_at.is_(None)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    rows = sorted(rows, key=lambda r: (r.path, r.method))
+    lines = [
+        f"{r.method} {r.path}" + (f" — {r.summary}" if r.summary else "")
+        for r in rows
+    ]
+    index = {(r.method.upper(), r.path): str(r.id) for r in rows}
+    return "\n".join(lines), index
+
+
+def _bind_endpoints(
+    flow: dict[str, Any], index: dict[tuple[str, str], str]
+) -> list[str]:
+    """Turn the method/path the model named into the id the action wants.
+
+    Returns notes for anything that did not match, so an endpoint the
+    model invented shows up as a step to finish rather than as a step
+    that looks configured and 403s.
+    """
+    notes: list[str] = []
+    for node in flow.get("nodes") or []:
+        if not isinstance(node, dict) or node.get("action_type") != "verkada_api_call":
+            continue
+        cfg = node.get("config")
+        if not isinstance(cfg, dict) or cfg.get("endpoint_id"):
+            continue
+        method = str(cfg.pop("method", "") or "").upper()
+        path = str(cfg.pop("path", "") or "").strip()
+        if not method or not path:
+            continue
+        hit = index.get((method, path))
+        if hit:
+            cfg["endpoint_id"] = hit
+            continue
+        # Same path, different method, is the common near miss and worth
+        # naming precisely.
+        alts = sorted({m for (m, p) in index if p == path})
+        notes.append(
+            f'step "{node.get("name") or node.get("id")}" asked for {method} {path}, '
+            + (
+                f"which is not in the catalog — that path exists as {', '.join(alts)}."
+                if alts
+                else "which is not in the catalog. Pick the endpoint by hand."
+            )
+        )
+    return notes
 
 
 def _warnings(flow: dict[str, Any]) -> list[str]:
@@ -657,6 +742,7 @@ async def propose(
         )
 
     org = await _org_context(session, payload.verkada_connection_id)
+    endpoint_text, endpoint_index = await _endpoint_catalog(session)
     observed_costs = await _observed_step_costs(session)
     examples = _examples()
     catalog = _action_catalog()
@@ -729,6 +815,7 @@ async def propose(
         )
         .replace("__ACTIONS__", json.dumps(catalog, indent=1))
         .replace("__ORG__", json.dumps(org, indent=1)[:20000])
+        .replace("__ENDPOINTS__", endpoint_text)
         .replace("__EXAMPLES__", json.dumps(examples, indent=1))
         .replace("__RUNMODE__", run_mode_block)
         .replace("__INTENT__", intent)
@@ -742,7 +829,8 @@ async def propose(
             stage="context",
             detail=(
                 f"{len(org['cameras'])} cameras, {len(org['doors'])} doors, "
-                f"{len(catalog)} action types, {len(examples)} example flows"
+                f"{len(catalog)} action types, {len(endpoint_index)} API endpoints, "
+                f"{len(examples)} example flows"
             ),
         )
         if example:
@@ -829,6 +917,12 @@ async def propose(
             return
 
         flow = tpl.get("flow") or {}
+        # The model names endpoints by method and path; the action wants
+        # the catalog row's id. Anything that did not match is reported
+        # rather than left looking configured.
+        unbound = _bind_endpoints(flow, endpoint_index)
+        if unbound:
+            tpl["assumptions"] = [*(tpl.get("assumptions") or []), *unbound]
         warnings = _warnings(flow)
         run_cost = _estimate_run_cost(flow, observed_costs)
         draft_cost = await cost_for(used_model, draft_tokens_in, draft_tokens_out)
