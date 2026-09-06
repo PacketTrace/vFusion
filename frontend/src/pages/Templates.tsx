@@ -44,11 +44,6 @@ const TAG_STYLE: Record<string, string> = {
 const DEFAULT_TAG_STYLE =
   "bg-white/10 text-slate-300 border-white/15";
 
-// The filter rows, in the order they are asked. "Starts" first because
-// it is also the grouping axis, so selecting there visibly collapses
-// the page rather than reshuffling it.
-const FACETS = ["Starts", "Uses", "Does", "Needs"] as const;
-
 const GROUP_ORDER = ["When something happens", "On a schedule", "Other"];
 
 /** Rank for sorting. A group not named above sorts last rather than
@@ -422,16 +417,20 @@ function FlowTemplatesPanel() {
   // ALL hooks must run on every render — keep these above the early
   // returns below or React's hook-order rules trip.
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<Record<string, Set<string>>>({});
 
-  const toggleFacet = (facet: string, value: string) => {
-    setPicked((prev) => {
-      const next = { ...prev };
-      const set = new Set(next[facet] ?? []);
-      if (set.has(value)) set.delete(value);
-      else set.add(value);
-      if (set.size === 0) delete next[facet];
-      else next[facet] = set;
+  // Tag filter — empty Set means "show everything". Templates are visible
+  // only if they carry every selected tag (AND semantics), so two
+  // filters narrow the list together rather than expanding it.
+  //
+  // ALL hooks must run on every render — keep these above the early
+  // returns below or React's hook-order rules trip.
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
+
+  const toggleTag = (tag: string) => {
+    setActiveTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
       return next;
     });
   };
@@ -449,81 +448,40 @@ function FlowTemplatesPanel() {
     );
   }
 
-  // Which values a template carries for each facet. "Verkada only" is
-  // the absence of any other credential rather than a value the backend
-  // emits — saying "Verkada" on all eight would repeat the "Cameras"
-  // mistake precisely.
-  const valuesFor = (t: FlowTemplateListItem, facet: string): string[] => {
-    const f = t.facets;
-    if (!f) return [];
-    if (facet === "Starts") return [f.starts.group];
-    if (facet === "Needs") return f.needs.length ? f.needs : ["Verkada only"];
-    if (facet === "Does") return f.does;
-    if (facet === "Uses") return f.media;
-    return [];
-  };
+  // Collect every tag that appears on any template so the filter bar
+  // shows real options (not a hardcoded list that can drift from
+  // template JSONs). Sorted alphabetically for stable order.
+  const allTags = Array.from(
+    new Set(list.data.flatMap((t) => t.tags ?? [])),
+  ).sort();
 
-  const matchesFacets = (
-    t: FlowTemplateListItem,
-    sel: Record<string, Set<string>>,
-  ) =>
-    Object.entries(sel).every(([facet, wanted]) => {
-      const have = valuesFor(t, facet);
-      return have.some((v) => wanted.has(v));
-    });
-
-  // Search covers everything visible on a card plus the facet words, so
-  // typing "door" finds both the door-obstruction template and the one
-  // that unlocks a door without either having to say so in its name.
+  // Search covers everything visible on a card. Word-prefix rather than
+  // substring: "door" should find the door templates and not the one
+  // whose description says "outdoor camera". A search that returns
+  // near-misses stops being trusted, and then stops being used. Every
+  // term must match, so adding a word narrows.
   const needle = query.trim().toLowerCase();
   const terms = needle.split(/\s+/).filter(Boolean);
   const matchesQuery = (t: FlowTemplateListItem) => {
     if (terms.length === 0) return true;
-    const words = [
-      t.name,
-      t.tagline,
-      t.summary,
-      t.description,
-      ...FACETS.flatMap((f) => valuesFor(t, f)),
-      t.facets?.starts.detail,
-    ]
+    const words = [t.name, t.tagline, t.summary, t.description, ...(t.tags ?? [])]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter(Boolean);
-    // Word-prefix, not substring: "door" should find the door templates
-    // and not the one whose description says "outdoor camera". A search
-    // that returns near-misses stops being trusted, and then stops being
-    // used. Every term must match something, so adding a word narrows.
     return terms.every((term) => words.some((w) => w.startsWith(term)));
   };
 
-  const searched = list.data.filter(matchesQuery);
-  const visible = searched.filter((t) => matchesFacets(t, picked));
-
-  // How many results a chip would leave if it were clicked, given every
-  // OTHER facet's current selection. A chip reading (0) is a dead end
-  // you can see before you take it, which is the whole failure the old
-  // AND filter had no way to show.
-  const chipCount = (facet: string, value: string) => {
-    const hypothetical: Record<string, Set<string>> = { ...picked };
-    const set = new Set(hypothetical[facet] ?? []);
-    if (set.has(value)) {
-      // Already on: show what stays if it remains on.
-      hypothetical[facet] = set;
-    } else {
-      set.add(value);
-      hypothetical[facet] = set;
+  const visible = list.data.filter((t) => {
+    if (!matchesQuery(t)) return false;
+    if (activeTags.size === 0) return true;
+    const tagSet = new Set(t.tags ?? []);
+    for (const wanted of activeTags) {
+      if (!tagSet.has(wanted)) return false;
     }
-    return searched.filter((t) => matchesFacets(t, hypothetical)).length;
-  };
-
-  // Facet values that actually occur, in a stable order.
-  const facetValues = (facet: string) =>
-    Array.from(new Set(list.data!.flatMap((t) => valuesFor(t, facet)))).sort();
-
-  const activeCount = Object.values(picked).reduce((n, s) => n + s.size, 0);
+    return true;
+  });
 
   // Group by what starts the flow. GROUP_ORDER rather than alphabetical:
   // "When something happens" before "On a schedule" matches how people
@@ -562,54 +520,37 @@ function FlowTemplatesPanel() {
         </span>
       </div>
 
-      <div className="space-y-1.5">
-        {FACETS.map((facet) => {
-          const values = facetValues(facet);
-          if (values.length < 2) return null;
-          return (
-            <div key={facet} className="flex items-baseline gap-2 flex-wrap text-xs">
-              <span className="text-slate-500 w-14 shrink-0">{facet}</span>
-              {values.map((value) => {
-                const active = picked[facet]?.has(value) ?? false;
-                const count = chipCount(facet, value);
-                const dead = count === 0 && !active;
-                const style = TAG_STYLE[value] ?? DEFAULT_TAG_STYLE;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    disabled={dead}
-                    onClick={() => toggleFacet(facet, value)}
-                    className={`px-2 py-0.5 rounded border transition-opacity ${style} ${
-                      active
-                        ? "ring-2 ring-white/40"
-                        : dead
-                          ? "opacity-25 cursor-not-allowed"
-                          : "opacity-60 hover:opacity-100"
-                    }`}
-                    title={dead ? "No templates match this with the current filters" : undefined}
-                  >
-                    {value}{" "}
-                    <span className="tabular-nums opacity-70">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
-        {(activeCount > 0 || needle) && (
-          <button
-            type="button"
-            onClick={() => {
-              setPicked({});
-              setQuery("");
-            }}
-            className="text-slate-400 hover:text-slate-200 underline underline-offset-2 text-[11px]"
-          >
-            clear filters
-          </button>
-        )}
-      </div>
+      {allTags.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-slate-500">Filter:</span>
+          {allTags.map((tag) => {
+            const active = activeTags.has(tag);
+            const baseStyle = TAG_STYLE[tag] ?? DEFAULT_TAG_STYLE;
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => toggleTag(tag)}
+                className={`px-2 py-0.5 rounded border transition-opacity ${baseStyle} ${active ? "ring-2 ring-white/40" : "opacity-60 hover:opacity-100"}`}
+              >
+                {tag}
+              </button>
+            );
+          })}
+          {(activeTags.size > 0 || needle) && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTags(new Set());
+                setQuery("");
+              }}
+              className="text-slate-400 hover:text-slate-200 underline underline-offset-2 text-[11px]"
+            >
+              clear
+            </button>
+          )}
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="text-xs text-slate-500 italic py-4">
@@ -661,27 +602,14 @@ function FlowTemplatesPanel() {
                       yours
                     </span>
                   )}
-                  {/* Facet chips, not the declared tags. "Cameras" was
-                      on every template, so it told you nothing while
-                      taking up the width that "Unlocks a door" needed.
-                      The trigger detail leads because it is the one
-                      thing the group heading above does not already
-                      say. */}
-                  {[
-                    tpl.facets?.starts.detail,
-                    ...(tpl.facets?.media ?? []),
-                    ...(tpl.facets?.does ?? []),
-                    ...(tpl.facets?.needs ?? []),
-                  ]
-                    .filter((v): v is string => Boolean(v))
-                    .map((chip) => (
-                      <span
-                        key={chip}
-                        className={`text-[10px] px-1.5 py-0.5 rounded border ${TAG_STYLE[chip] ?? DEFAULT_TAG_STYLE}`}
-                      >
-                        {chip}
-                      </span>
-                    ))}
+                  {tpl.tags?.map((tag) => (
+                    <span
+                      key={tag}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border ${TAG_STYLE[tag] ?? DEFAULT_TAG_STYLE}`}
+                    >
+                      {tag}
+                    </span>
+                  ))}
                   <div className="ml-auto flex items-center gap-1">
                     <button
                       onClick={() => useTemplate(tpl.id)}
