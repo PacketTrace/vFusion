@@ -8,6 +8,7 @@ import {
   Connection,
   HelixEventType,
 } from "../lib/api";
+import HelixSendModal from "../components/HelixSendModal";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
 import LiveDemoPanel from "../components/LiveDemoPanel";
 import { useCameras } from "../lib/cameras";
@@ -882,6 +883,9 @@ function EventTypeList({
   connId: string;
   onEdit: (et: HelixEventType) => void;
 }) {
+  // Which type the manual sender is open for. Held here rather than per
+  // row so only one can be open at a time.
+  const [sending, setSending] = useState<HelixEventType | null>(null);
   const types = useQuery({
     queryKey: ["helix-event-types", connId],
     queryFn: () =>
@@ -947,6 +951,20 @@ function EventTypeList({
                   <code className="text-[10px] font-mono text-slate-600">
                     {et.event_type_uid}
                   </code>
+                  {/* Sending by hand is the only way to find out whether
+                      a type accepts what you think it does without
+                      building a flow and waiting for it to fire. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSending(et);
+                    }}
+                    title="Post a test event to this type"
+                    className="text-[11px] px-2 py-1 rounded-md border border-white/10 text-slate-400 opacity-70 transition-[opacity,color,border-color] duration-150 ease-out-strong hover:opacity-100 hover:border-sky-600/60 hover:text-sky-300"
+                  >
+                    Send event
+                  </button>
                   {confirming === et.event_type_uid ? (
                     <span
                       className="flex items-center gap-1.5"
@@ -1031,6 +1049,15 @@ function EventTypeList({
           );
         })}
       </ul>
+      {sending && (
+        <HelixSendModal
+          connId={connId}
+          eventTypeUid={sending.event_type_uid}
+          typeName={sending.name ?? "(unnamed)"}
+          schema={(sending.event_schema ?? {}) as Record<string, string>}
+          onClose={() => setSending(null)}
+        />
+      )}
     </Card>
   );
 }
