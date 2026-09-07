@@ -35,3 +35,8 @@ mqtt/passwd
 # Internal working notes. This repo is public; the handoff records state,
 # decisions and gotchas that are not for publication.
 HANDOFF.md
+
+# An Expo/React Native scaffold that landed in the repo root. Not being
+# implemented, and mostly node_modules. Ignored so it cannot be swept
+# into a public repo by `git add -A`.
+/mobile/
