@@ -60,10 +60,29 @@ def _fmt() -> str:
     rather than failing outright.
     """
     h = settings.HEIGHT
-    return (
-        f"bv*[height<={h}][vcodec^=avc1]+ba/bv*[height<={h}]+ba/"
-        f"b[height<={h}]/b"
-    )
+    cap = MAX_BYTES
+    # Size is part of the selection, not a limit applied afterwards.
+    #
+    # --max-filesize aborts a download that turns out too big; it does
+    # not make yt-dlp choose differently. On a two-hour source that
+    # meant the video stream aborted, the small audio stream succeeded,
+    # and what landed on disk was an audio-only file — a real "no video
+    # track", for a reason that had nothing to do with the URL.
+    #
+    # Asking for a format under the cap lets it step down through
+    # heights instead, which is what somebody pointing at a long video
+    # actually wants: a smaller copy, not a failure.
+    ladder = [h, 720, 480, 360]
+    tries = []
+    for height in ladder:
+        tries.append(f"bv*[height<={height}][vcodec^=avc1][filesize_approx<{cap}]+ba")
+        tries.append(f"bv*[height<={height}][filesize_approx<{cap}]+ba")
+    for height in ladder:
+        tries.append(f"b[height<={height}][filesize_approx<{cap}]")
+    # Last resorts: formats that never report a size, then anything at
+    # all. --max-filesize still backstops both.
+    tries += [f"bv*[height<={h}][vcodec^=avc1]+ba", f"bv*[height<={h}]+ba", f"b[height<={h}]", "b"]
+    return "/".join(tries)
 
 
 async def _video_check(path: pathlib.Path) -> bool | None:
@@ -184,6 +203,18 @@ async def _run(job: dict[str, Any]) -> None:
         # endless loop, which is a far better trade than refusing
         # downloads that are fine.
         if await _video_check(media) is False:
+            # Distinguish the two reasons a file can arrive audio-only.
+            # "That URL offers audio only" and "the video was too big to
+            # keep" look identical on disk and need completely different
+            # things from the operator.
+            noise = err.decode("utf-8", "replace").lower()
+            if "max-filesize" in noise or "larger than" in noise:
+                raise RuntimeError(
+                    f"the video is larger than the {MAX_BYTES // (1024 * 1024)} MB "
+                    "limit, so only its audio was kept. Try a shorter video — a "
+                    "virtual camera loops a clip, so a couple of minutes is "
+                    "usually the useful length anyway."
+                )
             raise RuntimeError(
                 "that download has no video track — it may have been "
                 "interrupted, or the URL offers audio only"
