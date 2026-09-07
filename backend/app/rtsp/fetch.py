@@ -66,24 +66,38 @@ def _fmt() -> str:
     )
 
 
-async def _has_video(path: pathlib.Path) -> bool:
-    """Does this file carry a video stream at all?"""
-    proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error",
-        "-select_streams", "v",
-        "-show_entries", "stream=codec_type",
-        "-of", "csv=p=0",
-        str(path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
+async def _video_check(path: pathlib.Path) -> bool | None:
+    """True / False / None — has video, has none, or could not tell.
+
+    Three answers, not two. The first version returned a bool and folded
+    "could not tell" into "no video", so any probe that failed for its
+    own reasons rejected a perfectly good download. Every YouTube fetch
+    started failing with a message about the file, when the problem was
+    the question.
+
+    Built on the same JSON shape queue.probe uses, which is the one
+    known to work here, rather than a second invocation of my own.
+    """
     try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error",
+            "-show_entries", "stream=codec_type",
+            "-of", "json",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return False
-    return b"video" in out
+        data = json.loads(out or b"{}")
+    except (OSError, asyncio.TimeoutError, ValueError) as e:
+        logger.warning("could not probe %s for video: %s", path, e)
+        return None
+    streams = data.get("streams")
+    if not isinstance(streams, list) or not streams:
+        # No stream list at all is the probe not answering, not a file
+        # with nothing in it.
+        return None
+    return any(st.get("codec_type") == "video" for st in streams)
 
 
 def recent() -> list[dict[str, Any]]:
@@ -164,7 +178,12 @@ async def _run(job: dict[str, Any]) -> None:
         # item. A file with no video track is not a clip, and finding
         # that out at play time means the stream drops instead — the
         # camera goes offline for a bad download.
-        if not await _has_video(media):
+        # Only reject on a definite no. An inconclusive probe lets the
+        # file through — the pump now retires a clip that exits
+        # immediately, so a bad one costs one restart instead of an
+        # endless loop, which is a far better trade than refusing
+        # downloads that are fine.
+        if await _video_check(media) is False:
             raise RuntimeError(
                 "that download has no video track — it may have been "
                 "interrupted, or the URL offers audio only"
