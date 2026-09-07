@@ -498,6 +498,22 @@ export default function Rtsp() {
               <CopyRow label="Username" value={s.read_username} />
               <CopyRow label="Password" value={s.read_password} secret />
             </div>
+
+            {/* Watch it yourself before asking Verkada to.
+                "Is the camera broken or is the Connector unhappy" is the
+                first question every time something looks wrong, and it
+                is answerable in one paste. Credentials are in the URL
+                because ffplay has no other way to take them — which is
+                also why this is a copy button rather than something
+                printed on the page. */}
+            {s.url && (
+              <CopyRow
+                label="Watch it on your machine"
+                value={ffplayCommand(s)}
+                secret
+                hint="ffplay, over TCP with buffering off. Add _sub to the path for the low-res stream."
+              />
+            )}
             {!s.enabled && (
               <p className="text-[11px] text-slate-500">
                 These exist as soon as an address is saved, so you can test
@@ -1067,14 +1083,36 @@ function ModeCard({
   );
 }
 
+/** The one-liner that plays this stream.
+ *
+ *  -rtsp_transport tcp because UDP drops silently on a busy network and
+ *  looks like a broken encoder. nobuffer / low_delay / framedrop keep it
+ *  near live: ffplay's default buffering makes a working stream look
+ *  seconds behind, which is the opposite of what you opened it to check.
+ */
+function ffplayCommand(s: Status): string {
+  const user = encodeURIComponent(s.read_username || "");
+  // Generated passwords can contain characters that mean something else
+  // inside a URL. Encoding is not optional here.
+  const pass = encodeURIComponent(s.read_password || "");
+  const withCreds = s.url.replace("rtsp://", `rtsp://${user}:${pass}@`);
+  return (
+    "ffplay -rtsp_transport tcp -fflags nobuffer -flags low_delay " +
+    `-framedrop "${withCreds}"`
+  );
+}
+
 function CopyRow({
   label,
   value,
   secret = false,
+  hint,
 }: {
   label: string;
   value: string;
   secret?: boolean;
+  /** A line under the field, for when the value needs explaining. */
+  hint?: string;
 }) {
   const [shown, setShown] = useState(!secret);
   const [copied, setCopied] = useState(false);
@@ -1119,6 +1157,9 @@ function CopyRow({
           {failed ? "Select it" : copied ? "Copied" : "Copy"}
         </button>
       </div>
+      {hint && (
+        <div className="text-[11px] text-slate-500 mt-1">{hint}</div>
+      )}
     </div>
   );
 }
