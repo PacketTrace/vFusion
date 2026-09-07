@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/rtsp", tags=["rtsp"])
 # Big enough for a few minutes of 1080p, small enough that a mistaken
 # drag-and-drop of something enormous fails fast rather than filling the
 # volume.
-MAX_UPLOAD_BYTES = 512 * 1024 * 1024
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 
 class SettingsIn(BaseModel):
@@ -134,14 +134,28 @@ async def upload(
     file: UploadFile = File(...),
     seconds: int | None = Form(default=None),
 ) -> dict:
-    data = await file.read()
+    # Read in chunks and stop at the limit, rather than buffering the
+    # whole body and measuring it afterwards. The old order meant an
+    # oversized upload was fully held in memory before being refused —
+    # a five-gigabyte mistake cost five gigabytes of RAM to say no to,
+    # and raising the cap to a gigabyte doubles what that is worth
+    # getting right.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(status_code=400, detail="empty file")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
-        )
     if queue.kind_for(file.filename or "") is None:
         raise HTTPException(
             status_code=400,

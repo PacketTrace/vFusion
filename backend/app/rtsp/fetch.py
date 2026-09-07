@@ -32,9 +32,10 @@ from app.rtsp import queue, settings
 
 logger = logging.getLogger(__name__)
 
-# Matches the upload limit. A cap also stops a mistyped URL pointing at
-# something enormous from filling the volume unattended.
-MAX_BYTES = 512 * 1024 * 1024
+# Matches the upload limit — the two move together, or a file you can
+# fetch is one you cannot upload. A cap also stops a mistyped URL
+# pointing at something enormous from filling the volume unattended.
+MAX_BYTES = 1024 * 1024 * 1024
 
 # Long enough for a feature-length download on a slow line, short enough
 # that a stalled fetch does not sit there forever looking busy.
