@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type HlsType from "hls.js";
 
-import { apiGet, apiPost } from "../lib/api";
+import { API_BASE, apiGet, apiPost } from "../lib/api";
 
 /**
  * Live video from one Verkada camera.
@@ -101,10 +101,18 @@ export default function LivePlayer({
 
       const video = videoRef.current;
       if (!video) return;
-      const url = current.playlist_url;
+      // The API is a different origin from the page (Vite serves the app
+      // on its own port and there is no proxy), so a root-relative
+      // playlist would be fetched from the dev server instead of the
+      // backend. Everything else goes through apiGet, which prepends
+      // this for us; the player does its own fetching and does not.
+      const url = `${API_BASE}${current.playlist_url}`;
 
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari plays HLS natively and does it better than we can.
+        // Cross-origin means the session cookie only travels if we ask
+        // for it, and without the cookie every fetch is a 401.
+        video.crossOrigin = "use-credentials";
         video.src = url;
         video.play().catch(() => undefined);
         setPhase("playing");
@@ -124,13 +132,30 @@ export default function LivePlayer({
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 10,
         lowLatencyMode: false,
+        // Same-origin is the default, and this is not same-origin. Every
+        // playlist and segment fetch needs the session cookie.
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = true;
+        },
       });
       hlsRef.current = hls;
+      let recoveries = 0;
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) return;
         // A live stream restarts on the server every time the stream key
-        // is renewed, so a recoverable error is the expected case, not
-        // the exceptional one. Only give up when hls.js says it cannot.
+        // is renewed, so recovering is the expected case rather than the
+        // exceptional one -- but only for a while. Retrying forever
+        // leaves a dead player looking like a camera pointed at a dark
+        // room, which is the one outcome worse than an error message.
+        if (recoveries >= 6) {
+          fail(
+            `${data.details || "Playback failed"} — the stream stopped ` +
+              "responding. Pick the camera again to restart it.",
+          );
+          hls.destroy();
+          return;
+        }
+        recoveries += 1;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
         else fail(data.details || "Playback failed.");
