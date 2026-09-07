@@ -1,7 +1,9 @@
-<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="vFusion">
+<svg viewBox="228 176 816 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="vFusion">
 <title>vFusion</title>
-<rect width="1280" height="720" fill="#050203"/>
+<rect class="plate" x="228" y="176" width="816" height="312" rx="14" fill="none"/>
 <style>
+  @media (prefers-color-scheme: light){.plate{fill:#0b0508}}
+
 
   .p{opacity:1}
   
