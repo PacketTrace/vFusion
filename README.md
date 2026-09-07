@@ -45,12 +45,12 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 - 🔧 **API runner** — every Verkada endpoint, browsable by category, with pickers for the ids you cannot know, run against a connection you already hold.
 - 📺 **Live cameras** in the browser, without the browser ever seeing a Verkada credential.
 
-**Verkada's other doors**
+**New Worlds**
 
-- 🏷 **Helix** — draft event types from a sentence, send test events by hand, read back what is really on Verkada, and seed a plausible week of demo data for an integration nobody has built yet.
 - 🎬 **Virtual camera** — serve your own clips, a URL, or a live stream to a Command Connector over RTSP with ONVIF Profile S, on one unbroken stream. Generate footage with Veo that looks like a ceiling dome shot it.
 - 📡 **MQTT** — broker, certificates and credentials generated for you; configure cameras to publish live object positions; watch the boxes, filter the noise, replay a track beside its footage.
 - 🧰 **MCP explorer** — browse Verkada's Model Context Protocol server with the key you already have: every tool badged read-only, writes or destructive, and a history of when each one appeared.
+- 🏷 **Helix** — draft event types from a sentence, send test events by hand, read back what is really on Verkada, and seed a plausible week of demo data for an integration nobody has built yet.
 
 **Run it with confidence**
 
