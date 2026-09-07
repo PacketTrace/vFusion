@@ -322,17 +322,19 @@ export default function Rtsp() {
               ? "Off air"
               : "On air"}
           </span>
-          <span className="text-[11px] text-slate-500">
-            {s.viewers === null
-              ? s.viewers_error
-              : s.viewers === 0
-                ? "Publishing, nobody watching yet."
-                : `${s.viewers} viewer${s.viewers === 1 ? "" : "s"} pulling the stream.`}
-          </span>
+          {/* Only the part the tiles below cannot say. A viewer count
+              lives in the Viewers tile, which also explains itself and
+              clicks through to who they are; repeating it here was the
+              same sentence twice, three inches apart. */}
+          {s.viewers === null && s.viewers_error && (
+            <span className="text-[11px] text-amber-300/80">
+              {s.viewers_error}
+            </span>
+          )}
         </div>
       )}
 
-      <StatusBar s={s} />
+      <StatusBar s={s} showEncoderLog={tab === "camera"} />
 
 
       {tab === "camera" && (
@@ -721,7 +723,14 @@ export default function Rtsp() {
   );
 }
 
-function StatusBar({ s }: { s?: Status }) {
+function StatusBar({
+  s,
+  showEncoderLog = true,
+}: {
+  s?: Status;
+  /** The encoder log belongs to the camera, not the queue. */
+  showEncoderLog?: boolean;
+}) {
   // Fetched only while the panel is open. The count comes with status
   // on every poll; the session list is a second API call and is worth
   // making only when somebody has asked who.
@@ -830,7 +839,7 @@ function StatusBar({ s }: { s?: Status }) {
       {/* ffmpeg's own words. An exit code alone says a thing failed;
           these say which thing, which is the difference between reading
           this page and reading container logs. */}
-      {(s.pump.log ?? []).length > 0 && (
+      {showEncoderLog && (s.pump.log ?? []).length > 0 && (
         <details className="col-span-2 sm:col-span-4">
           <summary className="text-[11px] text-amber-300/90 cursor-pointer">
             {s.pump.last_error ?? "encoder output"}
