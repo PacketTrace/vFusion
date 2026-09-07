@@ -31,3 +31,7 @@ mqtt/passwd
 # the RTSP credentials handed to the Command Connector.
 /rtsp/*
 !/rtsp/.gitkeep
+
+# Internal working notes. This repo is public; the handoff records state,
+# decisions and gotchas that are not for publication.
+HANDOFF.md
