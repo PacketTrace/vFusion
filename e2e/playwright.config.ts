@@ -12,6 +12,8 @@ const baseURL = process.env.E2E_BASE_URL || "http://localhost:15173";
 
 export default defineConfig({
   testDir: "./tests",
+  // Setup problems are one problem, not one per test.
+  globalSetup: "./support/preflight.ts",
   // Live video is genuinely slow to start: the encoder has to produce a
   // couple of segments before anything can play.
   timeout: 120_000,

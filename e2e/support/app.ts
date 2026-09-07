@@ -4,12 +4,8 @@ import { expect, Page, Response } from "@playwright/test";
 
 export async function signIn(page: Page): Promise<void> {
   const secret = process.env.E2E_PASSWORD;
-  if (!secret) {
-    throw new Error(
-      "E2E_PASSWORD is not set. Put the vFusion admin password in the " +
-        "stack's .env as E2E_PASSWORD — the tests sign in like a person does.",
-    );
-  }
+  // preflight refuses to start a run without this; belt and braces.
+  if (!secret) throw new Error("E2E_PASSWORD is not set.");
   await page.goto("/");
 
   // The gate asks /api/auth/status before it decides what to render, so
