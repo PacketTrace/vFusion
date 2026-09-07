@@ -256,6 +256,17 @@ function RunDetailView({ run }: { run: RunDetail }) {
               {flowReplay.isPending ? "Starting…" : "↻ Re-run flow"}
             </button>
           )}
+          {!run.webhook_event_id && isAuditInput(run.input) && (
+            <button
+              onClick={() =>
+                navigate(`/explorer?tab=audit&event=${(run.input as { id: string }).id}`)
+              }
+              className={`${canFlowReplay ? "ml-1" : "ml-auto"} text-xs px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100`}
+              title="Open the audit-log entry that started this run"
+            >
+              🧾 View audit entry
+            </button>
+          )}
           {run.webhook_event_id && (
             // Jump to the triggering payload in the Inbox. Handy when a
             // step blew up on something like a missing field — open the
@@ -1039,5 +1050,16 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
       {children}
     </h3>
+  );
+}
+
+
+function isAuditInput(input: unknown): input is { audit: true; id: string } {
+  return (
+    !!input &&
+    typeof input === "object" &&
+    (input as { audit?: unknown }).audit === true &&
+    typeof (input as { id?: unknown }).id === "string" &&
+    !!(input as { id: string }).id
   );
 }

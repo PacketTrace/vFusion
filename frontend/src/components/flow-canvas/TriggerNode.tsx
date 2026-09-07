@@ -28,6 +28,7 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export default function TriggerNode({ data, selected }: NodeProps) {
   const d = data as TriggerNodeData;
   const isSchedule = d.trigger_type === "schedule";
+  const isAudit = d.trigger_type === "verkada_audit";
   const cfg = d.trigger_config ?? {};
   const icon = triggerIcon(d.trigger_type);
 
@@ -45,7 +46,7 @@ export default function TriggerNode({ data, selected }: NodeProps) {
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-slate-100 truncate">
-            {isSchedule ? "Schedule" : "Verkada webhook"}
+            {isSchedule ? "Schedule" : isAudit ? "Audit log" : "Verkada webhook"}
           </div>
           <div className="text-[10px] uppercase tracking-wider text-sky-300/80">
             Trigger
@@ -71,6 +72,8 @@ export default function TriggerNode({ data, selected }: NodeProps) {
       </div>
       {isSchedule ? (
         <ScheduleSummary cfg={cfg} />
+      ) : isAudit ? (
+        <AuditSummary cfg={cfg} />
       ) : (
         <WebhookSummary cfg={cfg} />
       )}
@@ -94,6 +97,39 @@ export default function TriggerNode({ data, selected }: NodeProps) {
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
+}
+
+
+function AuditSummary({ cfg }: { cfg: Flow["trigger_config"] }) {
+  const c = cfg as Record<string, unknown>;
+  const filters = Object.entries((c.filters as Record<string, string> | undefined) ?? {});
+  return (
+    <div className="px-3 py-2 text-xs space-y-0.5">
+      <div className="text-slate-300">
+        When{" "}
+        <span className="font-semibold text-slate-100">
+          {typeof c.event_name === "string" && c.event_name
+            ? c.event_name
+            : typeof c.category === "string" && c.category
+              ? `any ${c.category} event`
+              : "anything"}
+        </span>
+        {typeof c.actor === "string" && c.actor ? (
+          <>
+            {" "}
+            by <span className="text-slate-100">{c.actor.replace("_", " ")}</span>
+          </>
+        ) : null}{" "}
+        happens in Command
+      </div>
+      {filters.slice(0, 3).map(([k, v]) => (
+        <div key={k} className="text-slate-400 truncate">
+          <span className="font-mono">{k}</span> = <span className="text-slate-200">{v}</span>
+        </div>
+      ))}
+      {filters.length > 3 && <div className="text-slate-500">+{filters.length - 3} more</div>}
+    </div>
+  );
 }
 
 

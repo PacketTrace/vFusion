@@ -34,6 +34,7 @@ export function actionIcon(actionType: string | null | undefined): string {
 
 export function triggerIcon(triggerType: string | null | undefined): string {
   if (triggerType === "schedule") return "⏰";
+  if (triggerType === "verkada_audit") return "🧾";
   // Webhooks are HTTP payloads — render the universal code shorthand
   // instead of an emoji. The canvas component renders the icon slot
   // as text-xl so "</>" appears at the same visual weight as an emoji.

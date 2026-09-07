@@ -1052,7 +1052,7 @@ async def audit_poll_cron(ctx: dict[str, Any]) -> dict[str, Any]:
         if not got:
             return {"skipped": "another poll loop is running"}
     try:
-        return await run_loop(seconds=55.0, interval=10.0)
+        return await run_loop(seconds=55.0, interval=10.0, pool=redis)
     finally:
         if redis is not None:
             try:

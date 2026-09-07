@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # The Webhook Explorer banner displays this URL so users know what to paste
     # into Verkada Command. Quick-mode deploys auto-discover instead.
     public_webhook_base: str = ""
+    # Explorer → Audit log: "ip-api" (default; ip-api.com, keyless) or
+    # "off". Only the IP addresses on audit rows are ever sent, and only
+    # when someone opens the page. See app/audit/geoip.py.
+    geoip_provider: str = "ip-api"
 
     @property
     def cors_origin_list(self) -> list[str]:

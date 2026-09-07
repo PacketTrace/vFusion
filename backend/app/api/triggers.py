@@ -84,21 +84,38 @@ async def sample_fields(
     events: any path that appears in any of them shows up, with the
     newest non-null sample winning as the value preview.
     """
-    q = select(WebhookEvent).where(WebhookEvent.body_json.is_not(None))
-    if family:
-        q = q.where(WebhookEvent.family == family)
-    if notification_type:
-        q = q.where(WebhookEvent.notification_type == notification_type)
-    q = q.order_by(desc(WebhookEvent.received_at)).limit(20)
-    rows = (await session.execute(q)).scalars().all()
+    # ``family=audit`` is the verkada_audit trigger: the samples are the
+    # trigger payloads built from stored audit rows, and
+    # ``notification_type`` carries the event name. The variable picker
+    # and step auto-wiring need no other change to work for audit flows.
+    bodies: list[dict[str, Any]] = []
+    if family == "audit":
+        from app.audit.ingest import trigger_payload as audit_trigger_payload
+        from app.models import AuditEvent
+
+        aq = select(AuditEvent)
+        if notification_type:
+            aq = aq.where(AuditEvent.event_name == notification_type)
+        aq = aq.order_by(desc(AuditEvent.timestamp)).limit(20)
+        bodies = [audit_trigger_payload(r) for r in (await session.execute(aq)).scalars().all()]
+    else:
+        q = select(WebhookEvent).where(WebhookEvent.body_json.is_not(None))
+        if family:
+            q = q.where(WebhookEvent.family == family)
+        if notification_type:
+            q = q.where(WebhookEvent.notification_type == notification_type)
+        q = q.order_by(desc(WebhookEvent.received_at)).limit(20)
+        bodies = [
+            r.body_json
+            for r in (await session.execute(q)).scalars().all()
+            if isinstance(r.body_json, dict)
+        ]
 
     # newest-first iteration → first non-null sample for each path wins.
     by_path: dict[str, TriggerField] = {}
-    for row in rows:
-        if not isinstance(row.body_json, dict):
-            continue
+    for body in bodies:
         flat: list[TriggerField] = []
-        _flatten(row.body_json, "trigger", flat)
+        _flatten(body, "trigger", flat)
         for f in flat:
             existing = by_path.get(f.path)
             if existing is None:

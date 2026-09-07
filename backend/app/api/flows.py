@@ -16,7 +16,8 @@ from app.engine.conditions import OPERATORS as CONDITION_OPERATORS
 from app.engine.conditions import SAMPLE_OUTPUT as CONDITION_SAMPLE
 from app.engine.conditions import SCHEMA as CONDITION_SCHEMA
 from app.engine.conditions import evaluate as evaluate_condition
-from app.models import Connection, Flow, Run, VerkadaHelixEventType, WebhookEvent
+from app.audit.ingest import trigger_payload as audit_trigger_payload
+from app.models import AuditEvent, Connection, Flow, Run, VerkadaHelixEventType, WebhookEvent
 
 
 router = APIRouter(prefix="/api/flows", tags=["flows"])
@@ -716,6 +717,8 @@ async def update_flow(
 
 class TestRunRequest(BaseModel):
     webhook_event_id: UUID | None = None
+    # A stored audit-log row, for ``verkada_audit`` flows.
+    audit_event_id: UUID | None = None
     input: dict[str, Any] | None = None
 
 
@@ -729,6 +732,7 @@ class RunNodeRequest(BaseModel):
     # most recent matching webhook event for the flow's trigger filter
     # (webhook flows) or a synthetic schedule trigger.
     webhook_event_id: UUID | None = None
+    audit_event_id: UUID | None = None
 
 
 class RunNodeResponse(BaseModel):
@@ -762,11 +766,16 @@ async def test_run_flow(
             )
         body = event.body_json
         event_id = event.id
+    elif payload.audit_event_id is not None:
+        audit_row = await session.get(AuditEvent, payload.audit_event_id)
+        if audit_row is None:
+            raise HTTPException(status_code=404, detail="audit event not found")
+        body = audit_trigger_payload(audit_row)
     elif payload.input is not None:
         body = payload.input
     else:
         raise HTTPException(
-            status_code=400, detail="webhook_event_id or input is required"
+            status_code=400, detail="webhook_event_id, audit_event_id or input is required"
         )
 
     run = Run(
@@ -831,6 +840,21 @@ async def run_one_node(
             event = (await session.execute(q.limit(1))).scalars().first()
         if event is not None and isinstance(event.body_json, dict):
             trigger_blob = event.body_json
+    elif flow.trigger_type == "verkada_audit":
+        if payload.audit_event_id is not None:
+            audit_row = await session.get(AuditEvent, payload.audit_event_id)
+        else:
+            cfg = flow.trigger_config or {}
+            q = select(AuditEvent).order_by(AuditEvent.timestamp.desc())
+            if cfg.get("category"):
+                q = q.where(AuditEvent.category == cfg["category"])
+            if cfg.get("event_name"):
+                q = q.where(AuditEvent.event_name == cfg["event_name"])
+            if not cfg.get("include_self"):
+                q = q.where(AuditEvent.is_self.is_(False))
+            audit_row = (await session.execute(q.limit(1))).scalars().first()
+        if audit_row is not None:
+            trigger_blob = audit_trigger_payload(audit_row)
     elif flow.trigger_type == "schedule":
         now = int(datetime.now().timestamp())
         trigger_blob = {

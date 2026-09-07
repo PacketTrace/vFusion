@@ -259,6 +259,8 @@ export default function Flows() {
                   <td className="px-3 py-2 text-xs text-slate-400">
                     {f.trigger_type === "schedule" ? (
                       <ScheduleTriggerLabel cfg={f.trigger_config} />
+                    ) : f.trigger_type === "verkada_audit" ? (
+                      <AuditTriggerLabel cfg={f.trigger_config} />
                     ) : (
                       <>
                         {f.trigger_config.family ?? "(any)"}
@@ -380,4 +382,19 @@ function ScheduleTriggerLabel({
     );
   }
   return <span className="text-slate-500">schedule</span>;
+}
+
+
+function AuditTriggerLabel({ cfg }: { cfg: Flow["trigger_config"] }) {
+  const parts: string[] = ["audit log"];
+  if (cfg.category) parts.push(cfg.category);
+  if (cfg.event_name) parts.push(cfg.event_name);
+  if (cfg.actor) parts.push(`by ${cfg.actor.replace("_", " ")}`);
+  const n = Object.keys(cfg.filters ?? {}).length;
+  return (
+    <span>
+      {parts.join(" / ")}
+      {n > 0 && <span className="text-slate-500"> [{n} filter{n === 1 ? "" : "s"}]</span>}
+    </span>
+  );
 }

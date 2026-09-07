@@ -37,6 +37,12 @@ def _get(data: Any, path: str) -> Any:
 def _eq_ci(a: Any, b: Any) -> bool:
     if isinstance(a, str) and isinstance(b, str):
         return a.casefold() == b.casefold()
+    # Filter values arrive from a text field. A status code of 403 has
+    # to match "403".
+    if isinstance(a, (int, float)) and not isinstance(a, bool) and isinstance(b, str):
+        return str(a) == b.strip()
+    if isinstance(a, bool) and isinstance(b, str):
+        return str(a).casefold() == b.strip().casefold()
     return a == b
 
 
@@ -75,5 +81,44 @@ def matches(trigger_config: dict[str, Any], event: dict[str, Any]) -> bool:
         if expected in (None, ""):
             continue  # empty filter — ignore
         if not _value_matches(_get(data, field), expected):
+            return False
+    return True
+
+
+def matches_audit(trigger_config: dict[str, Any], payload: dict[str, Any]) -> bool:
+    """The ``verkada_audit`` trigger: an audit-log row, as built by
+    ``app.audit.ingest.trigger_payload``. Config shape::
+
+        {
+            "category": "cameras",              # optional, any if empty
+            "event_name": "Live Stream Started",# optional
+            "actor": "user",                    # optional: user | api_key | support | system
+            "include_self": false,              # rows from this install's own key
+            "filters": {                        # optional, all-must-match, dot paths
+                "user_email": "casey@example.com",
+                "data.device_name": "Front Door",
+                "data.url": "/cameras/v1/devices",
+                "status_code": "403"
+            }
+        }
+
+    Paths resolve against the whole payload: who/when/what at the top,
+    the target device and Verkada's ``details`` under ``data``.
+    """
+    want = trigger_config.get("category")
+    if want and payload.get("category") != want:
+        return False
+    want = trigger_config.get("event_name")
+    if want and not _eq_ci(payload.get("event_name"), want):
+        return False
+    want = trigger_config.get("actor")
+    if want and payload.get("actor") != want:
+        return False
+    if payload.get("is_self") and not trigger_config.get("include_self"):
+        return False
+    for field, expected in (trigger_config.get("filters") or {}).items():
+        if expected in (None, ""):
+            continue
+        if not _value_matches(_get(payload, field), expected):
             return False
     return True

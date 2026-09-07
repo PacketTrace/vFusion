@@ -4,6 +4,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   apiGet,
   apiPost,
+  AuditEventList,
+  AuditEventListItem,
   WebhookEventListItem,
   WebhookEventListResponse,
 } from "../lib/api";
@@ -12,6 +14,13 @@ import { useCameraLookup } from "../lib/cameras";
 
 interface Props {
   flowId: string;
+  /** verkada_audit flows pick from stored audit rows instead of webhooks. */
+  auditTrigger?: {
+    category: string;
+    eventName: string;
+    actor: string;
+    includeSelf: boolean;
+  };
   family: string | null;
   notificationType: string | null;
   // Same field→value shape as the trigger's filters config. The modal
@@ -46,6 +55,7 @@ function clock(iso: string): string {
 
 export default function TestRunModal({
   flowId,
+  auditTrigger,
   family,
   notificationType,
   filters,
@@ -119,6 +129,17 @@ export default function TestRunModal({
     onSuccess: (res) => onRun(res.run_id),
     onError: (e: Error) => setError(e.message),
   });
+
+  if (auditTrigger) {
+    return (
+      <AuditTestRun
+        flowId={flowId}
+        trigger={auditTrigger}
+        onClose={onClose}
+        onRun={onRun}
+      />
+    );
+  }
 
   const items: WebhookEventListItem[] = recent.data?.items ?? [];
   const showsDefault = items.some((i) => i.id === defaultEventId);
@@ -273,6 +294,148 @@ export default function TestRunModal({
             className="text-xs px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
           >
             {run.isPending ? "Running…" : "Run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Same modal, fed from the audit log. The list is the last 7 days of
+ * rows matching the trigger's category / event / actor, so the operator
+ * mostly sees inputs that would actually fire it.
+ */
+function AuditTestRun({
+  flowId,
+  trigger,
+  onClose,
+  onRun,
+}: {
+  flowId: string;
+  trigger: NonNullable<Props["auditTrigger"]>;
+  onClose: () => void;
+  onRun: (runId: string) => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(search.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  const params = new URLSearchParams({ limit: "25" });
+  params.set("since", new Date(Date.now() - 7 * 86400_000).toISOString());
+  if (trigger.category) params.append("category", trigger.category);
+  if (trigger.eventName) params.append("event_name", trigger.eventName);
+  if (trigger.actor) params.append("actor", trigger.actor);
+  if (trigger.includeSelf) params.set("include_self", "true");
+  if (debounced) params.set("q", debounced);
+  const recent = useQuery({
+    queryKey: ["test-run-audit", params.toString()],
+    queryFn: () => apiGet<AuditEventList>(`/api/audit-events?${params.toString()}`),
+  });
+  useEffect(() => {
+    if (picked || !recent.data?.items?.length) return;
+    setPicked(recent.data.items[0].id);
+  }, [recent.data, picked]);
+
+  const run = useMutation({
+    mutationFn: (eventId: string) =>
+      apiPost<{ run_id: string }>(`/api/flows/${flowId}/test-run`, {
+        audit_event_id: eventId,
+      }),
+    onSuccess: (res) => onRun(res.run_id),
+    onError: (e: Error) => setError(e.message),
+  });
+  const items: AuditEventListItem[] = recent.data?.items ?? [];
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-700 rounded-md w-full max-w-2xl max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-slate-800 flex items-start gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-slate-100">Test run</div>
+            <div className="text-xs text-slate-500">
+              Pick a past audit-log entry to feed this flow as its trigger payload.
+              {trigger.eventName
+                ? ` Showing ${trigger.eventName}`
+                : trigger.category
+                  ? ` Showing ${trigger.category}`
+                  : ""}
+              {trigger.actor ? ` by ${trigger.actor.replace("_", " ")}` : ""} from the last 7 days.
+            </div>
+          </div>
+          <button className="ml-auto text-slate-500 hover:text-slate-200 text-sm" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="px-4 py-2 border-b border-slate-800">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="search users, devices, endpoints…"
+            className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-xs focus:outline-none focus:border-sky-600"
+          />
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {recent.isLoading ? (
+            <div className="p-4 text-xs text-slate-500">Loading…</div>
+          ) : items.length === 0 ? (
+            <div className="p-4 text-xs text-slate-500">
+              {debounced
+                ? `Nothing matching "${debounced}".`
+                : "No matching audit entries in the last 7 days. Relax the trigger, or tick “include own API calls” if the event is one vFusion causes."}
+            </div>
+          ) : (
+            <ul>
+              {items.map((ev) => (
+                <li
+                  key={ev.id}
+                  onClick={() => setPicked(ev.id)}
+                  className={`px-4 py-2 text-xs cursor-pointer border-b border-slate-800 ${
+                    picked === ev.id ? "bg-white/10" : "hover:bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 text-slate-100">
+                    <span className="truncate">{ev.event_name}</span>
+                    {ev.method && ev.url_path && (
+                      <span className="font-mono text-slate-300 truncate">
+                        {ev.method} {ev.url_path} {ev.status_code ?? ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-slate-500 mt-0.5 flex gap-2">
+                    <span>{clock(ev.timestamp)}</span>
+                    <span>{ev.user_name || ev.user_email || ev.api_key_name || ev.actor}</span>
+                    {ev.device_name && <span>· {ev.device_name}</span>}
+                    {ev.ip_address && <span className="ml-auto font-mono">{ev.ip_address}</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="px-4 py-3 border-t border-slate-800 flex items-center gap-2">
+          {error && <span className="text-xs text-rose-300 truncate">{error}</span>}
+          <button className="ml-auto text-xs px-3 py-1.5 rounded border border-white/15 text-slate-300 hover:bg-white/10" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            disabled={!picked || run.isPending}
+            onClick={() => picked && run.mutate(picked)}
+            className="text-xs px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-50"
+          >
+            {run.isPending ? "Starting…" : "Run with this entry"}
           </button>
         </div>
       </div>

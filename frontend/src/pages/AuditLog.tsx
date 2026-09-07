@@ -6,6 +6,7 @@ import { apiGet, AuditEvent, AuditEventList, AuditEventListItem, AuditFacets, Au
 import { filtersKey, filtersToApiParams } from "../lib/auditFilters";
 import { useAuditFilters } from "../lib/useAuditFilters";
 import { fmtBytes, fmtDateTime, fmtNum, fmtRel, fmtTime } from "../lib/format";
+import { GeoInfo, geoLabel, useGeo } from "../lib/useGeo";
 import JsonView from "../components/JsonView";
 import AuditFilterBar, { ActiveChips } from "../components/audit/AuditFilterBar";
 import FacetRail from "../components/audit/FacetRail";
@@ -65,6 +66,7 @@ export default function AuditLog() {
 
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data]);
   const total = list.data?.pages[0]?.total ?? 0;
+  const geo = useGeo(items.map((i) => i.ip_address));
 
   // Rows that arrived since the previous fetch get a brief tint. The
   // first load seeds the set silently -- a page opening is not "new
@@ -117,6 +119,7 @@ export default function AuditLog() {
                 <Row
                   key={e.id}
                   e={e}
+                  geo={e.ip_address ? geo[e.ip_address] : undefined}
                   selected={selectedId === e.id}
                   fresh={fresh.has(e.id)}
                   onClick={() => setSelectedId(e.id)}
@@ -142,6 +145,7 @@ export default function AuditLog() {
           {detail.data ? (
             <Detail
               event={detail.data}
+              geo={detail.data.ip_address ? geo[detail.data.ip_address] : undefined}
               onFilter={(patch) => setFilters((f) => ({ ...f, ...patch }))}
             />
           ) : selectedId && detail.isLoading ? (
@@ -167,11 +171,13 @@ function who(e: AuditEventListItem): string {
 
 function Row({
   e,
+  geo,
   selected,
   fresh,
   onClick,
 }: {
   e: AuditEventListItem;
+  geo: GeoInfo | undefined;
   selected: boolean;
   fresh: boolean;
   onClick: () => void;
@@ -206,7 +212,12 @@ function Row({
             {e.device_count > 1 ? ` +${e.device_count - 1}` : ""}
           </span>
         )}
-        {e.ip_address && <span className="ml-auto font-mono shrink-0">{e.ip_address}</span>}
+        {e.ip_address && (
+          <span className="ml-auto shrink-0 flex items-center gap-1.5">
+            {geoLabel(geo) && <span className="text-slate-500 truncate max-w-[9rem]">{geoLabel(geo)}</span>}
+            <span className="font-mono">{e.ip_address}</span>
+          </span>
+        )}
       </div>
     </li>
   );
@@ -264,9 +275,11 @@ function EmptyState({
 
 function Detail({
   event: e,
+  geo,
   onFilter,
 }: {
   event: AuditEvent;
+  geo: GeoInfo | undefined;
   onFilter: (patch: Record<string, unknown>) => void;
 }) {
   const isApi = e.category === "api";
@@ -315,6 +328,9 @@ function Detail({
             <>
               {e.api_key_name ?? "API key"}
               {e.api_key_tail && <span className="text-slate-500 font-mono"> …{e.api_key_tail}</span>}
+              {typeof e.details.api_key_owner_email === "string" && (
+                <span className="block text-slate-400">key owned by {e.details.api_key_owner_email}</span>
+              )}
             </>
           ) : (
             <>
@@ -325,6 +341,15 @@ function Detail({
         </Fact>
         <Fact label="From">
           <span className="font-mono">{e.ip_address ?? "—"}</span>
+          {geo?.ok && (
+            <span className="block text-slate-400">
+              {geo.local ? "local network" : geo.label}
+              {geo.org && !geo.local && <span className="text-slate-500"> · {geo.org}</span>}
+              {(geo.proxy || geo.hosting) && (
+                <span className="text-amber-300"> · {geo.proxy ? "proxy/VPN" : "hosting provider"}</span>
+              )}
+            </span>
+          )}
         </Fact>
         {isApi && (
           <>

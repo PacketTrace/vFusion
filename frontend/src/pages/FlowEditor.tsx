@@ -47,6 +47,12 @@ import TriggerConfigForm, {
   triggerStateToConfig,
   TriggerConfigState,
 } from "../components/TriggerConfigForm";
+import AuditTriggerForm, {
+  AuditTriggerState,
+  DEFAULT_AUDIT_STATE,
+  auditStateFromConfig,
+  auditStateToConfig,
+} from "../components/AuditTriggerForm";
 import ScheduleTriggerForm, {
   scheduleStateFromConfig,
   scheduleStateToConfig,
@@ -106,7 +112,7 @@ function FlowEditorInner() {
 
   const [name, setName] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [triggerType, setTriggerType] = useState<"verkada_webhook" | "schedule">(
+  const [triggerType, setTriggerType] = useState<"verkada_webhook" | "schedule" | "verkada_audit">(
     "verkada_webhook",
   );
   const [trigger, setTrigger] = useState<TriggerConfigState>(
@@ -115,6 +121,7 @@ function FlowEditorInner() {
   const [schedule, setSchedule] = useState<ScheduleConfigState>(
     scheduleStateFromConfig(undefined),
   );
+  const [audit, setAudit] = useState<AuditTriggerState>(DEFAULT_AUDIT_STATE);
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const [edges, setEdges] = useState<FlowEdge[]>([]);
   const [selected, setSelected] = useState<Selection>({ kind: "trigger" });
@@ -250,10 +257,13 @@ function FlowEditorInner() {
     setEnabled(existing.data.enabled);
     const tt = (existing.data.trigger_type ?? "verkada_webhook") as
       | "verkada_webhook"
-      | "schedule";
+      | "schedule"
+      | "verkada_audit";
     setTriggerType(tt);
     if (tt === "schedule") {
       setSchedule(scheduleStateFromConfig(existing.data.trigger_config));
+    } else if (tt === "verkada_audit") {
+      setAudit(auditStateFromConfig(existing.data.trigger_config));
     } else {
       setTrigger(triggerStateFromConfig(existing.data.trigger_config));
     }
@@ -272,9 +282,13 @@ function FlowEditorInner() {
           ? scheduleStateToConfig(
               scheduleStateFromConfig(existing.data.trigger_config),
             )
-          : triggerStateToConfig(
-              triggerStateFromConfig(existing.data.trigger_config),
-            ),
+          : tt === "verkada_audit"
+            ? auditStateToConfig(
+                auditStateFromConfig(existing.data.trigger_config),
+              )
+            : triggerStateToConfig(
+                triggerStateFromConfig(existing.data.trigger_config),
+              ),
       nodes: existing.data.nodes ?? [],
       edges: existing.data.edges ?? [],
     } as typeof payloadNow);
@@ -299,7 +313,9 @@ function FlowEditorInner() {
       trigger_config:
         triggerType === "schedule"
           ? scheduleStateToConfig(schedule)
-          : triggerStateToConfig(trigger),
+          : triggerType === "verkada_audit"
+            ? auditStateToConfig(audit)
+            : triggerStateToConfig(trigger),
       nodes,
       edges,
     }),
@@ -403,7 +419,7 @@ function FlowEditorInner() {
         ? "verkada_helix_event"
         : sourceNode?.kind === "condition"
           ? "verkada_helix_event"
-          : trigger.family === "camera"
+          : triggerType === "verkada_webhook" && trigger.family === "camera"
             ? "gemini_analyze_camera"
             : "verkada_api_call";
     // Step name follows from the action: "analyze", "post_helix",
@@ -457,10 +473,13 @@ function FlowEditorInner() {
     if (typeof tpl.name === "string" && tpl.name.trim()) setName(tpl.name);
     const tt = (flow.trigger_type ?? "verkada_webhook") as
       | "verkada_webhook"
-      | "schedule";
+      | "schedule"
+      | "verkada_audit";
     setTriggerType(tt);
     if (tt === "schedule") {
       setSchedule(scheduleStateFromConfig(flow.trigger_config ?? {}));
+    } else if (tt === "verkada_audit") {
+      setAudit(auditStateFromConfig(flow.trigger_config ?? {}));
     } else {
       setTrigger(triggerStateFromConfig(flow.trigger_config ?? {}));
     }
@@ -763,7 +782,9 @@ function FlowEditorInner() {
         trigger_config:
           triggerType === "schedule"
             ? scheduleStateToConfig(schedule)
-            : triggerStateToConfig(trigger),
+            : triggerType === "verkada_audit"
+              ? auditStateToConfig(audit)
+              : triggerStateToConfig(trigger),
         onAddChild: () => setPicker({ sourceId: TRIGGER_ID, branch: null }),
         onRunNow: !isNew && flowId ? handleRunFromCanvas : undefined,
         runActive: !!activeRunId,
@@ -1142,7 +1163,9 @@ function FlowEditorInner() {
                 ? "Save the flow first to test it"
                 : triggerType === "schedule"
                   ? "Save and fire this scheduled flow right now"
-                  : "Save and run this flow with a past webhook payload"
+                  : triggerType === "verkada_audit"
+                    ? "Save and run this flow with a past audit-log entry"
+                    : "Save and run this flow with a past webhook payload"
             }
             className="text-sm px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-slate-100 border border-white/15 disabled:opacity-50"
           >
@@ -1276,6 +1299,7 @@ function FlowEditorInner() {
           {testRunOpen && flowId && !isNew && (
             <TestRunModal
               flowId={flowId}
+              auditTrigger={triggerType === "verkada_audit" ? audit : undefined}
               family={trigger.family || null}
               notificationType={trigger.notificationType || null}
               filters={trigger.filters}
@@ -1299,7 +1323,9 @@ function FlowEditorInner() {
               triggerConfig={
                 triggerType === "schedule"
                   ? scheduleStateToConfig(schedule)
-                  : triggerStateToConfig(trigger)
+                  : triggerType === "verkada_audit"
+                    ? auditStateToConfig(audit)
+                    : triggerStateToConfig(trigger)
               }
               nodes={nodes}
               edges={edges}
@@ -1387,10 +1413,17 @@ function FlowEditorInner() {
                       onClick={() => setTriggerType("schedule")}
                       label="Schedule"
                     />
+                    <TriggerKindBtn
+                      active={triggerType === "verkada_audit"}
+                      onClick={() => setTriggerType("verkada_audit")}
+                      label="Audit log"
+                    />
                   </div>
                 </div>
                 {triggerType === "verkada_webhook" ? (
                   <TriggerConfigForm value={trigger} onChange={setTrigger} />
+                ) : triggerType === "verkada_audit" ? (
+                  <AuditTriggerForm value={audit} onChange={setAudit} />
                 ) : (
                   <ScheduleTriggerForm
                     value={schedule}
@@ -1404,8 +1437,10 @@ function FlowEditorInner() {
                 node={selectedNode}
                 allSpecs={actionSpecs.data ?? {}}
                 lockedVerkadaConnectionId={lockedVerkadaConnectionId}
-                triggerFamily={trigger.family}
-                triggerNotificationType={trigger.notificationType}
+                triggerFamily={triggerType === "verkada_audit" ? "audit" : trigger.family}
+                triggerNotificationType={
+                  triggerType === "verkada_audit" ? audit.eventName : trigger.notificationType
+                }
                 triggerCameraId={
                   trigger.filters?.find((f) => f.field === "camera_id")?.value ||
                   undefined

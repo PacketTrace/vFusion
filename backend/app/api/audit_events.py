@@ -14,13 +14,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import Integer, String, and_, case, cast, desc, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit import ingest
+from app.audit import geoip, ingest
 from app.audit.taxonomy import CATEGORIES
 from app.db import SessionLocal, get_session
 from app.models import AuditEvent
@@ -270,11 +270,21 @@ async def poll_status() -> dict[str, Any]:
 
 
 @router.post("/poll")
-async def poll_now() -> dict[str, Any]:
+async def poll_now(request: Request) -> dict[str, Any]:
     """One tick, inline. The worker does this every ten seconds; this is
     for a fresh install that wants to see something now."""
-    await ingest.tick_all(budget_sec=15.0)
+    pool = getattr(request.app.state, "arq_pool", None)
+    await ingest.tick_all(budget_sec=15.0, pool=pool)
     return await ingest.status()
+
+
+@router.get("/geo")
+async def geo(ip: list[str] = Query(default=[])) -> dict[str, Any]:
+    """Rough location per IP address. Cached; see app.audit.geoip."""
+    ips = [i for i in ip if i][:200]
+    if not ips:
+        return {}
+    return await geoip.lookup_many(ips)
 
 
 class BackfillIn(BaseModel):
@@ -387,7 +397,7 @@ async def stats(
         await session.execute(
             select(
                 func.count(),
-                func.count(func.distinct(func.coalesce(A.user_email, A.user_name))),
+                func.count(func.distinct(func.coalesce(A.user_email, A.user_name, A.api_key_name))),
                 func.count(func.distinct(A.ip_address)),
                 func.count(func.distinct(A.device_id)),
                 func.sum(case((A.status_code >= 400, 1), else_=0)),

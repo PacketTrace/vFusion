@@ -650,6 +650,11 @@ export interface Flow {
     family?: string;
     notification_type?: string;
     filters?: Record<string, string>;
+    // Audit-log trigger fields (verkada_audit):
+    category?: string;
+    event_name?: string;
+    actor?: string;
+    include_self?: boolean;
     // Schedule fields:
     kind?: "interval" | "daily" | "weekly";
     every_minutes?: number;

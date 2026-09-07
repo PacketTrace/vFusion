@@ -43,13 +43,13 @@ export default function TriggerSetupModal({
   cameraLabel: string;
   trigger: TriggerConfigState;
   onApply: (next: {
-    triggerType: "verkada_webhook" | "schedule";
+    triggerType: "verkada_webhook" | "schedule" | "verkada_audit";
     trigger: TriggerConfigState;
     schedule?: ScheduleConfigState;
   }) => void;
   onClose: () => void;
 }) {
-  const [kind, setKind] = useState<"camera" | "schedule">("camera");
+  const [kind, setKind] = useState<"camera" | "schedule" | "audit">("camera");
   const [objects, setObjects] = useState("person");
   const [everyMinutes, setEveryMinutes] = useState(60);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -64,6 +64,12 @@ export default function TriggerSetupModal({
   }, [onClose]);
 
   const apply = () => {
+    if (kind === "audit") {
+      // The editor's audit form starts from its defaults; the webhook
+      // config rides along untouched so switching back finds it.
+      onApply({ triggerType: "verkada_audit", trigger });
+      return;
+    }
     if (kind === "schedule") {
       onApply({
         triggerType: "schedule",
@@ -113,7 +119,7 @@ export default function TriggerSetupModal({
         </div>
 
         <div className="p-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <KindCard
               active={kind === "camera"}
               title="When the camera sees something"
@@ -125,6 +131,12 @@ export default function TriggerSetupModal({
               title="On a schedule"
               blurb="Runs on a timer whether or not anything happened."
               onClick={() => setKind("schedule")}
+            />
+            <KindCard
+              active={kind === "audit"}
+              title="When something happens in Command"
+              blurb="Runs on an audit-log entry: a login, a live stream, a door change, an API call. Pick the event in the trigger panel."
+              onClick={() => setKind("audit")}
             />
           </div>
 
@@ -154,6 +166,22 @@ export default function TriggerSetupModal({
                 Narrower than "anything moving" means fewer runs and a smaller
                 Gemini bill. You can change it, or filter on anything else, in
                 the trigger panel behind this.
+              </p>
+            </div>
+          ) : kind === "audit" ? (
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">
+                Runs on audit-log entries
+              </div>
+              <p className="text-xs text-slate-300">
+                Anything Command records: a user starting a live stream, a door
+                being modified, a login, an API call. Choose the category, the
+                event and who did it in the trigger panel behind this; the flow
+                sees the entry as <code className="font-mono text-slate-200">trigger</code>,
+                with the device under <code className="font-mono text-slate-200">trigger.data</code>.
+              </p>
+              <p className="text-[10px] text-slate-500 mt-2">
+                Fires within ten seconds of the entry appearing. Backfilled history never fires.
               </p>
             </div>
           ) : (

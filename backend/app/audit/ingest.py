@@ -207,6 +207,14 @@ def _strings_in(value: Any, out: list[str], budget: int = 60) -> None:
             _strings_in(v, out, budget)
 
 
+_PLACEHOLDERS = ("-", "unknown", "unknown user", "unknown user name", "unknown user email", "n/a", "none", "null")
+
+
+def _real_or_blank(value: Any) -> str:
+    s = str(value or "").strip()
+    return "" if s.casefold() in _PLACEHOLDERS or s.casefold().startswith("unknown user") else s
+
+
 def _clip(value: Any, n: int) -> str | None:
     if value in (None, ""):
         return None
@@ -240,10 +248,11 @@ def normalize(
     except (TypeError, ValueError):
         response_size = None
 
-    user_name = (entry.get("user_name") or "").strip()
-    if user_name == "-":
-        user_name = ""
-    user_email = (entry.get("user_email") or "").strip()
+    # Verkada fills the user fields with literal placeholders on rows that
+    # have no user -- "unknown user name", "unknown user email", "-" --
+    # which would otherwise become a "user" with 28 events.
+    user_name = _real_or_blank(entry.get("user_name"))
+    user_email = _real_or_blank(entry.get("user_email"))
     user_id = (entry.get("user_id") or "").strip()
     if user_id == "00000000-0000-0000-0000-000000000000":
         user_id = ""
@@ -306,9 +315,10 @@ def normalize(
     }
 
 
-async def upsert_rows(session: AsyncSession, rows: list[dict[str, Any]]) -> int:
-    """Insert what is new, skip what is already there. Returns inserted."""
-    inserted = 0
+async def upsert_rows(session: AsyncSession, rows: list[dict[str, Any]]) -> list[str]:
+    """Insert what is new, skip what is already there. Returns the
+    fingerprints that were actually inserted."""
+    inserted: list[str] = []
     seen: set[str] = set()
     batch: list[dict[str, Any]] = []
     for row in rows:
@@ -323,11 +333,113 @@ async def upsert_rows(session: AsyncSession, rows: list[dict[str, Any]]) -> int:
             pg_insert(AuditEvent)
             .values(chunk)
             .on_conflict_do_nothing(index_elements=["fingerprint"])
-            .returning(AuditEvent.id)
+            .returning(AuditEvent.fingerprint)
         )
         result = await session.execute(stmt)
-        inserted += len(result.fetchall())
+        inserted.extend(str(r[0]) for r in result.fetchall())
     return inserted
+
+
+# ---- flows ----------------------------------------------------------------
+
+PAYLOAD_TOP = (
+    "timestamp", "event_name", "event_description", "category", "actor",
+    "user_id", "user_name", "user_email", "ip_address", "api_key_name",
+    "method", "url_path", "status_code", "is_self", "org_id",
+)
+
+
+def trigger_payload(row: dict[str, Any] | AuditEvent, row_id: Any = None) -> dict[str, Any]:
+    """What a flow sees as ``trigger`` when an audit row starts it.
+
+    Who / when / what at the top level; the *target* -- the device and
+    Verkada's ``details`` -- under ``data``, which is where webhook flows
+    already look, so ``{{ trigger.data.camera_id }}`` keeps meaning the
+    same thing whichever trigger started the flow.
+    """
+    get = (lambda k: row.get(k)) if isinstance(row, dict) else (lambda k: getattr(row, k, None))
+    out: dict[str, Any] = {"audit": True, "id": str(row_id or get("id") or "")}
+    for k in PAYLOAD_TOP:
+        v = get(k)
+        out[k] = v.isoformat() if isinstance(v, datetime) else v
+    devices = get("devices") or []
+    details = get("details") or {}
+    data: dict[str, Any] = dict(details) if isinstance(details, dict) else {}
+    data.update(
+        {
+            "device_id": get("device_id"),
+            "device_name": get("device_name"),
+            "device_type": get("device_type"),
+            "device_site": get("device_site"),
+        }
+    )
+    if (get("device_type") or "").lower() == "camera" and get("device_id"):
+        data["camera_id"] = get("device_id")
+    out["data"] = data
+    out["devices"] = devices
+    return out
+
+
+async def dispatch_flows(rows: list[dict[str, Any]], pool: Any) -> int:
+    """Start every enabled ``verkada_audit`` flow whose trigger matches
+    one of these freshly inserted rows. Mirrors the webhook ingest path
+    so the run engine does not know audit rows exist."""
+    if not rows:
+        return 0
+    from app.engine.triggers import matches_audit
+    from app.models import Flow, Run
+
+    fired = 0
+    async with SessionLocal() as session:
+        flows = (
+            await session.execute(
+                select(Flow).where(Flow.enabled.is_(True), Flow.trigger_type == "verkada_audit")
+            )
+        ).scalars().all()
+        if not flows:
+            return 0
+        ids = {
+            fp: rid
+            for fp, rid in (
+                await session.execute(
+                    select(AuditEvent.fingerprint, AuditEvent.id).where(
+                        AuditEvent.fingerprint.in_([r["fingerprint"] for r in rows])
+                    )
+                )
+            ).all()
+        }
+        pending: list[Run] = []
+        for row in rows:
+            payload = trigger_payload(row, ids.get(row["fingerprint"]))
+            for flow in flows:
+                if not matches_audit(flow.trigger_config or {}, payload):
+                    continue
+                run = Run(flow_id=flow.id, webhook_event_id=None, status="pending", input=payload)
+                session.add(run)
+                pending.append(run)
+        if not pending:
+            return 0
+        await session.commit()
+        for run in pending:
+            if pool is not None:
+                await pool.enqueue_job("run_flow", str(run.id))
+            fired += 1
+    if fired:
+        logger.info("audit: started %d flow run(s)", fired)
+    return fired
+
+
+async def scrub_placeholder_users() -> None:
+    """One-shot repair for rows stored before placeholder user strings
+    were recognised. Idempotent and cheap once clean."""
+    from sqlalchemy import update
+
+    async with SessionLocal() as session:
+        for col in (AuditEvent.user_name, AuditEvent.user_email):
+            await session.execute(
+                update(AuditEvent).where(col.ilike("unknown user%")).values({col.key: None})
+            )
+        await session.commit()
 
 
 # ---- talking to Verkada ---------------------------------------------------
@@ -443,7 +555,7 @@ def _ensure_backfill(state: dict[str, Any], now: int, days: int) -> None:
 
 async def tick_connection(
     conn: Connection, api_key: str, region: str | None, own_keys: list[str],
-    *, budget_sec: float = TICK_BUDGET_SEC,
+    *, budget_sec: float = TICK_BUDGET_SEC, pool: Any = None,
 ) -> dict[str, Any]:
     """One ten-second cycle for one connection. Never raises."""
     state = await load_state(conn.id)
@@ -476,6 +588,9 @@ async def tick_connection(
         )
         requests += n
         rows.extend(entries)
+        # Only rows the forward poll found are "happening now". Backlog
+        # windows are history, and history must not start flows.
+        live_fps = {_fingerprint(e) for e in entries}
         if truncated and oldest is not None and oldest > start:
             # Newest-first pages: we have [oldest, now], we owe [start, oldest).
             state["backlog"] = [[start, oldest, "processed"]] + list(state.get("backlog") or [])
@@ -514,8 +629,15 @@ async def tick_connection(
                 r for r in (normalize(e, conn.id, own_keys) for e in rows) if r is not None
             ]
             async with SessionLocal() as session:
-                inserted = await upsert_rows(session, normalized)
+                new_fps = set(await upsert_rows(session, normalized))
                 await session.commit()
+            inserted = len(new_fps)
+            live_new = [r for r in normalized if r["fingerprint"] in new_fps and r["fingerprint"] in live_fps]
+            if live_new:
+                try:
+                    state["flows_fired"] = int(state.get("flows_fired") or 0) + await dispatch_flows(live_new, pool)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("audit flow dispatch failed: %s", e)
         state["last_rows"] = len(rows)
         state["last_inserted"] = inserted
         state["inserted"] = int(state.get("inserted") or 0) + inserted
@@ -529,26 +651,32 @@ async def tick_connection(
     return state
 
 
-async def tick_all(*, budget_sec: float = TICK_BUDGET_SEC) -> list[dict[str, Any]]:
+async def tick_all(*, budget_sec: float = TICK_BUDGET_SEC, pool: Any = None) -> list[dict[str, Any]]:
     """One cycle across every Verkada connection."""
     async with SessionLocal() as session:
         targets = await _verkada_connections(session)
     own_keys = [k for _, k, _ in targets]
     results = []
     for conn, key, region in targets:
-        results.append(await tick_connection(conn, key, region, own_keys, budget_sec=budget_sec))
+        results.append(
+            await tick_connection(conn, key, region, own_keys, budget_sec=budget_sec, pool=pool)
+        )
     return results
 
 
-async def run_loop(*, seconds: float = 55.0, interval: float = 10.0) -> dict[str, Any]:
+async def run_loop(*, seconds: float = 55.0, interval: float = 10.0, pool: Any = None) -> dict[str, Any]:
     """Tick every ``interval`` seconds for about ``seconds``. The arq
     cron fires this once a minute, so the two together give a ten-second
     cadence without a long-lived process."""
+    try:
+        await scrub_placeholder_users()
+    except Exception as e:  # noqa: BLE001
+        logger.info("audit: placeholder scrub skipped: %s", e)
     stop = time.monotonic() + seconds
     ticks = 0
     while True:
         started = time.monotonic()
-        await tick_all()
+        await tick_all(pool=pool)
         ticks += 1
         if time.monotonic() + interval > stop:
             break

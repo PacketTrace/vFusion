@@ -137,7 +137,9 @@ function iconFor(step: TemplateSummaryStep): string {
 function displayLabel(step: TemplateSummaryStep): string {
   if (step.label) return step.label;
   if (step.kind === "trigger") {
-    return step.trigger_type === "schedule" ? "Schedule" : "Webhook";
+    if (step.trigger_type === "schedule") return "Schedule";
+    if (step.trigger_type === "verkada_audit") return "Audit log";
+    return "Webhook";
   }
   if (step.kind === "condition") return "Condition";
   return step.action_type ?? "Action";

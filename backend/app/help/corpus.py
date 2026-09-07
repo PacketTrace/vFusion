@@ -84,7 +84,7 @@ Verkada does not send a webhook for.
 composing analytics and demo data, this help, and video generation all
 use the single Gemini connection.
 
-**Where things are.** Explorer is what is happening in the org: the Webhooks tab is incoming events, the Audit log tab is a local copy of Command's audit log (pulled every ten seconds, filterable by user / event / device / IP / key / endpoint, CSV export), and Insights charts the same data with drill-down. Automate holds
+**Where things are.** Explorer is what is happening in the org: the Webhooks tab is incoming events, the Audit log tab is a local copy of Command's audit log (pulled every ten seconds, filterable by user / event / device / IP / key / endpoint, CSV export), and Insights charts the same data with drill-down. Audit rows can also start flows: pick the **Audit log** trigger in the flow editor, choose a category / event / actor and optional field filters, and the flow runs within ten seconds of the action happening in Command (backfilled history never fires flows). Automate holds
 flow templates, analytics, your existing flows and their runs. Workbench
 has the analytics builder, the API runner and video generation. Helix
 manages event types and demo data. Virtual camera serves footage to a

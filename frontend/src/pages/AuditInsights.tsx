@@ -4,6 +4,7 @@ import { apiGet, AuditStats, AuditStatus } from "../lib/api";
 import { CATEGORY_LABEL, categoryColor, filtersKey, filtersToApiParams } from "../lib/auditFilters";
 import { useAuditFilters } from "../lib/useAuditFilters";
 import { fmtNum, fmtRel } from "../lib/format";
+import { geoLabel, useGeo } from "../lib/useGeo";
 import AuditFilterBar, { ActiveChips } from "../components/audit/AuditFilterBar";
 import { CategoryBadge, MethodBadge, statusTone } from "../components/audit/AuditBadges";
 import { HBars, Legend, StackedColumns, StatTile, WeekHeatmap } from "../components/audit/charts";
@@ -32,6 +33,7 @@ export default function AuditInsights() {
 
   const s = stats.data;
   const categories = s?.categories.map((c) => c.category) ?? [];
+  const geo = useGeo(s?.ips.map((i) => i.ip) ?? []);
 
   return (
     <div className="flex flex-col gap-3">
@@ -191,6 +193,7 @@ export default function AuditInsights() {
                   <thead className="text-slate-500">
                     <tr>
                       <th className="text-left font-normal pb-1">Address</th>
+                      <th className="text-left font-normal pb-1">Location</th>
                       <th className="text-right font-normal pb-1">Actors</th>
                       <th className="text-right font-normal pb-1">Events</th>
                       <th className="text-right font-normal pb-1">Last</th>
@@ -204,6 +207,7 @@ export default function AuditInsights() {
                         className="cursor-pointer hover:bg-white/5 transition-colors"
                       >
                         <td className="py-1 font-mono text-slate-200">{ip.ip}</td>
+                        <td className="py-1 text-slate-400 truncate max-w-[12rem]">{geoLabel(geo[ip.ip]) ?? "—"}</td>
                         <td className="py-1 text-right tabular-nums text-slate-300">{ip.users}</td>
                         <td className="py-1 text-right tabular-nums text-slate-300">{fmtNum(ip.count)}</td>
                         <td className="py-1 text-right text-slate-500">{fmtRel(ip.last)}</td>
