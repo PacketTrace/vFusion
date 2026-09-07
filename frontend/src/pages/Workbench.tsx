@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import ApiRunner from "./ApiRunner";
 import VideoStudio from "./VideoStudio";
 import Byoa from "./Byoa";
+import LiveCameras from "./LiveCameras";
 
 /**
  * The Workbench: the bench you try things on before committing them to
@@ -15,6 +16,7 @@ import Byoa from "./Byoa";
 const TABS = [
   { key: "analytics", label: "Analytics builder" },
   { key: "api", label: "API runner" },
+  { key: "live", label: "Live cameras" },
   { key: "video", label: "Video library" },
 ] as const;
 
@@ -26,6 +28,8 @@ const BLURB: Record<string, string> = {
   analytics:
     "A smoke test for an idea. Run a prompt once against your own cameras and see whether it actually works here — the right answer, on your scenes, in your lighting — before building a flow on top of it.",
   api: "Run any Verkada endpoint against a connection you already have, and read the response properly.",
+  live:
+    "Watch any camera live, in here. Useful for checking a camera is pointed where you think it is before you write an analytic against it.",
   video: "Clips for the virtual camera and for live Helix demos — upload your own, or generate footage that looks like it came off a fixed camera.",
 };
 
@@ -45,7 +49,13 @@ export default function Workbench() {
 
   // ?tab=byoa predates these tabs and means the analytics builder.
   const tab =
-    requested === "api" ? "api" : requested === "video" ? "video" : "analytics";
+    requested === "api"
+      ? "api"
+      : requested === "video"
+        ? "video"
+        : requested === "live"
+          ? "live"
+          : "analytics";
   const setTab = (next: string) => {
     const p = new URLSearchParams(searchParams);
     p.set("tab", next);
@@ -77,6 +87,7 @@ export default function Workbench() {
 
       {tab === "analytics" && <Byoa />}
       {tab === "api" && <ApiRunner />}
+      {tab === "live" && <LiveCameras />}
       {tab === "video" && <VideoStudio />}
     </div>
   );

@@ -103,6 +103,46 @@ async def get_stream_key(
     return jwt
 
 
+def stream_url(
+    *,
+    base_url: str,
+    org_id: str,
+    camera_id: str,
+    jwt: str,
+    resolution: str = "high_res",
+    start_epoch: int | None = None,
+    end_epoch: int | None = None,
+    codec: str | None = None,
+    transcode: bool | None = None,
+) -> str:
+    """The HLS playlist URL for one camera.
+
+    Live and historical footage are the same endpoint; omitting the time
+    window is what asks for the live edge. There is no ``live=true``, so
+    a caller that leaves ``start_epoch`` unset gets whatever the camera
+    is seeing right now.
+
+    Every caller embeds a credential in this URL, which is why it is
+    built in exactly one place. The result is unsafe to log or surface:
+    run it through ``redact`` first.
+    """
+    url = (
+        f"{normalize_base_url(base_url)}/stream/cameras/v1/footage/stream/stream.m3u8"
+        f"?org_id={org_id}"
+        f"&camera_id={camera_id}"
+        f"&resolution={resolution}"
+        f"&jwt={jwt}"
+        f"&type=stream"
+    )
+    if codec:
+        url += f"&codec={codec}"
+    if transcode is not None:
+        url += f"&transcode={'true' if transcode else 'false'}"
+    if start_epoch is not None and end_epoch is not None:
+        url += f"&start_time={start_epoch}&end_time={end_epoch}"
+    return url
+
+
 async def grab_video_clip(
     *,
     api_key: str,
@@ -163,18 +203,16 @@ async def grab_video_clip(
         key = await get_stream_key(
             api_key, org_id, force_refresh=(attempt == 2), base_url=base
         )
-        url = (
-            f"{base}/stream/cameras/v1/footage/stream/stream.m3u8"
-            f"?org_id={org_id}"
-            f"&camera_id={camera_id}"
-            f"&resolution=high_res"
-            f"&jwt={key}"
-            f"&type=stream"
-            f"&codec=hevc"
-            f"&transcode=false"
+        url = stream_url(
+            base_url=base,
+            org_id=org_id,
+            camera_id=camera_id,
+            jwt=key,
+            codec="hevc",
+            transcode=False,
+            start_epoch=None if live else start_epoch,
+            end_epoch=None if live else end_epoch,
         )
-        if not live:
-            url += f"&start_time={start_epoch}&end_time={end_epoch}"
         video_args = [
             "-c:v", "libx264",
             "-preset", "veryfast",
@@ -287,19 +325,17 @@ async def grab_still_frame(
         key = await get_stream_key(
             api_key, org_id, force_refresh=(attempt == 2), base_url=base
         )
-        url = (
-            f"{base}/stream/cameras/v1/footage/stream/stream.m3u8"
-            f"?org_id={org_id}"
-            f"&camera_id={camera_id}"
-            f"&resolution=high_res"
-            f"&jwt={key}"
-            f"&type=stream"
+        # A few seconds, not an instant: HLS is segmented, so a
+        # zero-length window can land between segments and produce
+        # nothing at all.
+        url = stream_url(
+            base_url=base,
+            org_id=org_id,
+            camera_id=camera_id,
+            jwt=key,
+            start_epoch=start_epoch,
+            end_epoch=None if start_epoch is None else start_epoch + 4,
         )
-        if start_epoch is not None:
-            # A few seconds, not an instant: HLS is segmented, so a
-            # zero-length window can land between segments and produce
-            # nothing at all.
-            url += f"&start_time={start_epoch}&end_time={start_epoch + 4}"
         cmd = [
             "ffmpeg", "-y",
             "-loglevel", "error",

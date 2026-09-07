@@ -18,6 +18,8 @@ from app.api import help as help_api
 from app.api import security as security_api
 from app.api import video as video_api
 from app.api import rtsp as rtsp_api
+from app.api import live as live_api
+from app.live import hls as live_hls
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
 from app.rtsp import settings as rtsp_settings
@@ -74,6 +76,8 @@ async def lifespan(app: FastAPI):
         set_epoch(int(_raw_epoch or 0))
     except (TypeError, ValueError):
         set_epoch(0)
+    # Live HLS segments belong to an ffmpeg that no longer exists.
+    live_hls.clear_stale_dirs()
     # Re-classify unknowns against the latest taxonomy.
     await reclassify_unknowns()
     # Seed Gemini pricing so cost_for() has rows on first request, even
@@ -202,6 +206,7 @@ app.include_router(help_api.router)
 app.include_router(security_api.router)
 app.include_router(video_api.router)
 app.include_router(settings_api.router)
+app.include_router(live_api.router)
 
 
 @app.get("/api/health")
