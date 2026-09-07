@@ -8,6 +8,7 @@ import {
   Connection,
   HelixEventType,
 } from "../lib/api";
+import SectionHeading from "../components/SectionHeading";
 import HelixSendModal from "../components/HelixSendModal";
 import PublishedEvents from "../components/PublishedEvents";
 import HelixEventTypeEditor from "../components/HelixEventTypeEditor";
@@ -407,10 +408,10 @@ function DemoPanel({ connId }: { connId: string }) {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
-          Describe the integration
+        <div className="mb-1">
+          <SectionHeading>Describe the integration</SectionHeading>
         </div>
-        <p className="text-[11px] text-slate-500 mb-3">
+        <p className="text-xs text-slate-400 mb-3">
           What system would be writing to Helix if it were connected? vFusion
           designs the event type it would use and fills a camera's timeline
           with believable events, so the value is visible before anyone builds
@@ -585,10 +586,10 @@ function DemoPanel({ connId }: { connId: string }) {
 
       {draft && (
         <Card>
-          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
-            Where the events go
+          <div className="mb-1">
+            <SectionHeading>Where the events go</SectionHeading>
           </div>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-xs text-slate-400 mb-3">
             Both ways of filling a timeline write into this camera and this
             event type.
           </p>
@@ -662,8 +663,8 @@ function DemoPanel({ connId }: { connId: string }) {
           )}
 
           <div className="mt-5 pt-4 border-t border-white/10">
-            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-              How to fill it
+            <div className="mb-2">
+              <SectionHeading>How to fill it</SectionHeading>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {(
@@ -822,8 +823,8 @@ function DemoPanel({ connId }: { connId: string }) {
 
       {(runs.data ?? []).length > 0 && (
         <Card>
-          <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
-            Past runs
+          <div className="mb-1">
+            <SectionHeading>Past runs</SectionHeading>
           </div>
           <p className="text-xs text-slate-400 mb-3">
             Running again posts a fresh set with the same shape — different

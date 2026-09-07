@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import SectionHeading from "../components/SectionHeading";
+
 import {
   API_BASE,
   apiGet,
@@ -84,20 +86,6 @@ const GEMINI_MODELS: ModelChoice[] = [
 const DEFAULT_PROMPT = "";
 const PROMPT_PLACEHOLDER = "Do you see a spill on the ground?";
 
-
-/** A top-level section of the bench.
- *
- *  These were 11px uppercase, the same treatment as the small labels
- *  inside cards — so the page's three structural landmarks were set
- *  smaller than the body text underneath them. Uppercasing a whole
- *  sentence is what made them read as captions; sentence case at
- *  heading weight reads as the heading it is. Matches the Section
- *  helper on the Templates page. */
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-sm font-semibold text-slate-100">{children}</h2>
-  );
-}
 
 export default function Byoa() {
   const navigate = useNavigate();
