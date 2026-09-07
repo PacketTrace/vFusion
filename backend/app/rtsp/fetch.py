@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -63,6 +64,26 @@ def _fmt() -> str:
         f"bv*[height<={h}][vcodec^=avc1]+ba/bv*[height<={h}]+ba/"
         f"b[height<={h}]/b"
     )
+
+
+async def _has_video(path: pathlib.Path) -> bool:
+    """Does this file carry a video stream at all?"""
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error",
+        "-select_streams", "v",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        str(path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return False
+    return b"video" in out
 
 
 def recent() -> list[dict[str, Any]]:
@@ -118,16 +139,36 @@ async def _run(job: dict[str, Any]) -> None:
                 pass
             info.unlink(missing_ok=True)
 
-        media = next(
-            (
-                p
-                for p in queue.MEDIA_DIR.glob(f"{job_id}.*")
-                if p.suffix.lower() in queue.VIDEO_SUFFIXES
-            ),
-            None,
-        )
+        # The merged file, not a leftover fragment.
+        #
+        # `bv*+ba` downloads video and audio separately and merges them,
+        # writing intermediates named <id>.f399.webm / <id>.f251.webm.
+        # Those share the merged file's suffix, so a glob on <id>.* that
+        # takes the first match can hand back the AUDIO-only fragment —
+        # which opens fine and then fails at `-map 0:v` with "Stream map
+        # matches no streams", once per restart, forever.
+        candidates = [
+            p
+            for p in queue.MEDIA_DIR.glob(f"{job_id}.*")
+            if p.suffix.lower() in queue.VIDEO_SUFFIXES
+        ]
+        # Exact stem is the merged output; anything with a format id in
+        # the middle is an intermediate yt-dlp did not clean up.
+        media = next((p for p in candidates if p.stem == job_id), None)
+        if media is None:
+            media = next(iter(sorted(candidates, key=lambda p: -p.stat().st_size)), None)
         if media is None:
             raise RuntimeError("nothing downloadable at that URL")
+
+        # Confirm it can actually be played before it becomes a queue
+        # item. A file with no video track is not a clip, and finding
+        # that out at play time means the stream drops instead — the
+        # camera goes offline for a bad download.
+        if not await _has_video(media):
+            raise RuntimeError(
+                "that download has no video track — it may have been "
+                "interrupted, or the URL offers audio only"
+            )
 
         job["title"] = title
         # Handed to the queue by path rather than by re-reading the bytes:

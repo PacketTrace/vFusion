@@ -42,7 +42,7 @@ import time
 from collections import deque
 from typing import Any
 
-from app.rtsp import mediamtx, queue, settings
+from app.rtsp import live, mediamtx, queue, settings
 
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,9 @@ RESTART_DELAY_SEC = 3.0
 
 class Pump:
     def __init__(self) -> None:
+        # Grows while a live URL keeps failing, resets the moment one
+        # resolves.
+        self._live_backoff = 5.0
         self._task: asyncio.Task | None = None
         self._encoder: asyncio.subprocess.Process | None = None
         self._source: asyncio.subprocess.Process | None = None
@@ -274,7 +277,57 @@ class Pump:
         """Called with (item, unix_seconds) as each source begins."""
         self._on_start = fn
 
+    async def _run_live(self) -> None:
+        """Mirror a continuous source for as long as it lasts.
+
+        Resolved fresh every time rather than cached. A manifest URL is
+        signed and expires, so the reconnect that matters is the one
+        after it has -- reusing the old URL would retry forever against
+        a link that can no longer work.
+        """
+        url = str(settings.get().get("live_url") or "").strip()
+        if not url:
+            # Nothing to mirror. Standby rather than a tight loop, and it
+            # ends as soon as the setting changes.
+            await self._standby()
+            return
+
+        try:
+            info = await live.resolve(url)
+        except Exception as e:  # noqa: BLE001 — resolver, network, timeout
+            detail = str(e) if isinstance(e, live.LiveError) else repr(e)
+            self.last_error = f"live source: {detail}"
+            self._log(f"live resolve failed: {detail}")
+            # Backoff, not a spin. A dead URL should not hammer somebody
+            # else's server once a second for a week.
+            self._live_backoff = min(60.0, max(5.0, self._live_backoff * 2))
+            await asyncio.sleep(self._live_backoff)
+            return
+
+        self._live_backoff = 5.0
+        self.now_playing = {
+            "id": "live",
+            "name": info.get("title") or url,
+            "kind": "live",
+        }
+        try:
+            await self._run_source(
+                lambda afd: _live_cmd(info["stream"], bool(info["audio"]), afd)
+            )
+        finally:
+            self.now_playing = None
+        # Falling out means the source ended or dropped. The outer loop
+        # calls back in and resolves again — deliberately NOT advancing
+        # anything, which is the difference between "clip finished" and
+        # "live source died". They look identical to ffmpeg and mean
+        # opposite things.
+        await asyncio.sleep(1.0)
+
     async def _play_next(self) -> None:
+        if str(settings.get().get("source") or "queue") == "live":
+            await self._run_live()
+            return
+
         # Cleared before the check, not inside standby: an upload landing
         # between "queue is empty" and "start waiting" would otherwise be
         # missed, and standby has no other reason to ever end.
@@ -297,14 +350,24 @@ class Pump:
         limit = 0.0
         if item.get("kind") == "video" and not item.get("has_audio"):
             limit = await queue.ensure_duration(item)
+        ran = 0
         try:
-            await self._run_source(lambda afd: _clip_cmd(item, afd, limit))
+            ran = await self._run_source(lambda afd: _clip_cmd(item, afd, limit))
         finally:
             self.now_playing = None
-        # Marked played even if ffmpeg failed. A clip that cannot be
-        # decoded would otherwise be retried forever, and the stream
-        # would never move past it.
-        if settings.get().get("loop"):
+        # A clip that exited immediately did not play. With loop on it
+        # would be requeued straight back to the front and fail again —
+        # which is a hot restart loop, and every restart is a moment the
+        # Connector can see the camera drop. Requeue only what actually
+        # ran; anything else is retired with the reason attached.
+        if ran < 1000:
+            self.last_error = (
+                f"{item.get('name') or item['id']} exited immediately and was "
+                "taken out of the queue — the file may have no video track"
+            )
+            self.log.append(self.last_error)
+            await queue.mark_played(item["id"])
+        elif settings.get().get("loop"):
             await queue.requeue(item["id"])
         else:
             await queue.mark_played(item["id"])
@@ -333,11 +396,17 @@ class Pump:
                 await _kill(proc)
             self._source = None
 
-    async def _run_source(self, build: Any) -> None:
+    async def _run_source(self, build: Any) -> int:
+        """Returns how many milliseconds the source actually ran.
+
+        The caller needs it to tell "played and finished" from "exited
+        immediately", which look identical from the outside and mean
+        opposite things for whether to play it again.
+        """
         proc = await self._spawn(build)
         if proc is None:
             await asyncio.sleep(1.0)
-            return
+            return 0
         started = time.monotonic()
         # Wall clock, not monotonic: this is the number a Helix event
         # timestamp is derived from, and the two have to be in the same
@@ -349,6 +418,7 @@ class Pump:
             except Exception:  # noqa: BLE001 — a listener must never
                 # take the stream down with it.
                 logger.warning("source-start listener failed", exc_info=True)
+        ran = 0
         try:
             await proc.wait()
         finally:
@@ -363,6 +433,7 @@ class Pump:
             )
             # From here until the next source produces, the pipe is dry.
             self._idle_since = time.monotonic()
+        return ran
 
     async def _spawn(self, build: Any) -> asyncio.subprocess.Process | None:
         """Start a source. ``build`` takes the audio fd and returns argv.
@@ -527,6 +598,37 @@ def _clip_cmd(item: dict[str, Any], afd: int, limit: float = 0.0) -> list[str]:
 
     cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
     cmd += ["-map", audio_map] + _pcm_out(afd, seconds)
+    return cmd
+
+
+def _live_cmd(stream: str, audio: bool, afd: int) -> list[str]:
+    """A continuous source, read at its own pace.
+
+    No ``-re``. A file has to be throttled to wall clock or ffmpeg
+    decodes it as fast as it can; a live stream already arrives in real
+    time, and pacing it again makes it drift behind.
+    """
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        # A blip in somebody else's CDN should be a stutter, not a
+        # restart: every restart is a moment the Connector can see the
+        # camera drop.
+        "-reconnect", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_on_network_error", "1",
+        "-reconnect_delay_max", "5",
+        "-rw_timeout", "15000000",
+        "-i", stream,
+    ]
+    if audio:
+        audio_map = "0:a"
+    else:
+        cmd += _silence()
+        audio_map = "1:a"
+    cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
+    # No length: silence against a live source is unbounded on purpose,
+    # since the thing it accompanies has no end either.
+    cmd += ["-map", audio_map] + _pcm_out(afd, None)
     return cmd
 
 

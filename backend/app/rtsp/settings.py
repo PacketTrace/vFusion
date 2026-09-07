@@ -129,6 +129,12 @@ def _blank() -> dict[str, Any]:
         "api_username": "vfusionapi",
         "api_password": "",
         "loop": False,
+        # "queue" or "live". Not a queue item: a live source never ends
+        # and cannot loop, so "third of five, then repeat" has no
+        # meaning. The camera is either playing its queue or mirroring
+        # something continuous.
+        "source": "queue",
+        "live_url": "",
         # "onvif" or "rtsp". Not a presentation choice: ONVIF needs a
         # sub-stream and a snapshot to be worth choosing, and plain RTSP
         # needs neither, so the mode decides what the encoder produces
