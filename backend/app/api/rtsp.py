@@ -7,6 +7,8 @@ change what the pump is told and report back what it is doing.
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -134,36 +136,58 @@ async def upload(
     file: UploadFile = File(...),
     seconds: int | None = Form(default=None),
 ) -> dict:
-    # Read in chunks and stop at the limit, rather than buffering the
-    # whole body and measuring it afterwards. The old order meant an
-    # oversized upload was fully held in memory before being refused —
-    # a five-gigabyte mistake cost five gigabytes of RAM to say no to,
-    # and raising the cap to a gigabyte doubles what that is worth
-    # getting right.
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await file.read(1024 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
-            )
-        chunks.append(chunk)
-    data = b"".join(chunks)
-    if not data:
-        raise HTTPException(status_code=400, detail="empty file")
+    # Streamed to disk, never assembled in memory.
+    #
+    # The previous version read the body in chunks and then joined them,
+    # which held the whole file TWICE at peak — a 900 MB upload needed
+    # 1.8 GB, and the process died before it could refuse anything. The
+    # version before that held it once and measured it afterwards, so an
+    # oversized upload was fully buffered just to be rejected. Writing
+    # as it arrives costs neither.
     if queue.kind_for(file.filename or "") is None:
         raise HTTPException(
             status_code=400,
             detail="Only video (mp4, mov, mkv, webm, ts) and images (jpg, png, webp).",
         )
+    item_id = uuid.uuid4().hex
+    suffix = Path(file.filename or "").suffix.lower()
+    stored = queue.MEDIA_DIR / f"{item_id}{suffix}"
+    total = 0
     try:
-        entry = await queue.add(file.filename or "upload", data, seconds)
+        queue.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        with stored.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            "file is larger than "
+                            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+                        ),
+                    )
+                out.write(chunk)
+        if total == 0:
+            raise HTTPException(status_code=400, detail="empty file")
+    except HTTPException:
+        # A half-written file is not a clip. Leaving it would put a
+        # truncated video in MEDIA_DIR with nothing pointing at it.
+        stored.unlink(missing_ok=True)
+        raise
+    except OSError as e:
+        stored.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"could not store upload: {e}")
+
+    try:
+        # The bytes are already where they need to be; this only records
+        # them. probe() reads the file from disk, which is what it did
+        # before too.
+        entry = await queue.register(stored, file.filename or "upload", seconds)
     except (ValueError, RuntimeError) as e:
+        stored.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {k: v for k, v in entry.items() if k != "path"}
 

@@ -151,6 +151,38 @@ def kind_for(filename: str) -> str | None:
     return None
 
 
+async def register(
+    stored: Path, filename: str, seconds: int | None = None
+) -> dict[str, Any]:
+    """Queue a file already written to MEDIA_DIR, of either kind.
+
+    ``add`` takes bytes because that is how an upload used to arrive.
+    Holding a gigabyte of video in memory to write it straight back out
+    is work done for the shape of an interface, and it is what took the
+    process down: the caller now streams to disk and hands the path.
+    """
+    kind = kind_for(filename)
+    if kind is None:
+        raise ValueError(f"unsupported file type: {Path(filename).suffix or filename}")
+    entry = {
+        "id": stored.stem,
+        "name": Path(filename).name,
+        "path": str(stored),
+        "kind": kind,
+        **_probed(await probe(stored) if kind == "video" else (False, 0.0)),
+        "seconds": int(seconds or DEFAULT_IMAGE_SECONDS) if kind == "image" else None,
+        "bytes": stored.stat().st_size if stored.is_file() else 0,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+        "played_at": None,
+    }
+    async with _lock:
+        items = _load()
+        items.append(entry)
+        _save(items)
+    arrived.set()
+    return entry
+
+
 async def add(filename: str, data: bytes, seconds: int | None = None) -> dict[str, Any]:
     kind = kind_for(filename)
     if kind is None:
