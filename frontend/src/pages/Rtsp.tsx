@@ -107,6 +107,17 @@ export default function Rtsp() {
   const [confirmRtsp, setConfirmRtsp] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [pendingDelete, setPendingDelete] = useState<QueueItem | null>(null);
+  // Skip ends what is on air; set aside takes something out of the
+  // running order. Delete was doing the job of all three, and it is the
+  // only one of them that destroys a file.
+  const skip = useMutation({
+    mutationFn: () => apiPost("/api/rtsp/queue/skip", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rtsp-queue"] }),
+  });
+  const setAside = useMutation({
+    mutationFn: (id: string) => apiPost(`/api/rtsp/queue/${id}/set-aside`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rtsp-queue"] }),
+  });
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const status = useQuery({
@@ -690,6 +701,8 @@ export default function Rtsp() {
                 items={pending}
                 nowPlayingId={s?.pump.now_playing?.id ?? null}
                 onDelete={setPendingDelete}
+                onSkip={() => skip.mutate()}
+                onSetAside={(id) => setAside.mutate(id)}
               />
             )}
             {done.length > 0 && (
@@ -927,12 +940,18 @@ function QueueTable({
   nowPlayingId,
   onDelete,
   onRequeue,
+  onSkip,
+  onSetAside,
 }: {
   title?: string;
   items: QueueItem[];
   nowPlayingId: string | null;
   onDelete: (item: QueueItem) => void;
   onRequeue?: (id: string) => void;
+  /** End the item that is on air and move to the next. */
+  onSkip?: () => void;
+  /** Out of the running order, file kept. */
+  onSetAside?: (id: string) => void;
 }) {
   return (
     <div>
@@ -963,6 +982,31 @@ function QueueTable({
                   {i.played_at ? `played ${fmtTime(i.played_at)}` : fmtTime(i.added_at)}
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {/* On air gets Skip; anything else waiting gets Set
+                      aside. They are different questions — "not now"
+                      versus "not in this rotation" — and neither of them
+                      is "destroy the file", which is what the only
+                      available button used to do. */}
+                  {i.id === nowPlayingId && onSkip && (
+                    <button
+                      type="button"
+                      onClick={onSkip}
+                      title="Stop this one and move to the next"
+                      className="text-xs px-2 py-1 mr-1 rounded border border-white/15 text-slate-300 transition-[color,border-color] duration-150 ease-out-strong hover:text-sky-200 hover:border-sky-500/60"
+                    >
+                      Skip
+                    </button>
+                  )}
+                  {i.id !== nowPlayingId && !i.played_at && onSetAside && (
+                    <button
+                      type="button"
+                      onClick={() => onSetAside(i.id)}
+                      title="Take it out of the running order — the file is kept, and Play again brings it back"
+                      className="text-xs px-2 py-1 mr-1 rounded border border-white/15 text-slate-300 transition-[color,border-color] duration-150 ease-out-strong hover:text-slate-100 hover:border-white/30"
+                    >
+                      Set aside
+                    </button>
+                  )}
                   {onRequeue && (
                     <button
                       type="button"

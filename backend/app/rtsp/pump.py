@@ -264,6 +264,21 @@ class Pump:
                     if not line.startswith(("frame=", "size=")):
                         self.last_error = line
 
+    def skip(self) -> bool:
+        """End whatever is playing so the loop moves to the next thing.
+
+        Kills the source, not the encoder: the encoder is what holds the
+        RTSP paths open, and taking it down is what a Connector sees as
+        the camera dropping. The gap between one source and the next is
+        already a thing the pipeline handles — this just makes it happen
+        now instead of at the end of the clip.
+        """
+        proc = self._source
+        if proc is None or proc.returncode is not None:
+            return False
+        asyncio.create_task(_kill(proc))
+        return True
+
     def play_now(self, item: dict[str, Any]) -> None:
         """Jump this clip ahead of the queue at the next source change.
 

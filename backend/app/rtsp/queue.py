@@ -243,13 +243,22 @@ async def adopt(path: Path, display_name: str) -> dict[str, Any]:
     return entry
 
 
-async def mark_played(item_id: str) -> None:
+async def mark_played(item_id: str) -> bool:
+    """Stamp it played. True if there was such an item.
+
+    Returns a bool like remove() and requeue() beside it — a caller that
+    wants to 404 on an unknown id cannot do that against None, and the
+    pump's own callers ignore the result either way.
+    """
+    found = False
     async with _lock:
         items = _load()
         for item in items:
             if item.get("id") == item_id:
                 item["played_at"] = datetime.now(timezone.utc).isoformat()
+                found = True
         _save(items)
+    return found
 
 
 async def requeue(item_id: str) -> bool:

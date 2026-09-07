@@ -208,6 +208,28 @@ async def fetch_url(body: FetchIn) -> dict:
     return await fetch.start(url)
 
 
+@router.post("/queue/skip")
+async def skip_current() -> dict:
+    """Stop what is playing and move to the next item."""
+    return {"skipped": pump_mod.pump.skip()}
+
+
+@router.post("/queue/{item_id}/set-aside")
+async def set_aside(item_id: str) -> dict:
+    """Take an item out of the running order without deleting the file.
+
+    Delete was the only way to stop something playing, which meant
+    "not this week" and "never again" were the same button — and one of
+    them destroys a file you may have uploaded once and cannot easily
+    get back. This moves it to Played, where Play again brings it back.
+    """
+    if not await queue.mark_played(item_id):
+        raise HTTPException(status_code=404, detail="not found")
+    # Nothing is skipped here: if it happens to be on air, it plays out.
+    # Setting aside is about the running order, not about interrupting.
+    return {"ok": True}
+
+
 @router.post("/queue/{item_id}/requeue")
 async def requeue(item_id: str) -> dict:
     if not await queue.requeue(item_id):
