@@ -1,0 +1,13 @@
+{
+  "name": "vfusion-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.0",
+    "@types/node": "^26.4.1",
+    "typescript": "^5.7.2"
+  }
+}

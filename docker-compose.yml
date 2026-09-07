@@ -279,6 +279,35 @@ services:
              npm install --no-audit --no-fund --include=optional &&
              npm run dev -- --host 0.0.0.0"
 
+  # End-to-end tests. Behind a profile, so `docker compose up` never
+  # starts it -- it is a one-shot run against a stack that is already up:
+  #
+  #     docker compose --profile test run --rm e2e
+  #
+  # network_mode: host rather than the compose network, because the app
+  # in the browser talks to VITE_API_BASE, which is a hostname the
+  # operator chose. Resolving it the same way the host does is the only
+  # way that address means the same thing inside the container.
+  e2e:
+    profiles: ["test"]
+    build:
+      context: ./e2e
+    network_mode: host
+    environment:
+      E2E_BASE_URL: ${E2E_BASE_URL:-http://localhost:15173}
+      # The admin password. The tests sign in through the form like a
+      # person does, because the session cookie is the thing being
+      # exercised -- an injected token would skip the bug most likely to
+      # break the app for everyone.
+      E2E_PASSWORD: ${E2E_PASSWORD:-}
+    volumes:
+      # Mounted rather than baked, so editing a test does not mean
+      # rebuilding an image with a browser in it.
+      - ./e2e/tests:/e2e/tests
+      - ./e2e/support:/e2e/support
+      - ./e2e/playwright.config.ts:/e2e/playwright.config.ts
+      - ./e2e/test-results:/e2e/test-results
+
 volumes:
   postgres_data:
   webhook_assets:

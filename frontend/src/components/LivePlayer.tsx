@@ -177,10 +177,13 @@ export default function LivePlayer({
 
   return (
     <div
+      data-testid="live-player"
+      data-phase={phase}
       className={`relative overflow-hidden rounded-lg border border-white/10 bg-black ${className}`}
     >
       <video
         ref={videoRef}
+        data-testid="live-video"
         muted
         playsInline
         controls
@@ -202,7 +205,9 @@ export default function LivePlayer({
           )}
           {phase === "error" && (
             <div className="max-w-md space-y-1">
-              <p className="text-sm text-rose-300">{error}</p>
+              <p data-testid="live-error" className="text-sm text-rose-300">
+                {error}
+              </p>
               <p className="text-[11px] text-slate-500">
                 {session?.name ? `${session.name} · ` : ""}
                 {cameraId.slice(0, 8)}…

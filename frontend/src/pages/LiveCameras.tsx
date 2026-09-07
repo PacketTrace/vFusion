@@ -97,6 +97,9 @@ export default function LiveCameras() {
                 return (
                   <button
                     key={c.camera_id}
+                    data-testid="camera-item"
+                    data-online={online ? "true" : "false"}
+                    data-camera-id={c.camera_id}
                     onClick={() => setSelected(c.camera_id)}
                     className={`w-full px-3 py-2 text-left transition-colors duration-150 ease-out-strong ${
                       isSelected
@@ -144,6 +147,7 @@ export default function LiveCameras() {
               {active.map((s) => (
                 <div
                   key={s.session_id}
+                  data-testid="live-session"
                   className="flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0">
