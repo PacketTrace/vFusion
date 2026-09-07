@@ -585,7 +585,7 @@ def _clip_cmd(item: dict[str, Any], afd: int, limit: float = 0.0) -> list[str]:
     cmd += ["-i", item["path"]]
 
     if item.get("has_audio"):
-        audio_map = "0:a"
+        audio_map = "0:a:0"
     else:
         cmd += _silence()
         audio_map = "1:a"
@@ -596,7 +596,8 @@ def _clip_cmd(item: dict[str, Any], afd: int, limit: float = 0.0) -> list[str]:
         if seconds is None and limit > 0:
             seconds = f"{limit:.3f}"
 
-    cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
+    # First video stream only — see the note on multi-track sources.
+    cmd += ["-map", "0:v:0", "-vf", _normalise()] + _raw_out()
     cmd += ["-map", audio_map] + _pcm_out(afd, seconds)
     return cmd
 
@@ -621,11 +622,12 @@ def _live_cmd(stream: str, audio: bool, afd: int) -> list[str]:
         "-i", stream,
     ]
     if audio:
-        audio_map = "0:a"
+        audio_map = "0:a:0"
     else:
         cmd += _silence()
         audio_map = "1:a"
-    cmd += ["-map", "0:v", "-vf", _normalise()] + _raw_out()
+    # First video stream only — see the note on multi-track sources.
+    cmd += ["-map", "0:v:0", "-vf", _normalise()] + _raw_out()
     # No length: silence against a live source is unbounded on purpose,
     # since the thing it accompanies has no end either.
     cmd += ["-map", audio_map] + _pcm_out(afd, None)
