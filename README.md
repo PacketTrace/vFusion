@@ -37,7 +37,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 - 🧠 **Draft a flow from a sentence** — grounded in your real cameras, doors and event types, validated against the action registry, replayed against stored events so "will this fire?" has evidence.
 - 🎥 **Gemini on your cameras** — a historical clip, a single live frame (about 10× cheaper), or just the audio track (about 8× cheaper). Gemini 3.1 Pro, 2.5 Pro, 2.5 Flash.
 - 🚪 **Verkada actions** — unlock doors, activate and release Access scenarios, post schema-validated Helix events, or call any cataloged endpoint.
-- 🧩 **Eight starter templates** that ask their own questions on install, plus save-as-template, export and import.
+- 🧩 **Starter templates** that ask their own questions on install, plus save-as-template, export and import.
 
 **Try before you build**
 
@@ -45,7 +45,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 - 🔧 **API runner** — every Verkada endpoint, browsable by category, with pickers for the ids you cannot know, run against a connection you already hold.
 - 📺 **Live cameras** in the browser, without the browser ever seeing a Verkada credential.
 
-**New Worlds**
+**New worlds**
 
 - 🎬 **Virtual camera** — serve your own clips, a URL, or a live stream to a Command Connector over RTSP with ONVIF Profile S, on one unbroken stream. Generate footage with Veo that looks like a ceiling dome shot it.
 - 📡 **MQTT** — broker, certificates and credentials generated for you; configure cameras to publish live object positions; watch the boxes, filter the noise, replay a track beside its footage.
