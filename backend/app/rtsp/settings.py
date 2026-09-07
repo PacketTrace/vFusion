@@ -161,6 +161,11 @@ def get() -> dict[str, Any]:
     merged.update({k: data[k] for k in merged if k in data})
     if merged["mode"] not in ("onvif", "rtsp"):
         merged["mode"] = "onvif"
+    # Same reason as mode: this file is hand-editable and is read on
+    # every pump cycle, so an unrecognised value has to mean something
+    # rather than reaching the loop and matching neither branch.
+    if merged["source"] not in ("queue", "live"):
+        merged["source"] = "queue"
     return merged
 
 

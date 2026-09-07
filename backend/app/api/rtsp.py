@@ -33,6 +33,30 @@ class SettingsIn(BaseModel):
     advertise_host: str | None = None
     loop: bool | None = None
     mode: Literal["onvif", "rtsp"] | None = None
+    # What the camera plays. "queue" walks the uploaded clips; "live"
+    # mirrors one continuous source forever. Not a queue item -- a live
+    # source never ends, so "third of five, then repeat" has no meaning
+    # for it, and loop does not apply.
+    source: Literal["queue", "live"] | None = None
+    live_url: str | None = None
+
+
+# What the resolver can actually open. yt-dlp takes a web page, ffmpeg
+# takes a stream; everything else -- a local path, a typo, a "file://"
+# someone pasted from a player -- fails later, inside the pump, where
+# the only evidence is a line in the log. Refusing it here puts the
+# error next to the field that caused it.
+_LIVE_SCHEMES = (
+    "http://",
+    "https://",
+    "rtsp://",
+    "rtsps://",
+    "rtmp://",
+    "rtmps://",
+    "srt://",
+    "udp://",
+    "hls://",
+)
 
 
 class EnableIn(BaseModel):
@@ -68,7 +92,20 @@ async def status() -> dict:
 @router.put("/settings")
 async def update_settings(body: SettingsIn) -> dict:
     entry = {k: v for k, v in body.model_dump().items() if v is not None}
-    was = settings.get().get("mode")
+    if entry.get("live_url"):
+        candidate = str(entry["live_url"]).strip()
+        if not candidate.lower().startswith(_LIVE_SCHEMES):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "That does not look like a stream address. Paste a page "
+                    "URL the resolver can read, or a direct stream "
+                    "(rtsp://, or a link ending in .m3u8)."
+                ),
+            )
+        entry["live_url"] = candidate
+    before = settings.get()
+    was = before.get("mode")
     state = await settings.put(entry)
     # The config carries the credentials, so it is rewritten whenever they
     # or the stream name change. Writing is a no-op when the contents
@@ -81,6 +118,16 @@ async def update_settings(body: SettingsIn) -> dict:
     if entry.get("mode") and entry["mode"] != was and settings.get().get("enabled"):
         await pump_mod.pump.stop()
         pump_mod.pump.start()
+    # Changing what the camera plays takes effect at the next source
+    # change, and a live source never has one -- left alone, switching
+    # away from a working live stream would do nothing visible until it
+    # dropped by itself. Skip ends the current source without touching
+    # the encoder, so the loop picks the new setting up now and the
+    # Connector never sees the camera go away.
+    elif any(
+        k in entry and entry[k] != before.get(k) for k in ("source", "live_url")
+    ):
+        pump_mod.pump.skip()
     return state
 
 
