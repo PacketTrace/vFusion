@@ -63,6 +63,9 @@ MAX_FAST_FAILURES = 3
 
 _SEG_RE = re.compile(r"seg(\d+)\.ts$")
 
+# The flags every run gets. discont_start is appended on a restart only.
+_HLS_FLAGS = "delete_segments+append_list+omit_endlist+independent_segments"
+
 
 class LiveError(RuntimeError):
     pass
@@ -155,8 +158,17 @@ class LiveSession:
             # jump with no discontinuity tag stalls -- which would have
             # meant every stream dying ten minutes in, when the key
             # rotates, rather than at a time anyone would connect to it.
+            #
+            # Only on a restart, though. On the first run there is
+            # nothing to be discontinuous from, and asking for it anyway
+            # put two EXT-X-DISCONTINUITY tags at the top of every new
+            # playlist -- one of them above EXT-X-INDEPENDENT-SEGMENTS,
+            # in the header, where a segment tag has no business being.
+            # They sit there for the twenty seconds it takes the window
+            # to roll past the first segments, which is exactly the
+            # window in which a player attaches.
             "-hls_flags",
-            "delete_segments+append_list+omit_endlist+independent_segments+discont_start",
+            _HLS_FLAGS + ("+discont_start" if self._next_segment else ""),
             "-hls_segment_type", "mpegts",
             # Numbering continues across a restart. Starting over at zero
             # would write a segment the player has already fetched and

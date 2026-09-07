@@ -60,6 +60,23 @@ export default function LivePlayer({
       setPhase("error");
     };
 
+    // Listeners added after an await cannot be removed by a cleanup
+    // that was written before it, so they register their own removal.
+    const detach: Array<() => void> = [];
+
+    const start = (video: HTMLVideoElement) => {
+      // Autoplay refusal is not a broken stream: the controls are right
+      // there and pressing play works. It is still worth saying out
+      // loud rather than discarding, because "the video is paused" and
+      // "the video is dead" looked identical from here for months.
+      video.play().catch((e: unknown) => {
+        console.warn(
+          "live: autoplay was refused, the viewer needs to press play",
+          e,
+        );
+      });
+    };
+
     (async () => {
       let s: Session;
       try {
@@ -108,22 +125,57 @@ export default function LivePlayer({
       // this for us; the player does its own fetching and does not.
       const url = `${API_BASE}${current.playlist_url}`;
 
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari plays HLS natively and does it better than we can.
-        // Cross-origin means the session cookie only travels if we ask
-        // for it, and without the cookie every fetch is a 401.
-        video.crossOrigin = "use-credentials";
-        video.src = url;
-        video.play().catch(() => undefined);
-        setPhase("playing");
-        return;
-      }
       // Loaded on demand: hls.js is a third of the app bundle and only
       // this tab has any use for it.
       const Hls = (await import("hls.js")).default;
       if (cancelled) return;
+
+      // hls.js first, and native HLS only when there is no hls.js.
+      //
+      // This used to be the other way round, on the reasoning that a
+      // browser claiming to play HLS should be left to it. That was
+      // true when Safari was the only browser making the claim. Chrome
+      // now makes it too, which silently moved every Chrome user onto
+      // the branch below -- the one with no retry loop, no error
+      // escalation and no way to report a failure. A stream that did
+      // not start looked like a camera pointed at a dark room.
+      //
+      // Whichever of the two is more capable in the abstract, this one
+      // is the one that tells you when it breaks, so it wins wherever
+      // it can run. Native is the fallback for iOS, which has no MSE
+      // and therefore no hls.js.
       if (!Hls.isSupported()) {
-        fail("This browser cannot play HLS video.");
+        if (!video.canPlayType("application/vnd.apple.mpegurl")) {
+          fail("This browser cannot play HLS video.");
+          return;
+        }
+        // Cross-origin means the session cookie only travels if we ask
+        // for it, and without the cookie every fetch is a 401.
+        video.crossOrigin = "use-credentials";
+        video.src = url;
+        // Wait for the browser to actually have frames. Reporting
+        // "playing" off the back of assigning a src is what let a dead
+        // stream present as a working one.
+        const onPlaying = () => {
+          if (!cancelled) setPhase("playing");
+        };
+        const onNativeError = () => {
+          const code = video.error?.code;
+          fail(
+            code === 4
+              ? "This browser could not decode the stream."
+              : video.error?.message || "Playback failed.",
+          );
+        };
+        video.addEventListener("loadeddata", onPlaying);
+        video.addEventListener("playing", onPlaying);
+        video.addEventListener("error", onNativeError);
+        detach.push(() => {
+          video.removeEventListener("loadeddata", onPlaying);
+          video.removeEventListener("playing", onPlaying);
+          video.removeEventListener("error", onNativeError);
+        });
+        start(video);
         return;
       }
       const hls = new Hls({
@@ -160,16 +212,23 @@ export default function LivePlayer({
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
         else fail(data.details || "Playback failed.");
       });
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => undefined);
+      // MANIFEST_PARSED fires when the playlist has been read, which is
+      // before a single byte of video has been fetched. Reporting
+      // "playing" there dismissed the overlay -- and with it the only
+      // place an error could be shown -- while nothing was decoding.
+      // FRAG_BUFFERED means there is actually media in the buffer.
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
         if (!cancelled) setPhase("playing");
       });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => start(video));
+      hls.loadSource(url);
+      hls.attachMedia(video);
     })();
 
     return () => {
       cancelled = true;
+      for (const off of detach) off();
+      detach.length = 0;
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
