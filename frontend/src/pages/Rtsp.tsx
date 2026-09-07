@@ -35,10 +35,6 @@ type Status = {
   read_username: string;
   read_password: string;
   loop: boolean;
-  // What the camera plays. The queue walks uploaded clips; live mirrors
-  // one continuous source for as long as it lasts.
-  source: "queue" | "live";
-  live_url: string;
   url: string;
   width: number;
   height: number;
@@ -103,11 +99,6 @@ export default function Rtsp() {
   const [host, setHost] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
-  // Typed but not yet saved, same as the advertise host: null means
-  // "nothing typed", so the field falls back to what the server has
-  // rather than clearing itself under the user on every 3s refetch.
-  const [liveUrl, setLiveUrl] = useState<string | null>(null);
-  const [liveError, setLiveError] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
   // Switching to plain RTSP drops the sub path from the server config,
   // and a Command Connector added over ONVIF pulls both. It goes offline
@@ -189,34 +180,6 @@ export default function Rtsp() {
     mutationFn: (loop: boolean) => apiPut<Status>("/api/rtsp/settings", { loop }),
     onSuccess: () => invalidate(),
   });
-  // Switching source and saving the URL are one call when both changed:
-  // picking "Live" with an unsaved address in the box otherwise starts
-  // mirroring the previous URL, which looks like the field was ignored.
-  const setSource = useMutation({
-    mutationFn: (source: "queue" | "live") => {
-      const typed = (liveUrl ?? "").trim();
-      const body: Record<string, unknown> = { source };
-      if (source === "live" && typed && typed !== status.data?.live_url) {
-        body.live_url = typed;
-      }
-      return apiPut<Status>("/api/rtsp/settings", body);
-    },
-    onSuccess: () => {
-      setLiveError(null);
-      invalidate();
-    },
-    onError: (e: Error) => setLiveError(e.message),
-  });
-  const saveLiveUrl = useMutation({
-    mutationFn: (live_url: string) =>
-      apiPut<Status>("/api/rtsp/settings", { live_url }),
-    onSuccess: () => {
-      setLiveError(null);
-      setLiveUrl(null);
-      invalidate();
-    },
-    onError: (e: Error) => setLiveError(e.message),
-  });
   const rotate = useMutation({
     mutationFn: () => apiPost<Status>("/api/rtsp/rotate-password", {}),
     onSuccess: () => invalidate(),
@@ -268,9 +231,7 @@ export default function Rtsp() {
   // jobs — the first is done once, the second every time there is new
   // footage — and stacking them meant scrolling past the whole setup to
   // reach the queue.
-  const tabParam = searchParams.get("tab");
-  const tab =
-    tabParam === "queue" || tabParam === "live" ? tabParam : "camera";
+  const tab = searchParams.get("tab") === "queue" ? "queue" : "camera";
   const setTab = (next: string) => {
     const p = new URLSearchParams(searchParams);
     p.set("tab", next);
@@ -279,11 +240,6 @@ export default function Rtsp() {
 
   const s = status.data;
   const hostValue = host ?? s?.advertise_host ?? "";
-  const liveUrlValue = liveUrl ?? s?.live_url ?? "";
-  const liveDirty = liveUrl !== null && liveUrl.trim() !== (s?.live_url ?? "");
-  // The pump reports a live source under a fixed id rather than a queue
-  // item id, which is how "mirroring now" is told from "playing a clip".
-  const mirroring = s?.pump.now_playing?.kind === "live";
   const pending = (items.data ?? []).filter((i) => !i.played_at);
   const done = (items.data ?? []).filter((i) => i.played_at);
 
@@ -318,15 +274,12 @@ export default function Rtsp() {
         <p className="text-slate-400 text-sm mt-1">
           {tab === "queue"
             ? "What the camera plays, in order. Add a clip and it joins the stream without interrupting it; loop keeps the queue going round rather than falling back to standby."
-            : tab === "live"
-              ? "Mirror something continuous instead of playing the queue. The camera re-encodes whatever the address serves, for as long as it keeps serving it, and reconnects by itself when it drops."
-              : "A camera that does not exist, for Verkada's Command Connector to record. While it is on there is always a picture — your uploads when there are any, black with a clock when there are not — so the camera never goes offline between clips."}
+            : "A camera that does not exist, for Verkada's Command Connector to record. While it is on there is always a picture — your uploads when there are any, black with a clock when there are not — so the camera never goes offline between clips."}
         </p>
         <div className="mt-4 flex items-center gap-1 border-b border-white/10">
           {[
             { key: "camera", label: "Camera" },
             { key: "queue", label: "Queue" },
-            { key: "live", label: "Live" },
           ].map((t) => (
             <button
               key={t.key}
@@ -392,7 +345,7 @@ export default function Rtsp() {
         </div>
       )}
 
-      <StatusBar s={s} showEncoderLog={tab !== "queue"} />
+      <StatusBar s={s} showEncoderLog={tab === "camera"} />
 
 
       {tab === "camera" && (
@@ -633,24 +586,6 @@ export default function Rtsp() {
 
       {tab === "queue" && (
       <Card title="What it plays">
-        {/* Without this the queue looks broken: clips sit in it, the
-            camera is up, and nothing ever plays. The reason is on
-            another tab. */}
-        {s?.source === "live" && (
-          <div className="mb-3 text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-900/40 rounded px-3 py-2">
-            The camera is mirroring a live source, so the queue is not
-            playing. Uploads still land here and start when you switch the
-            source back on the{" "}
-            <button
-              type="button"
-              onClick={() => setTab("live")}
-              className="underline underline-offset-2 hover:text-amber-200"
-            >
-              Live tab
-            </button>
-            .
-          </div>
-        )}
         <input
           ref={fileRef}
           type="file"
@@ -811,105 +746,6 @@ export default function Rtsp() {
             )}
           </div>
         )}
-      </Card>
-      )}
-
-      {tab === "live" && (
-      <Card title="Source">
-        {/* The same shape as the ONVIF/RTSP choice, and for the same
-            reason: these are not two views of one thing. A queue walks
-            files and can loop; a live source never ends, so "third of
-            five, then repeat" has no meaning for it. Picking one turns
-            the other off. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <ModeCard
-            active={s?.source !== "live"}
-            title="Queue"
-            blurb="Play the uploaded clips in order, falling back to a standby card when there are none. What the Queue tab manages."
-            onClick={() => setSource.mutate("queue")}
-            busy={setSource.isPending}
-          />
-          <ModeCard
-            active={s?.source === "live"}
-            title="Live source"
-            blurb="Mirror one continuous stream for as long as it lasts. The queue is left alone and loop does not apply."
-            onClick={() => setSource.mutate("live")}
-            busy={setSource.isPending}
-          />
-        </div>
-
-        {/* Always shown, not gated on the source already being live.
-            Gating it meant setting one up was: switch source, watch the
-            camera fall back to standby because there is no address yet,
-            then type one. Typing first and picking Live second saves
-            both in one call, so there is no gap. */}
-        <div className="mt-4 space-y-2">
-          <label className="block text-[11px] uppercase tracking-wider text-slate-400">
-            Address to mirror
-          </label>
-          <form
-            className="flex flex-wrap items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              saveLiveUrl.mutate(liveUrlValue.trim());
-            }}
-          >
-            <input
-              value={liveUrlValue}
-              onChange={(e) => setLiveUrl(e.target.value)}
-              placeholder="rtsp://… , a .m3u8, or a page with a live stream on it"
-              spellCheck={false}
-              className="flex-1 min-w-[20rem] px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono transition-colors duration-150 ease-out-strong focus:border-sky-500/70 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={saveLiveUrl.isPending || !liveDirty}
-              className="text-sm px-3 py-1.5 rounded-md border border-white/15 text-slate-200 transition-colors duration-150 ease-out-strong hover:bg-white/10 disabled:opacity-50"
-            >
-              {saveLiveUrl.isPending ? "Saving…" : "Save"}
-            </button>
-          </form>
-          <p className="text-[11px] text-slate-500">
-            A direct stream is opened as-is. Anything else is resolved
-            first, and a resolved address is signed and expires — which is
-            why it is worked out again on every reconnect rather than
-            remembered. Changing it takes effect immediately: the source
-            is replaced without stopping the encoder, so the Connector
-            does not see the camera go away.
-          </p>
-
-          {liveError && (
-            <div className="text-sm text-rose-300 bg-rose-950/50 border border-rose-900 rounded px-3 py-2">
-              {liveError}
-            </div>
-          )}
-
-          {/* Three states worth telling apart: mirroring, nothing set
-              yet, and tried-and-failed. Collapsing the last two into
-              "not playing" is what makes a wrong URL look like a
-              feature that does not work. */}
-          {s?.source === "live" &&
-            (mirroring ? (
-            <div className="text-[11px] text-emerald-300 bg-emerald-950/30 border border-emerald-900/50 rounded px-3 py-2">
-              Mirroring{" "}
-              <span className="font-mono text-emerald-200/80">
-                {s.pump.now_playing?.name}
-              </span>
-            </div>
-            ) : !(s.live_url ?? "").trim() ? (
-            <div className="text-[11px] text-slate-400 bg-white/5 border border-white/10 rounded px-3 py-2">
-              No address set — the stream is showing the standby card.
-            </div>
-            ) : (
-            <div className="text-[11px] text-amber-300/90 bg-amber-950/20 border border-amber-900/40 rounded px-3 py-2">
-              {s.pump.last_error?.startsWith("live source:")
-                ? s.pump.last_error
-                : s.enabled
-                  ? "Connecting…"
-                  : "The camera is off. Turn it on from the Camera tab."}
-            </div>
-          ))}
-        </div>
       </Card>
       )}
     </div>

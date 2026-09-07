@@ -35,10 +35,3 @@ mqtt/passwd
 # Internal working notes. This repo is public; the handoff records state,
 # decisions and gotchas that are not for publication.
 HANDOFF.md
-
-# An Expo scaffold that appeared in the repo root, untracked and 448 MB
-# of it node_modules. Ignored rather than committed because nothing has
-# decided whether a mobile app belongs in this repo at all -- and until
-# something does, one `git add -A` would publish the lot. Delete these
-# two lines (and `git add -f`) if it is meant to live here.
-/mobile/
