@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.assets import ASSET_ROOT, clear_all_assets
 from app.connectors.verkada.footage import CLIP_ROOT, IMAGE_ROOT
 from app.db import get_session
-from app.models import Run, WebhookAsset, WebhookEvent
+from app.models import AuditEvent, Run, WebhookAsset, WebhookEvent
 from app.settings_store import (
     SETTINGS,
     all_specs,
@@ -143,6 +143,15 @@ async def _usage_for(key: str, session: AsyncSession) -> SettingUsage:
             bytes=None,
             count=n,
             summary=_fmt_count(n, "run"),
+        )
+    if key == "audit_event_retention_days":
+        n = int(
+            (await session.execute(select(func.count(AuditEvent.id)))).scalar() or 0
+        )
+        return SettingUsage(
+            bytes=None,
+            count=n,
+            summary=_fmt_count(n, "event"),
         )
     return SettingUsage(summary="—")
 

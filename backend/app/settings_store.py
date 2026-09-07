@@ -96,6 +96,18 @@ SETTINGS: dict[str, SettingSpec] = {
             "stream for each run) stays."
         ),
     ),
+    "audit_event_retention_days": SettingSpec(
+        key="audit_event_retention_days",
+        default="0",
+        label="Audit log (Explorer)",
+        unit="days",
+        description=(
+            "How long the local copy of the Verkada audit log stays. "
+            "0 keeps everything, which is the default: the log is the "
+            "history the Insights charts are drawn from, and Verkada's "
+            "own page only reaches back 90 days at a time."
+        ),
+    ),
 }
 
 

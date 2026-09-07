@@ -76,7 +76,10 @@ export default function WebhookInbox() {
       searchParams.get("webhook_type") ||
       searchParams.get("event")
     ) {
-      setSearchParams({}, { replace: true });
+      const keep = new URLSearchParams();
+      const tab = searchParams.get("tab");
+      if (tab) keep.set("tab", tab);
+      setSearchParams(keep, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -140,17 +143,6 @@ export default function WebhookInbox() {
   const total = list.data?.total ?? 0;
   const canLoadMore = items.length < total && limit < MAX_LIMIT;
 
-  // Pull the public webhook base from the same source the green banner
-  // uses, so the subhead and banner can't disagree. Otherwise on a
-  // homelab-style install the banner correctly shows the tunnel URL
-  // while this subhead advertises the LAN dashboard URL — confusing
-  // on a first install. Shared query key with WebhookEndpointBanner
-  // means this is a cache hit, not a second request.
-  const publicCfg = useQuery({
-    queryKey: ["public-config"],
-    queryFn: () => apiGet<PublicConfig>("/api/config"),
-  });
-  const exampleBase = publicCfg.data?.public_webhook_base || API_BASE;
 
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
@@ -165,17 +157,6 @@ export default function WebhookInbox() {
           setPendingDelete(null);
         }}
       />
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Webhook Explorer</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Every request to{" "}
-          <code className="bg-white/10 px-1.5 py-0.5 rounded text-slate-200">
-            {exampleBase}/hooks/&lt;anything&gt;
-          </code>{" "}
-          is captured, classified, and signature-checked.
-        </p>
-      </div>
-
       <WebhookEndpointBanner />
 
       <PendingSetupBanner />

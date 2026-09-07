@@ -671,6 +671,7 @@ async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: A
     image_days = await settings_store.get_int("gemini_image_retention_days")
     event_days = await settings_store.get_int("webhook_event_retention_days")
     run_days = await settings_store.get_int("run_retention_days")
+    audit_days = await settings_store.get_int("audit_event_retention_days")
 
     # cleanup_* helpers still take hours under the hood, so convert here.
     # 0 stays 0 (= unlimited / skip).
@@ -681,7 +682,27 @@ async def cleanup_assets_cron(ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: A
     )
     events = await _cleanup_old_webhook_events(event_days)
     runs = await _cleanup_old_runs(run_days)
-    return {"assets": assets, "clips": clips, "events": events, "runs": runs}
+    audit = await _cleanup_old_audit_events(audit_days)
+    return {"assets": assets, "clips": clips, "events": events, "runs": runs, "audit": audit}
+
+
+async def _cleanup_old_audit_events(retention_days: int) -> dict[str, int]:
+    """Delete audit_events older than ``retention_days``. 0 = keep."""
+    if not retention_days or retention_days <= 0:
+        return {"deleted": 0, "skipped": True}
+    from app.audit.ingest import cutoff_for_retention
+    from app.models import AuditEvent
+
+    cutoff = cutoff_for_retention(retention_days)
+    async with SessionLocal() as session:
+        result = await session.execute(
+            sa_delete(AuditEvent).where(AuditEvent.timestamp < cutoff)
+        )
+        await session.commit()
+    deleted = int(result.rowcount or 0)
+    if deleted:
+        logger.info("audit_events cleanup: deleted=%d (cutoff=%s)", deleted, cutoff)
+    return {"deleted": deleted}
 
 
 async def _cleanup_old_webhook_events(retention_days: int) -> dict[str, int]:
@@ -1013,6 +1034,33 @@ async def run_byoa_upload(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  
         return {"status": "success"}
 
 
+async def audit_poll_cron(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Copy the Command audit log locally, ten seconds at a time.
+
+    arq cron is minute-grained, so each firing runs a ~55 s loop of
+    ten-second ticks. A Redis lock keeps one loop alive at a time: a
+    slow tick that pushes one firing past the next would otherwise mean
+    two pollers reading the same window (harmless to the data -- the
+    fingerprint index dedupes -- but a waste of Verkada requests).
+    """
+    from app.audit.ingest import run_loop
+
+    redis = ctx.get("redis")
+    lock_key = "vfusion:audit:poll-lock"
+    if redis is not None:
+        got = await redis.set(lock_key, "1", nx=True, ex=75)
+        if not got:
+            return {"skipped": "another poll loop is running"}
+    try:
+        return await run_loop(seconds=55.0, interval=10.0)
+    finally:
+        if redis is not None:
+            try:
+                await redis.delete(lock_key)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 async def keywatch_cron(ctx: dict[str, Any]) -> None:  # noqa: ARG001
     """Poll Verkada's audit log for use of our key from an unexpected IP.
 
@@ -1075,5 +1123,9 @@ class WorkerSettings:
         # Hourly: has anyone else used our Verkada key? Cheap when the
         # monitor is off (one settings read) and bounded when it is on.
         cron(keywatch_cron, minute=53),
+        # Every minute, and inside it every ten seconds: the Command audit
+        # log into audit_events. run_at_startup so the seven-day backfill
+        # begins the moment a deploy comes up.
+        cron(audit_poll_cron, minute=set(range(60)), run_at_startup=True),
     ]
     max_tries = 1

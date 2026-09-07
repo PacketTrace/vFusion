@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Route, Routes, Navigate } from "react-router-dom";
+import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
 
 import AuthGate from "./components/AuthGate";
 import BuildStamp from "./components/BuildStamp";
@@ -9,7 +9,7 @@ import VfusionAtom from "./components/VfusionAtom";
 import OnboardingGate from "./components/OnboardingGate";
 import { apiPost } from "./lib/api";
 import { useBrand } from "./lib/brand";
-import WebhookInbox from "./pages/WebhookInbox";
+import Explorer from "./pages/Explorer";
 import UnrecognizedEvents from "./pages/UnrecognizedEvents";
 import Flows from "./pages/Flows";
 import FlowEditor from "./pages/FlowEditor";
@@ -112,12 +112,13 @@ function AppShell() {
           </div>
           <nav className="flex items-center gap-1">
             <NavLink
-              to="/inbox"
+              to="/explorer"
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
               }
+              title="Explorer — webhooks Verkada pushes, and the audit log of everything happening in the org"
             >
-              Webhook Explorer
+              Explorer
             </NavLink>
             <NavLink
               to="/flows"
@@ -196,8 +197,11 @@ function AppShell() {
       </header>
       <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto px-6 py-6">
         <Routes>
-          <Route path="/" element={<Navigate to="/inbox" replace />} />
-          <Route path="/inbox" element={<WebhookInbox />} />
+          <Route path="/" element={<Navigate to="/explorer" replace />} />
+          <Route path="/explorer" element={<Explorer />} />
+          {/* The old address. Links from Stats and Runs still say /inbox
+              and carry filters; keep every one of them working. */}
+          <Route path="/inbox" element={<InboxRedirect />} />
           <Route path="/unrecognized" element={<UnrecognizedEvents />} />
           <Route path="/flows" element={<Flows />} />
           <Route path="/flows/new" element={<FlowEditor />} />
@@ -225,4 +229,12 @@ function AppShell() {
       {helpOpen && <HelpChat onClose={() => setHelpOpen(false)} />}
     </div>
   );
+}
+
+
+function InboxRedirect() {
+  const { search } = useLocation();
+  const p = new URLSearchParams(search);
+  p.set("tab", "webhooks");
+  return <Navigate to={`/explorer?${p.toString()}`} replace />;
 }

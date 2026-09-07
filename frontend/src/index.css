@@ -485,3 +485,16 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     opacity: 1;
   }
 }
+
+/* Explorer → Audit log: a row that arrived on the last poll.
+ *
+ * Rows land every ten seconds all day, so they do not move -- motion on
+ * something that frequent reads as noise. The tint is held briefly and
+ * then fades on the panel duration, colour-only, which survives the
+ * reduced-motion rule above. */
+.audit-row {
+  transition: background-color var(--duration-panel) var(--ease-out);
+}
+.audit-row-new {
+  background-color: rgba(56, 189, 248, 0.14);
+}

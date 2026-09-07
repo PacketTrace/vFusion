@@ -732,3 +732,140 @@ export interface KnownDoor {
   site_name: string | null;
   last_seen: string | null;
 }
+
+// ---- Explorer → Audit log ----
+//
+// Every audit endpoint takes the same filter set; the shapes below are
+// what comes back. Filters themselves live in lib/auditFilters.ts so the
+// list, the facet rail and the Insights charts can never disagree about
+// what slice they describe.
+
+export interface AuditEventListItem {
+  id: string;
+  timestamp: string;
+  event_name: string;
+  category: string;
+  actor: "user" | "api_key" | "support" | "system";
+  user_name: string | null;
+  user_email: string | null;
+  ip_address: string | null;
+  api_key_name: string | null;
+  method: string | null;
+  url_path: string | null;
+  status_code: number | null;
+  is_self: boolean;
+  device_name: string | null;
+  device_type: string | null;
+  device_site: string | null;
+  device_count: number;
+}
+
+export interface AuditEvent extends AuditEventListItem {
+  processed_at: string | null;
+  ingested_at: string;
+  event_description: string | null;
+  user_id: string | null;
+  org_id: string | null;
+  api_key_tail: string | null;
+  response_size: number | null;
+  device_id: string | null;
+  devices: Array<{
+    device_id?: string;
+    device_name?: string;
+    device_type?: string;
+    device_site_name?: string;
+    details?: Record<string, unknown>;
+  }>;
+  details: Record<string, unknown>;
+  raw: Record<string, unknown>;
+}
+
+export interface AuditEventList {
+  items: AuditEventListItem[];
+  total: number;
+  since: string;
+  until: string;
+}
+
+export interface AuditFacetValue {
+  value: string;
+  label?: string | null;
+  count: number;
+}
+
+export interface AuditFacets {
+  total: number;
+  category: AuditFacetValue[];
+  event_name: AuditFacetValue[];
+  actor: AuditFacetValue[];
+  user: AuditFacetValue[];
+  api_key: AuditFacetValue[];
+  method: AuditFacetValue[];
+  status: AuditFacetValue[];
+  device_type: AuditFacetValue[];
+  site: AuditFacetValue[];
+  device: AuditFacetValue[];
+  ip: AuditFacetValue[];
+  self_hidden: number;
+}
+
+export interface AuditStatus {
+  phase: "unconfigured" | "starting" | "live" | "backfilling" | "stalled" | "error";
+  total: number;
+  newest: string | null;
+  oldest: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  backfill: {
+    total_sec: number;
+    done_sec: number;
+    remaining_sec: number;
+    percent: number;
+  };
+  connections: Array<{
+    connection_id: string;
+    name: string;
+    last_poll_at: string | null;
+    last_ok_at: string | null;
+    last_error: string | null;
+    backlog_windows: number;
+    inserted: number;
+    requests: number;
+    backfilled_from: number | null;
+  }>;
+  interval_sec: number;
+}
+
+export interface AuditStats {
+  since: string;
+  until: string;
+  bucket_sec: number;
+  totals: {
+    self_hidden: number;
+    events: number;
+    users: number;
+    ips: number;
+    devices: number;
+    errors: number;
+    api_requests: number;
+  };
+  categories: Array<{ category: string; count: number }>;
+  timeseries: Array<{ t: number; total: number; by_category: Record<string, number> }>;
+  users: Array<{
+    key: string;
+    name: string | null;
+    actor: string;
+    count: number;
+    ips: number;
+    first: string | null;
+    last: string | null;
+    top: Array<{ event_name: string; category: string; count: number }>;
+  }>;
+  events: Array<{ event_name: string; category: string; count: number }>;
+  endpoints: Array<{ method: string | null; url: string; count: number; errors: number; keys: number }>;
+  keys: Array<{ api_key_name: string; count: number; errors: number; ips: number; last: string | null }>;
+  statuses: Array<{ status: number; count: number }>;
+  ips: Array<{ ip: string; count: number; users: number; last: string | null }>;
+  devices: Array<{ device_id: string; name: string | null; type: string | null; site: string | null; count: number }>;
+  heatmap: Array<{ dow: number; hour: number; count: number }>;
+}

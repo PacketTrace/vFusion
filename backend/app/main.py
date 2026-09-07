@@ -13,6 +13,7 @@ from app.api import helix_published as helix_published_api
 from app.api import helix_send as helix_send_api
 from app.api import api_runner as api_runner_api
 from app.api import cost as cost_api
+from app.api import audit_events as audit_events_api
 from app.api import flow_assist as flow_assist_api
 from app.api import help as help_api
 from app.api import security as security_api
@@ -178,6 +179,7 @@ async def require_session(request: Request, call_next):
 app.include_router(auth_api.router)
 app.include_router(hooks.router)
 app.include_router(webhook_events.router)
+app.include_router(audit_events_api.router)
 app.include_router(connections.router)
 app.include_router(taxonomy.router)
 app.include_router(flows.router)
