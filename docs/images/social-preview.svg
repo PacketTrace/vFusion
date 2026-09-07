@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="vFusion: self-hosted workflow automation for the Verkada API">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="45%" r="60%">
+      <stop offset="0" stop-color="#0ea5e9" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#05070c"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <image href="vfusion-wordmark.svg" x="140" y="120" width="1000" height="276"/>
+  <text x="640" y="470" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="34" fill="#e2e8f0">Self-hosted workflow automation for the Verkada API</text>
+  <text x="640" y="516" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="22" fill="#94a3b8">webhooks · audit log · Gemini on your cameras · Helix · virtual cameras · MQTT · MCP</text>
+</svg>

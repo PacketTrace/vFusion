@@ -36,6 +36,9 @@ REPO_DIR = APP_DIR.parent.parent
 # Read whole. Small enough that trimming would cost more in missing
 # answers than it saves in tokens.
 DOC_FILES = ("README.md", "SECURITY.md")
+# Per-area documentation. The README is the landing page; these hold
+# the detail, and the help should know both.
+DOC_DIRS = ("docs",)
 
 # Docstrings shorter than this are labels, not explanations — "Returns
 # the flow." adds a line of noise and no knowledge.
@@ -168,11 +171,13 @@ def _routes() -> str:
 
 def _docs() -> list[str]:
     out: list[str] = []
-    for name in DOC_FILES:
-        path = REPO_DIR / name
+    paths = [REPO_DIR / name for name in DOC_FILES]
+    for d in DOC_DIRS:
+        paths.extend(sorted((REPO_DIR / d).glob("*.md")))
+    for path in paths:
         try:
-            out.append(f"### {name}\n{path.read_text(encoding='utf-8')}")
-        except OSError:
+            out.append(f"### {path.relative_to(REPO_DIR)}\n{path.read_text(encoding='utf-8')}")
+        except (OSError, ValueError):
             continue
     return out
 
