@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { apiGet, AuditEvent, AuditEventList, AuditEventListItem, AuditFacets, AuditStatus } from "../lib/api";
 import { filtersKey, filtersToApiParams } from "../lib/auditFilters";
@@ -9,6 +9,7 @@ import { fmtBytes, fmtDateTime, fmtNum, fmtRel, fmtTime } from "../lib/format";
 import { GeoInfo, geoLabel, useGeo } from "../lib/useGeo";
 import JsonView from "../components/JsonView";
 import AuditFilterBar, { ActiveChips } from "../components/audit/AuditFilterBar";
+import AuditInsights from "./AuditInsights";
 import FacetRail from "../components/audit/FacetRail";
 import { ActorBadge, CategoryBadge, MethodBadge, StatusBadge } from "../components/audit/AuditBadges";
 
@@ -22,6 +23,14 @@ export default function AuditLog() {
   const { filters, setFilters } = useAuditFilters();
   const key = filtersKey(filters);
   const [sp, setSp] = useSearchParams();
+  const navigate = useNavigate();
+  const view: "events" | "insights" = sp.get("view") === "insights" ? "insights" : "events";
+  const setView = (v: "events" | "insights") => {
+    const next = new URLSearchParams(sp);
+    next.set("view", v);
+    if (v === "insights") next.delete("event");
+    setSp(next, { replace: true });
+  };
   const selectedId = sp.get("event");
   const setSelectedId = (id: string | null) => {
     const next = new URLSearchParams(sp);
@@ -44,12 +53,14 @@ export default function AuditLog() {
       return loaded < last.total ? loaded : undefined;
     },
     refetchInterval: 10_000,
+    enabled: view === "events",
   });
 
   const facets = useQuery({
     queryKey: ["audit-facets", key],
     queryFn: () => apiGet<AuditFacets>(`/api/audit-events/facets?${filtersToApiParams(filters).toString()}`),
     refetchInterval: 10_000,
+    enabled: view === "events",
   });
 
   const status = useQuery({
@@ -94,15 +105,25 @@ export default function AuditLog() {
 
   return (
     <div className="h-full flex flex-col gap-3 min-h-0">
-      <AuditFilterBar
-        filters={filters}
-        setFilters={setFilters}
-        status={status.data}
-        selfHidden={facets.data?.self_hidden}
-        total={list.data ? total : undefined}
-      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <ViewSwitch view={view} onChange={setView} />
+        <div className="flex-1 min-w-0">
+          <AuditFilterBar
+            filters={filters}
+            setFilters={setFilters}
+            status={status.data}
+            apiHidden={view === "events" ? facets.data?.api_hidden : undefined}
+            total={view === "events" && list.data ? total : undefined}
+          />
+        </div>
+      </div>
       <ActiveChips filters={filters} setFilters={setFilters} />
 
+      {view === "insights" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <AuditInsights embedded />
+        </div>
+      ) : (
       <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
         <aside className="col-span-2 overflow-y-auto min-h-0 pr-1">
           <FacetRail facets={facets.data} filters={filters} setFilters={setFilters} />
@@ -112,7 +133,7 @@ export default function AuditLog() {
           {list.isLoading ? (
             <div className="p-4 text-sm text-slate-500">Loading…</div>
           ) : items.length === 0 ? (
-            <EmptyState status={status.data} selfHidden={facets.data?.self_hidden ?? 0} onShowSelf={() => setFilters((f) => ({ ...f, include_self: true }))} />
+            <EmptyState status={status.data} apiHidden={facets.data?.api_hidden ?? 0} onShowApi={() => setFilters((f) => ({ ...f, hide_api: false }))} />
           ) : (
             <ul className="divide-y divide-white/10 overflow-y-auto flex-1" data-testid="audit-list">
               {items.map((e) => (
@@ -147,6 +168,7 @@ export default function AuditLog() {
               event={detail.data}
               geo={detail.data.ip_address ? geo[detail.data.ip_address] : undefined}
               onFilter={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+              onAutomate={() => navigate(`/flows/new?from_audit=${detail.data!.id}`)}
             />
           ) : selectedId && detail.isLoading ? (
             <div className="p-4 text-sm text-slate-500">Loading…</div>
@@ -157,6 +179,37 @@ export default function AuditLog() {
           )}
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+/** Events or Insights. A high-frequency toggle, so no motion: the
+ *  active segment changes colour and that is all. */
+function ViewSwitch({
+  view,
+  onChange,
+}: {
+  view: "events" | "insights";
+  onChange: (v: "events" | "insights") => void;
+}) {
+  const seg = (key: "events" | "insights", label: string) => (
+    <button
+      type="button"
+      onClick={() => onChange(key)}
+      aria-pressed={view === key}
+      data-testid={`audit-view-${key}`}
+      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+        view === key ? "bg-white/15 text-white" : "text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg border border-white/10 bg-white/5" role="tablist">
+      {seg("events", "Events")}
+      {seg("insights", "Insights")}
     </div>
   );
 }
@@ -225,12 +278,12 @@ function Row({
 
 function EmptyState({
   status,
-  selfHidden,
-  onShowSelf,
+  apiHidden,
+  onShowApi,
 }: {
   status: AuditStatus | undefined;
-  selfHidden: number;
-  onShowSelf: () => void;
+  apiHidden: number;
+  onShowApi: () => void;
 }) {
   if (status?.phase === "unconfigured") {
     return (
@@ -257,11 +310,10 @@ function EmptyState({
   return (
     <div className="p-6 text-sm text-slate-400 space-y-2">
       <p className="font-medium text-slate-200">Nothing matches.</p>
-      {selfHidden > 0 ? (
+      {apiHidden > 0 ? (
         <p>
-          {fmtNum(selfHidden)} row{selfHidden === 1 ? " is" : "s are"} hidden because they are this
-          install's own API calls.{" "}
-          <button type="button" onClick={onShowSelf} className="text-sky-300 hover:underline">
+          {fmtNum(apiHidden)} API request{apiHidden === 1 ? " is" : "s are"} hidden.{" "}
+          <button type="button" onClick={onShowApi} className="text-sky-300 hover:underline">
             Show them
           </button>
           .
@@ -277,10 +329,12 @@ function Detail({
   event: e,
   geo,
   onFilter,
+  onAutomate,
 }: {
   event: AuditEvent;
   geo: GeoInfo | undefined;
   onFilter: (patch: Record<string, unknown>) => void;
+  onAutomate: () => void;
 }) {
   const isApi = e.category === "api";
   const links: Array<{ label: string; patch: Record<string, unknown> }> = [];
@@ -406,6 +460,22 @@ function Detail({
           </ul>
         </div>
       )}
+
+      <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={onAutomate}
+          className="text-xs font-semibold px-3 py-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-400/60 transition-[color,border-color,background-color] duration-150 ease-out-strong"
+          title="Build a flow that runs the next time this happens"
+          data-testid="audit-automate"
+        >
+          ⚡ Automate this
+        </button>
+        <span className="text-xs text-slate-500">
+          Opens the editor with an Audit log trigger already set to this event
+          {e.device_name ? ` on ${e.device_name}` : ""}.
+        </span>
+      </div>
 
       <div className="px-4 py-3 border-b border-white/10">
         <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Show more from</div>

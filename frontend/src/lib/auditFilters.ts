@@ -27,7 +27,10 @@ export interface AuditFilters {
   device_id: string;
   device: string;
   site: string[];
-  include_self: boolean;
+  /** API requests are most of a working org's log and rarely the
+   *  question. Hidden by default; showing them also shows the ones
+   *  vFusion itself made. */
+  hide_api: boolean;
 }
 
 export const LIST_KEYS = [
@@ -72,12 +75,12 @@ export const DEFAULT_FILTERS: AuditFilters = {
   device_id: "",
   device: "",
   site: [],
-  include_self: false,
+  hide_api: true,
 };
 
-// Keys that are not filters but share the URL (the Explorer tab, a
-// selected row). Left alone by everything below.
-const PASSTHROUGH = new Set(["tab", "event"]);
+// Keys that are not filters but share the URL (the Explorer tab, the
+// Events/Insights view, a selected row). Left alone by everything below.
+const PASSTHROUGH = new Set(["tab", "view", "event"]);
 
 export function filtersFromSearch(sp: URLSearchParams): AuditFilters {
   const f: AuditFilters = { ...DEFAULT_FILTERS };
@@ -91,7 +94,7 @@ export function filtersFromSearch(sp: URLSearchParams): AuditFilters {
   }
   for (const k of LIST_KEYS) f[k] = sp.getAll(k).filter(Boolean);
   for (const k of SCALAR_KEYS) f[k] = sp.get(k) ?? "";
-  f.include_self = sp.get("self") === "1";
+  f.hide_api = sp.get("api") !== "1";
   return f;
 }
 
@@ -108,7 +111,7 @@ export function filtersToSearch(f: AuditFilters, current: URLSearchParams): URLS
   }
   for (const k of LIST_KEYS) for (const v of f[k]) out.append(k, v);
   for (const k of SCALAR_KEYS) if (f[k]) out.set(k, f[k]);
-  if (f.include_self) out.set("self", "1");
+  if (!f.hide_api) out.set("api", "1");
   return out;
 }
 
@@ -136,7 +139,8 @@ export function filtersToApiParams(f: AuditFilters, now = Date.now()): URLSearch
   if (f.q) p.set("q", f.q);
   for (const k of LIST_KEYS) for (const v of f[k]) p.append(k, v);
   for (const k of SCALAR_KEYS) if (f[k]) p.set(k, f[k]);
-  if (f.include_self) p.set("include_self", "true");
+  if (f.hide_api) p.set("exclude_api", "true");
+  else p.set("include_self", "true");
   return p;
 }
 
@@ -163,7 +167,7 @@ export function activeCount(f: AuditFilters): number {
 }
 
 export function clearAll(f: AuditFilters): AuditFilters {
-  return { ...DEFAULT_FILTERS, range: f.range, since: f.since, until: f.until, include_self: f.include_self };
+  return { ...DEFAULT_FILTERS, range: f.range, since: f.since, until: f.until, hide_api: f.hide_api };
 }
 
 /** Category display: label + a fixed colour slot. Colour follows the

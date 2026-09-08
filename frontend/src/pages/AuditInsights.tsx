@@ -7,7 +7,8 @@ import { fmtNum, fmtRel } from "../lib/format";
 import { geoLabel, useGeo } from "../lib/useGeo";
 import AuditFilterBar, { ActiveChips } from "../components/audit/AuditFilterBar";
 import { CategoryBadge, MethodBadge, statusTone } from "../components/audit/AuditBadges";
-import { HBars, Legend, StackedColumns, StatTile, WeekHeatmap } from "../components/audit/charts";
+import { HBars, Legend, StackedColumns, StatTile } from "../components/audit/charts";
+import StreamingSection from "../components/audit/StreamingSection";
 
 /**
  * Explorer → Insights. The big picture of the same slice the Audit log
@@ -15,7 +16,7 @@ import { HBars, Legend, StackedColumns, StatTile, WeekHeatmap } from "../compone
  * devices and endpoints, and when. Every mark is a link into the rows
  * behind it.
  */
-export default function AuditInsights() {
+export default function AuditInsights({ embedded = false }: { embedded?: boolean }) {
   const { filters, setFilters, showInList } = useAuditFilters();
   const key = filtersKey(filters);
 
@@ -29,6 +30,7 @@ export default function AuditInsights() {
     queryKey: ["audit-status"],
     queryFn: () => apiGet<AuditStatus>("/api/audit-events/status"),
     refetchInterval: 10_000,
+    enabled: !embedded,
   });
 
   const s = stats.data;
@@ -37,29 +39,33 @@ export default function AuditInsights() {
 
   return (
     <div className="flex flex-col gap-3">
-      <AuditFilterBar
-        filters={filters}
-        setFilters={setFilters}
-        status={status.data}
-        selfHidden={s?.totals.self_hidden}
-        total={s?.totals.events}
-      />
-      <ActiveChips filters={filters} setFilters={setFilters} />
+      {!embedded && (
+        <>
+          <AuditFilterBar
+            filters={filters}
+            setFilters={setFilters}
+            status={status.data}
+            apiHidden={s?.totals.api_hidden}
+            total={s?.totals.events}
+          />
+          <ActiveChips filters={filters} setFilters={setFilters} />
+        </>
+      )}
 
       {!s ? (
         <div className="text-sm text-slate-500 p-4">Loading…</div>
       ) : s.totals.events === 0 ? (
         <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-sm text-slate-400 space-y-2">
           <p className="font-medium text-slate-200">Nothing in this range.</p>
-          {s.totals.self_hidden > 0 ? (
+          {s.totals.api_hidden > 0 ? (
             <p>
-              {fmtNum(s.totals.self_hidden)} rows are this install's own API calls, hidden by default.{" "}
+              {fmtNum(s.totals.api_hidden)} API requests are hidden.{" "}
               <button
                 type="button"
-                onClick={() => setFilters((f) => ({ ...f, include_self: true }))}
+                onClick={() => setFilters((f) => ({ ...f, hide_api: false }))}
                 className="text-sky-300 hover:underline"
               >
-                Include them
+                Show them
               </button>
               .
             </p>
@@ -81,7 +87,7 @@ export default function AuditInsights() {
             <StatTile
               label="API requests"
               value={fmtNum(s.totals.api_requests)}
-              hint={filters.include_self ? "including this install's" : "excluding this install's"}
+              hint={filters.hide_api ? "hidden from this view" : "including this install's own"}
               onClick={() => showInList((f) => ({ ...f, category: ["api"] }))}
             />
             <StatTile
@@ -291,9 +297,7 @@ export default function AuditInsights() {
             </div>
           )}
 
-          <Card title="When" hint="day of week × hour, your local time">
-            <WeekHeatmap cells={s.heatmap} />
-          </Card>
+          <StreamingSection s={s} showInList={showInList} />
 
           <Card title="By category">
             <div className="flex flex-wrap gap-2">

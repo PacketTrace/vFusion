@@ -73,6 +73,7 @@ class Filters:
         device: str | None = Query(default=None, description="device name substring"),
         site: list[str] = Query(default=[]),
         include_self: bool = Query(default=False),
+        exclude_api: bool = Query(default=False, description="drop every API request row"),
         connection_id: UUID | None = Query(default=None),
     ) -> None:
         now = datetime.now(timezone.utc)
@@ -95,13 +96,16 @@ class Filters:
         self.device = (device or "").strip() or None
         self.site = [s for s in site if s]
         self.include_self = include_self
+        self.exclude_api = exclude_api
         self.connection_id = connection_id
 
-    def conditions(self, *, self_clause: bool = True) -> list[Any]:
+    def conditions(self, *, self_clause: bool = True, api_clause: bool = True) -> list[Any]:
         A = AuditEvent
         conds: list[Any] = [A.timestamp >= self.since, A.timestamp < self.until]
         if self_clause and not self.include_self:
             conds.append(A.is_self.is_(False))
+        if api_clause and self.exclude_api:
+            conds.append(A.category != "api")
         if self.connection_id:
             conds.append(A.connection_id == self.connection_id)
         if self.q:
@@ -225,7 +229,7 @@ class Facets(BaseModel):
     site: list[FacetValue]
     device: list[FacetValue]
     ip: list[FacetValue]
-    self_hidden: int
+    api_hidden: int
 
 
 # ---- endpoints ------------------------------------------------------------
@@ -333,16 +337,7 @@ async def facets(
     total = (
         await session.execute(select(func.count()).select_from(A).where(*conds))
     ).scalar() or 0
-    # How many rows the self filter is hiding from this exact slice.
-    self_hidden = 0
-    if not f.include_self:
-        self_hidden = (
-            await session.execute(
-                select(func.count())
-                .select_from(A)
-                .where(*f.conditions(self_clause=False), A.is_self.is_(True))
-            )
-        ).scalar() or 0
+    api_hidden = await _api_hidden(session, f)
 
     user_key = func.coalesce(A.user_email, A.user_name, A.api_key_name)
     status_class = case(
@@ -362,8 +357,23 @@ async def facets(
         site=await top(A.device_site),
         device=await top(A.device_name, label=func.max(A.device_type)),
         ip=await top(A.ip_address),
-        self_hidden=int(self_hidden),
+        api_hidden=api_hidden,
     )
+
+
+async def _api_hidden(session: AsyncSession, f: Filters) -> int:
+    """How many API-request rows the toggle is hiding from this exact
+    slice, so the button can say so."""
+    if not f.exclude_api:
+        return 0
+    n = (
+        await session.execute(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(*f.conditions(self_clause=False, api_clause=False), AuditEvent.category == "api")
+        )
+    ).scalar() or 0
+    return int(n)
 
 
 def _bucket_seconds(since: datetime, until: datetime) -> int:
@@ -405,17 +415,8 @@ async def stats(
             ).where(*conds)
         )
     ).one()
-    self_hidden = 0
-    if not f.include_self:
-        self_hidden = (
-            await session.execute(
-                select(func.count())
-                .select_from(A)
-                .where(*f.conditions(self_clause=False), A.is_self.is_(True))
-            )
-        ).scalar() or 0
     totals = {
-        "self_hidden": int(self_hidden),
+        "api_hidden": await _api_hidden(session, f),
         "events": int(tot[0] or 0),
         "users": int(tot[1] or 0),
         "ips": int(tot[2] or 0),
@@ -625,10 +626,13 @@ async def stats(
         ).all()
     ]
 
+    streaming = await _streaming(session, conds, f, bucket)
+
     return {
         "since": f.since.isoformat(),
         "until": f.until.isoformat(),
         "bucket_sec": bucket,
+        "streaming": streaming,
         "totals": totals,
         "categories": cat_totals,
         "timeseries": timeseries,
@@ -640,6 +644,126 @@ async def stats(
         "ips": ips,
         "devices": devices,
         "heatmap": heat,
+    }
+
+
+# Verkada names a viewing session by what was viewed; a live view has
+# no duration on the row, only a start.
+STREAM_EVENTS = ("Video History Streamed", "History Viewed", "Live Stream Started")
+STREAM_ROW_LIMIT = 3000
+LANE_LIMIT = 12
+LANE_ITEMS = 400
+
+
+async def _streaming(session: AsyncSession, conds: list[Any], f: Filters, bucket: int) -> dict[str, Any]:
+    """Who streamed which camera, for how long.
+
+    Built from the audit log's stream events: ``Video History Streamed``
+    carries ``start_time`` and ``duration`` in its details, so a row is a
+    session. Aggregated in Python over the slice's most recent rows --
+    the details live in JSONB and a few thousand rows is nothing.
+    """
+    A = AuditEvent
+    rows = (
+        await session.execute(
+            select(A)
+            .where(*conds, A.event_name.in_(STREAM_EVENTS))
+            .order_by(desc(A.timestamp))
+            .limit(STREAM_ROW_LIMIT)
+        )
+    ).scalars().all()
+
+    sessions: list[dict[str, Any]] = []
+    live_starts = 0
+    for r in rows:
+        d = r.details if isinstance(r.details, dict) else {}
+        who = r.user_name or r.user_email or r.api_key_name or r.actor
+        who_key = r.user_email or r.user_name or r.api_key_name or r.actor
+        if r.event_name == "Live Stream Started":
+            live_starts += 1
+            start = int(r.timestamp.timestamp())
+            sessions.append({
+                "id": str(r.id), "start": start, "dur": 0, "kind": "live",
+                "camera": r.device_name or r.device_id or "unknown camera",
+                "device_id": r.device_id, "who": who, "who_key": who_key, "actor": r.actor,
+                "local": str(d.get("local", "")).lower() == "true",
+            })
+            continue
+        try:
+            dur = int(float(d.get("duration") or 0))
+        except (TypeError, ValueError):
+            dur = 0
+        try:
+            start = int(float(d.get("start_time"))) if d.get("start_time") not in (None, "") else int(r.timestamp.timestamp())
+        except (TypeError, ValueError):
+            start = int(r.timestamp.timestamp())
+        sessions.append({
+            "id": str(r.id), "start": start, "dur": max(0, dur), "kind": "history",
+            "camera": r.device_name or r.device_id or "unknown camera",
+            "device_id": r.device_id, "who": who, "who_key": who_key, "actor": r.actor,
+            "local": str(d.get("local", "")).lower() == "true",
+        })
+
+    timed = [x for x in sessions if x["kind"] == "history"]
+    durs = sorted(x["dur"] for x in timed)
+    total = sum(durs)
+    median = durs[len(durs) // 2] if durs else 0
+
+    by_cam: dict[str, dict[str, Any]] = {}
+    by_who: dict[str, dict[str, Any]] = {}
+    for x in sessions:
+        c = by_cam.setdefault(x["camera"], {"device_id": x["device_id"], "name": x["camera"], "sessions": 0, "total_sec": 0})
+        c["sessions"] += 1
+        c["total_sec"] += x["dur"]
+        w = by_who.setdefault(x["who_key"], {"key": x["who_key"], "name": x["who"], "actor": x["actor"], "sessions": 0, "total_sec": 0, "_cams": set()})
+        w["sessions"] += 1
+        w["total_sec"] += x["dur"]
+        w["_cams"].add(x["camera"])
+    cameras = sorted(by_cam.values(), key=lambda c: (c["total_sec"], c["sessions"]), reverse=True)
+    for c in cameras:
+        c["avg_sec"] = int(c["total_sec"] / c["sessions"]) if c["sessions"] else 0
+    streamers = sorted(by_who.values(), key=lambda w: (w["total_sec"], w["sessions"]), reverse=True)
+    for w in streamers:
+        w["cameras"] = len(w.pop("_cams"))
+
+    # Seconds streamed per bucket, attributed to the bucket the session started in.
+    first = int(f.since.timestamp() // bucket * bucket)
+    last = int(f.until.timestamp() // bucket * bucket)
+    per: dict[int, dict[str, int]] = {}
+    for x in sessions:
+        slot = int(x["start"] // bucket * bucket)
+        e = per.setdefault(slot, {"sec": 0, "sessions": 0})
+        e["sec"] += x["dur"]
+        e["sessions"] += 1
+    timeseries = []
+    t = first
+    while t <= last:
+        e = per.get(t, {"sec": 0, "sessions": 0})
+        timeseries.append({"t": t, "sec": e["sec"], "sessions": e["sessions"]})
+        t += bucket
+
+    # Swimlanes: the busiest cameras, each with its sessions as spans.
+    lanes = []
+    for c in cameras[:LANE_LIMIT]:
+        items = [
+            {"id": x["id"], "start": x["start"], "end": x["start"] + max(x["dur"], 1), "who": x["who"], "kind": x["kind"], "local": x["local"]}
+            for x in sessions if x["camera"] == c["name"]
+        ]
+        items.sort(key=lambda i: i["start"])
+        lanes.append({"device_id": c["device_id"], "name": c["name"], "items": items[-LANE_ITEMS:]})
+
+    return {
+        "sessions": len(timed),
+        "live_starts": live_starts,
+        "total_sec": total,
+        "avg_sec": int(total / len(durs)) if durs else 0,
+        "median_sec": median,
+        "longest_sec": durs[-1] if durs else 0,
+        "cameras": cameras[:15],
+        "streamers": streamers[:15],
+        "timeseries": timeseries,
+        "lanes": lanes,
+        "truncated": len(rows) >= STREAM_ROW_LIMIT,
     }
 
 

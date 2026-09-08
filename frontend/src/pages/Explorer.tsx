@@ -2,12 +2,10 @@ import { useSearchParams } from "react-router-dom";
 
 import WebhookInbox from "./WebhookInbox";
 import AuditLog from "./AuditLog";
-import AuditInsights from "./AuditInsights";
 
 const TABS = [
   { key: "webhooks", label: "Webhooks" },
   { key: "audit", label: "Audit log" },
-  { key: "insights", label: "Insights" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -16,9 +14,7 @@ const BLURB: Record<TabKey, string> = {
   webhooks:
     "Every webhook Verkada sends this install, captured, classified and signature-checked.",
   audit:
-    "Every action in your Verkada org, from Command's audit log, pulled every ten seconds and filterable by anything on it.",
-  insights:
-    "The same audit log as a picture: who is active, what they do, from where, and when. Click anything to see the rows behind it.",
+    "Every action in your Verkada org, from Command's audit log, pulled every ten seconds and filterable by anything on it. Insights draws the same slice as a picture.",
 };
 
 /**
@@ -29,7 +25,12 @@ const BLURB: Record<TabKey, string> = {
 export default function Explorer() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab");
-  const tab: TabKey = TABS.some((t) => t.key === requested) ? (requested as TabKey) : "webhooks";
+  // ?tab=insights predates Insights moving under the Audit log tab.
+  const tab: TabKey = TABS.some((t) => t.key === requested)
+    ? (requested as TabKey)
+    : requested === "insights"
+      ? "audit"
+      : "webhooks";
 
   const setTab = (next: TabKey) => {
     const p = new URLSearchParams(searchParams);
@@ -66,7 +67,6 @@ export default function Explorer() {
       <div className="flex-1 min-h-0">
         {tab === "webhooks" && <WebhookInbox />}
         {tab === "audit" && <AuditLog />}
-        {tab === "insights" && <AuditInsights />}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import TwoFactorCard from "../components/TwoFactorCard";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -387,6 +388,8 @@ export default function Security() {
           requires the current one.
         </p>
       </Card>
+
+      <TwoFactorCard />
 
       {/* ---- Key leak monitor ---- */}
       <Card title="API key use from unexpected IPs">

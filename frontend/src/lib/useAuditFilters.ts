@@ -13,7 +13,7 @@ type Updater = AuditFilters | ((prev: AuditFilters) => AuditFilters);
 export function useAuditFilters(): {
   filters: AuditFilters;
   setFilters: (next: Updater) => void;
-  /** Apply filters and switch the Explorer to the list tab. */
+  /** Apply filters and switch to the Events view of the Audit log tab. */
   showInList: (next: Updater) => void;
 } {
   const [sp, setSp] = useSearchParams();
@@ -25,7 +25,10 @@ export function useAuditFilters(): {
         (prev) => {
           const resolved = typeof next === "function" ? next(filtersFromSearch(prev)) : next;
           const out = filtersToSearch(resolved, prev);
-          if (tab) out.set("tab", tab);
+          if (tab) {
+            out.set("tab", tab);
+            out.set("view", "events");
+          }
           // A different slice means the selected row no longer belongs.
           out.delete("event");
           return out;

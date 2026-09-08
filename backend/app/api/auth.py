@@ -30,7 +30,7 @@ from app.auth import (
     verify_session_token,
 )
 from app.db import get_session
-from app.security import throttle
+from app.security import mfa, throttle
 from app.settings_store import get_str, set_value
 
 
@@ -43,12 +43,23 @@ class AuthStatus(BaseModel):
     password_set: bool
     # True if the current request carried a valid session cookie.
     authenticated: bool
+    # Two-factor is on for this install. After a correct password the
+    # login answer carries ``mfa_required`` and a short-lived challenge
+    # instead of a session; ``/mfa`` redeems it.
+    mfa_enabled: bool = False
+    mfa_required: bool = False
+    mfa_challenge: str | None = None
     min_password_length: int = MIN_PASSWORD_LENGTH
     max_password_length: int = MAX_PASSWORD_LENGTH
 
 
 class PasswordBody(BaseModel):
     password: str
+
+
+class MfaBody(BaseModel):
+    challenge: str
+    code: str
 
 
 def _set_session_cookie(response: Response) -> None:
@@ -75,7 +86,11 @@ async def auth_status(request: Request) -> AuthStatus:
     password_set = bool(stored)
     token = request.cookies.get(SESSION_COOKIE)
     authenticated = password_set and verify_session_token(token)
-    return AuthStatus(password_set=password_set, authenticated=authenticated)
+    return AuthStatus(
+        password_set=password_set,
+        authenticated=authenticated,
+        mfa_enabled=mfa.is_enabled(),
+    )
 
 
 @router.post("/setup", response_model=AuthStatus)
@@ -131,8 +146,39 @@ async def login(
             detail += f" Too many attempts — locked for {int(cooldown)}s."
         raise HTTPException(status_code=401, detail=detail)
     throttle.record_success()
+    if mfa.is_enabled():
+        # The password alone earns a five-minute challenge, not a session.
+        return AuthStatus(
+            password_set=True,
+            authenticated=False,
+            mfa_enabled=True,
+            mfa_required=True,
+            mfa_challenge=mfa.make_challenge(),
+        )
     _set_session_cookie(response)
     return AuthStatus(password_set=True, authenticated=True)
+
+
+@router.post("/mfa", response_model=AuthStatus)
+async def redeem_mfa(body: MfaBody, response: Response) -> AuthStatus:
+    """Second step: a TOTP code or a backup code, against the challenge
+    the password step issued. Throttled with the same global limiter as
+    the password, since a six-digit code is the easier thing to guess."""
+    wait = throttle.retry_after()
+    if wait > 0:
+        raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in {int(wait) + 1}s.")
+    if not mfa.verify_challenge(body.challenge):
+        raise HTTPException(status_code=401, detail="Sign in with your password again.")
+    kind = mfa.verify_code(body.code)
+    if kind is None:
+        cooldown = throttle.record_failure()
+        detail = "That code did not match."
+        if cooldown:
+            detail += f" Too many attempts — locked for {int(cooldown)}s."
+        raise HTTPException(status_code=401, detail=detail)
+    throttle.record_success()
+    _set_session_cookie(response)
+    return AuthStatus(password_set=True, authenticated=True, mfa_enabled=True)
 
 
 @router.post("/logout")

@@ -27,7 +27,7 @@ Eight starter flows ship with the product, pre-wired with a trigger, the Gemini 
 - **Templates ask before they build.** Which camera, which animal, which door: the questions a template cannot answer itself are asked on install, with skip one click away.
 - **Search and facets** are computed from what the flow actually does, not hand-written tags, so a new template is categorised the moment it exists.
 - **Your own templates.** *Save as template* in the flow editor promotes any flow into this list. Export and import move a flow between installs as JSON, with the Helix event types it needs embedded so the importer can recreate them.
-- **Draft a flow from a sentence.** The builder on this tab takes "when a person shows up at the back door after midnight, describe what they're carrying" and proposes a flow: grounded in your real cameras, doors and event types, validated against the live action registry, and replayed against stored webhooks so "will this fire?" is evidence. It proposes; it never saves without you.
+- **Draft a flow from a sentence.** The builder on this tab takes "when a person shows up at the back door after midnight, describe what they're carrying" or "when anyone starts a live stream of the nursery camera, log who to Helix" and proposes a flow: grounded in your real cameras, doors, event types and the events your audit log has actually produced, validated against the live action registry, and replayed against stored webhooks or audit entries so "will this fire?" is evidence. It proposes; it never saves without you.
 
 ## Analytics
 
@@ -43,10 +43,11 @@ A drag-and-drop canvas. Pick a trigger, add steps, connect them, and the DAG run
 
 - **Per-step ▶ Run** executes one node against the most recent matching event, so a step can be debugged without firing the flow.
 - **Test run** picks a stored webhook or audit entry and runs the whole flow against it, lighting up each node on the canvas as it goes.
-- **Variables.** Any field carries `{{ trigger.data.camera_id }}` or `{{ steps.analyze.output.text }}`. The picker lists every path seen in real events, with a sample value. Fields whose name matches a trigger field auto-wire.
+- **Variables, in words.** Any field can carry a value from the event or an earlier step. The picker is searchable and lists them by name ("obstructed", "camera id", "the answer") with the value each currently has, grouped by *This event* and by step; a pick lands at the caret. Under any field that holds one, a chip reads it back the way a person would, *Inspect the door › obstructed = true*, with an × to remove it. The stored form stays `{{ steps.inspect.output.json.obstructed }}`, which is what the engine runs. Fields whose name matches a trigger field auto-wire.
 - **Pick "the camera from the event"** instead of typing a reference.
 - **Conditions** branch on `equals`, `contains`, `exists`, `gt`, `lt` and their inverses, against the trigger or any prior step.
-- **An assistant beside the canvas** answers questions about what a node does and whether vFusion can do a thing. It returns prose and at most a suggestion; it never edits the canvas.
+- **An assistant beside the canvas** answers questions about what a node does and whether vFusion can do a thing, grounded in the same devices, actions and recent audit log the builder sees. It returns prose and at most a suggestion; it never edits the canvas.
+- **Saving says so.** The Save button turns green with a check for a moment, and the time of the last save sits beside it.
 - **Unsaved changes** are guarded before you leave.
 - **Helix step reads the analyze step above it**, so its attributes are seeded from what the prompt already produces, and a missing event type can be drafted from a sentence without leaving the editor.
 

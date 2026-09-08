@@ -198,12 +198,85 @@ function SetupWizard({ status }: { status: AuthStatus }) {
 function LoginForm() {
   const qc = useQueryClient();
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  // Set once the password is accepted on an install with two-factor on.
+  // Good for five minutes; the server says so if it expires.
+  const [challenge, setChallenge] = useState<string | null>(null);
 
   const login = useMutation({
     mutationFn: () =>
       apiPost<AuthStatus>("/api/auth/login", { password }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: AUTH_QUERY_KEY }),
+    onSuccess: (res) => {
+      if (res.mfa_required && res.mfa_challenge) {
+        setChallenge(res.mfa_challenge);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
+    },
   });
+  const redeem = useMutation({
+    mutationFn: () =>
+      apiPost<AuthStatus>("/api/auth/mfa", { challenge, code }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: AUTH_QUERY_KEY }),
+    onError: (e: Error) => {
+      // A dead challenge sends them back to the password, not to a
+      // code box that can never succeed.
+      if (/password again/i.test(e.message)) {
+        setChallenge(null);
+        setCode("");
+      }
+    },
+  });
+
+  if (challenge) {
+    return (
+      <GateShell title="Two-factor" subtitle="Enter the code from your authenticator app, or one of your backup codes.">
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (code.trim().length >= 6) redeem.mutate();
+          }}
+        >
+          <label className="block">
+            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
+              Code
+            </div>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              autoFocus
+              autoComplete="one-time-code"
+              inputMode="text"
+              placeholder="123 456  or  ABCD-EFGH"
+              className="w-full px-3 py-2 rounded bg-white/5 border border-white/15 text-lg tracking-[0.2em] font-mono text-center focus:outline-none focus:border-sky-600"
+              data-testid="mfa-code"
+            />
+          </label>
+          {redeem.isError && (
+            <div className="text-xs text-rose-300">{(redeem.error as Error).message}</div>
+          )}
+          <button
+            type="submit"
+            disabled={code.trim().length < 6 || redeem.isPending}
+            className="w-full text-sm px-3 py-2 rounded bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {redeem.isPending ? "Checking…" : "Continue"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setChallenge(null);
+              setCode("");
+            }}
+            className="w-full text-xs text-slate-400 hover:text-slate-200"
+          >
+            Back to password
+          </button>
+        </form>
+      </GateShell>
+    );
+  }
 
   return (
     <GateShell title="Sign in" subtitle="Enter the admin password to continue.">

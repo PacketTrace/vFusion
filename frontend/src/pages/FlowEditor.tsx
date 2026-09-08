@@ -33,6 +33,7 @@ import {
   RunDetail,
   RunStep,
   WebhookEvent,
+  AuditEvent,
 } from "../lib/api";
 import HelixBootstrapModal from "../components/HelixBootstrapModal";
 import TriggerSetupModal from "../components/TriggerSetupModal";
@@ -130,6 +131,9 @@ function FlowEditorInner() {
     branch: "true" | "false" | null;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<number | undefined>(undefined);
   // The trigger setup modal, opened by ?setup=trigger after Automate.
   const [setupOpen, setSetupOpen] = useState(false);
   // Only so the modal can say which camera by name rather than by UUID.
@@ -196,6 +200,40 @@ function FlowEditorInner() {
     stepStatusByName[s.name] = s.status;
   }
   const runOverallStatus = activeRun.data?.status ?? null;
+
+  // Arrived from Explorer → Audit log → "Automate this": the trigger is
+  // the entry's event, narrowed to its device when it has one, since
+  // "when this happens on this door" is nearly always what was meant.
+  // The filter is one click to remove if it was not.
+  const fromAuditId = searchParams.get("from_audit");
+  useEffect(() => {
+    if (!isNew || !fromAuditId) return;
+    let cancelled = false;
+    apiGet<AuditEvent>(`/api/audit-events/${fromAuditId}`)
+      .then((ev) => {
+        if (cancelled) return;
+        const filters: Array<{ field: string; value: string }> = [];
+        if (ev.device_name) filters.push({ field: "data.device_name", value: ev.device_name });
+        setTriggerType("verkada_audit");
+        setAudit({
+          category: ev.category,
+          eventName: ev.event_name,
+          actor: ev.actor,
+          includeSelf: ev.is_self,
+          filters,
+        });
+        setName(`On ${ev.event_name}${ev.device_name ? ` — ${ev.device_name}` : ""}`);
+        setSelected({ kind: "trigger" });
+        setSearchParams({}, { replace: true });
+      })
+      .catch(() => {
+        /* the editor still opens; the trigger is just unset */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromAuditId, isNew]);
 
   const fromEventId = searchParams.get("from_event");
   useEffect(() => {
@@ -358,6 +396,13 @@ function FlowEditorInner() {
       movedRef.current = false;
       if (isNew) navigate(`/flows/${flow.id}/edit`, { replace: true });
       setErr(null);
+      // A save is fast enough that "Saving…" is invisible, which reads
+      // as nothing having happened. Hold the confirmation long enough
+      // to be seen, then let the button go back to being a button.
+      setSavedAt(Date.now());
+      setJustSaved(true);
+      window.clearTimeout(savedTimer.current);
+      savedTimer.current = window.setTimeout(() => setJustSaved(false), 1800);
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -1202,10 +1247,19 @@ function FlowEditorInner() {
           <button
             onClick={handleSave}
             disabled={save.isPending}
-            className="text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50"
+            className={`text-sm px-3 py-1.5 rounded-md bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50 transition-[background-color,color] duration-150 ease-out-strong ${
+              justSaved ? "!bg-emerald-600 hover:!bg-emerald-600" : ""
+            }`}
+            aria-live="polite"
+            data-testid="flow-save"
           >
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending ? "Saving…" : justSaved ? "✓ Saved" : "Save"}
           </button>
+          {savedAt && !justSaved && !save.isPending && (
+            <span className="text-[11px] text-slate-500 self-center" title={new Date(savedAt).toLocaleString()}>
+              saved {new Date(savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
         </div>
       </div>
 
@@ -1751,6 +1805,7 @@ function priorStepsFor(
       const fromRun = keysFromSample(captured);
       return {
         name: n.name,
+        label: n.label || n.name,
         output_sample: captured,
         jsonKeys: fromRun.length ? fromRun : keysFromPrompt(prompt),
         summary,
@@ -1760,6 +1815,7 @@ function priorStepsFor(
       n.kind === "condition" ? specs?._condition : specs?.[n.action_type ?? ""];
     return {
       name: n.name,
+      label: n.label || n.name,
       output_sample: spec?.output_sample,
       jsonKeys: keysFromPrompt(prompt),
       summary,
@@ -1790,7 +1846,7 @@ function NodeEditor({
   triggerFamily?: string;
   triggerNotificationType?: string;
   triggerCameraId?: string;
-  priorSteps: Array<{ name: string; output_sample: unknown }>;
+  priorSteps: Array<{ name: string; label?: string; output_sample: unknown }>;
   onChangeName: (n: string) => void;
   onChangeLabel: (l: string) => void;
   onChangeActionType: (t: string) => void;

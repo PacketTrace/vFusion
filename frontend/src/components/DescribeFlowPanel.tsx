@@ -40,7 +40,7 @@ export default function DescribeFlowPanel({
   onDismiss: () => void;
 }) {
   const [intent, setIntent] = useState("");
-  const [runMode, setRunMode] = useState<"webhook" | "schedule" | null>(null);
+  const [runMode, setRunMode] = useState<"webhook" | "schedule" | "audit" | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +145,7 @@ export default function DescribeFlowPanel({
           onChange={(e) => setIntent(e.target.value)}
           rows={3}
           autoFocus
-          placeholder="e.g. when a person shows up at the back door after midnight, describe what they're carrying"
+          placeholder="e.g. when a person shows up at the back door after midnight, describe what they're carrying — or: when anyone starts a live stream of the nursery camera, log who and when to Helix"
           className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-sm resize-y focus:outline-none focus:border-sky-600"
         />
 
@@ -154,7 +154,8 @@ export default function DescribeFlowPanel({
           {(
             [
               [null, "Let it decide"],
-              ["webhook", "When something happens"],
+              ["webhook", "When a webhook arrives"],
+              ["audit", "When something happens in Command"],
               ["schedule", "On a schedule"],
             ] as const
           ).map(([v, label]) => (

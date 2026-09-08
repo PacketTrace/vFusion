@@ -24,13 +24,13 @@ export default function AuditFilterBar({
   filters,
   setFilters,
   status,
-  selfHidden,
+  apiHidden,
   total,
 }: {
   filters: AuditFilters;
   setFilters: (f: AuditFilters | ((p: AuditFilters) => AuditFilters)) => void;
   status: AuditStatus | undefined;
-  selfHidden: number | undefined;
+  apiHidden: number | undefined;
   total: number | undefined;
 }) {
   // Debounced locally so the URL (and the queries behind it) change
@@ -98,22 +98,23 @@ export default function AuditFilterBar({
 
       <button
         type="button"
-        onClick={() => setFilters((f) => ({ ...f, include_self: !f.include_self }))}
+        onClick={() => setFilters((f) => ({ ...f, hide_api: !f.hide_api }))}
         className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${
-          filters.include_self
+          f_showing(filters)
             ? "border-sky-600 bg-sky-950/40 text-sky-200"
             : "border-white/15 text-slate-300 hover:bg-white/10"
         }`}
         title={
-          filters.include_self
-            ? "Requests made with this install's own Verkada key are included"
-            : "Requests made with this install's own Verkada key are hidden — they are most of the log and rarely the question"
+          filters.hide_api
+            ? "API requests are hidden — they are most of the log and rarely the question. Click to show them."
+            : "Showing API requests, including the ones this install makes itself"
         }
-        aria-pressed={filters.include_self}
+        aria-pressed={!filters.hide_api}
+        data-testid="audit-api-toggle"
       >
-        {filters.include_self ? "Showing own API calls" : "Own API calls hidden"}
-        {!filters.include_self && selfHidden !== undefined && selfHidden > 0 && (
-          <span className="ml-1 text-slate-500">({fmtNum(selfHidden)})</span>
+        {filters.hide_api ? "API calls hidden" : "Showing API calls"}
+        {filters.hide_api && apiHidden !== undefined && apiHidden > 0 && (
+          <span className="ml-1 text-slate-500">({fmtNum(apiHidden)})</span>
         )}
       </button>
 
@@ -150,6 +151,8 @@ export default function AuditFilterBar({
     </div>
   );
 }
+
+const f_showing = (f: AuditFilters) => !f.hide_api;
 
 function PollPill({ status }: { status: AuditStatus | undefined }) {
   // Re-render every few seconds so "12s ago" stays honest without a

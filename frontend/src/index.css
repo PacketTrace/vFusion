@@ -498,3 +498,40 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 .audit-row-new {
   background-color: rgba(56, 189, 248, 0.14);
 }
+
+/* The variable picker opens from its button, top-right. Same curve and
+ * duration as the value picker; a different origin because the anchor
+ * is on the other side. */
+.variable-picker-in {
+  animation: value-picker-in 150ms var(--ease-out);
+  transform-origin: top right;
+}
+
+/* Two-factor setup: the QR assembles from the centre outward, one
+ * module at a time, with a ring from the atom sweeping across as it
+ * lands. Opacity and transform only, so the geometry a scanner reads
+ * is never touched; after ~1.4 s the component drops the animation
+ * classes entirely and the code is static. Reduced motion: no
+ * animation at all -- the code is simply there. */
+@keyframes qr-module-in {
+  0%   { opacity: 0; transform: scale(0.2); }
+  60%  { opacity: 1; transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.qr-module {
+  opacity: 0;
+  animation: qr-module-in 420ms var(--ease-out) forwards;
+}
+@keyframes qr-ring-sweep {
+  0%   { opacity: 0; transform: rotate(-30deg) scale(0.6); }
+  25%  { opacity: 0.9; }
+  100% { opacity: 0; transform: rotate(210deg) scale(1.05); }
+}
+.qr-ring {
+  animation: qr-ring-sweep 1.1s var(--ease-in-out) forwards;
+  filter: drop-shadow(0 0 1.5px #7dd3fc);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qr-module { animation: none; opacity: 1; }
+  .qr-ring { display: none; }
+}

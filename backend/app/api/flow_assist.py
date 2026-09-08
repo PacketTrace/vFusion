@@ -92,8 +92,11 @@ async def chat(
 
     org = await flow_context.org_context(session, body.verkada_connection_id)
     flows = await flow_context.existing_flows(session)
+    audit = await flow_context.audit_context(session)
     blocks = [
-        flow_context.as_prompt_block("TRIGGER TAXONOMY", TAXONOMY),
+        flow_context.as_prompt_block("TRIGGER TAXONOMY (verkada_webhook)", TAXONOMY),
+        flow_context.as_prompt_block("AUDIT-LOG TRIGGER (verkada_audit)", flow_context.AUDIT_TRIGGER_RULES),
+        flow_context.as_prompt_block("THIS ORG'S RECENT AUDIT LOG", audit, limit=16000),
         flow_context.as_prompt_block("ACTION CATALOG", flow_context.action_catalog()),
         flow_context.as_prompt_block("THIS ORG'S DEVICES", org),
         flow_context.as_prompt_block("FLOWS THIS INSTALL ALREADY HAS", flows),

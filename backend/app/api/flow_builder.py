@@ -44,10 +44,14 @@ from app.crypto import decrypt_secret
 from app.db import get_session
 from app.engine.actions import ACTIONS
 from app.flows import context as flow_context
+from app.audit.ingest import trigger_payload as audit_trigger_payload
+from app.audit.taxonomy import CATEGORIES as AUDIT_CATEGORIES
 from app.engine.triggers import matches as trigger_matches
+from app.engine.triggers import matches_audit
 from app.pricing import ledger
 from app.pricing.gemini import cost_for
 from app.models import (
+    AuditEvent,
     Connection,
     Run,
     VerkadaCamera,
@@ -80,13 +84,16 @@ class ProposeRequest(BaseModel):
     verkada_connection_id: UUID | None = None
     gemini_connection_id: UUID | None = None
     # Answers to the questions asked before drafting.
-    run_mode: str | None = None  # "webhook" | "schedule"
+    run_mode: str | None = None  # "webhook" | "schedule" | "audit"
     # A real event of the kind that should trigger this. Grounding the
     # trigger in something that actually happened is what stops the model
     # proposing an unfiltered trigger that fires on everything.
     example_event_id: UUID | None = None
     # Or roughly when it last happened, if they don't want to browse.
     example_epoch: int | None = None
+    # An audit-log entry of the kind that should fire this (Explorer →
+    # Audit log → Automate this hands one over).
+    example_audit_event_id: UUID | None = None
 
 
 _action_catalog = flow_context.action_catalog
@@ -126,7 +133,8 @@ Rules that matter:
 - `action_type` MUST be one of the action catalog entries. Never invent one.
 - Config keys MUST come from that action's config_fields. Leave every \
 `connection_id` / `gemini_connection_id` as null — they are bound at install.
-- `trigger_config.family` and `notification_type` MUST come from the taxonomy.
+- For a webhook trigger, `trigger_config.family` and `notification_type` MUST \
+come from the taxonomy. For an audit-log trigger, follow the AUDIT LOG section.
 - Reference a real camera_id from the org context when the user names a \
 camera. If the user's wording matches no camera, or matches several, leave \
 the field as the template ref "{{ trigger.data.camera_id }}" and say so in \
@@ -147,8 +155,14 @@ notifications or emails. If the user asked to "be notified", put an \
 assumption saying the alert itself is configured in Verkada Command on the \
 Helix event this flow writes.
 
-=== TRIGGER TAXONOMY ===
+=== TRIGGER TAXONOMY (verkada_webhook) ===
 __TAXONOMY__
+
+=== AUDIT LOG (verkada_audit) ===
+__AUDIT_RULES__
+
+What this org's audit log has actually contained recently:
+__AUDIT__
 
 === ACTION CATALOG ===
 __ACTIONS__
@@ -263,6 +277,11 @@ def _warnings(flow: dict[str, Any]) -> list[str]:
     out: list[str] = []
     trig = flow.get("trigger_config") or {}
     filters = trig.get("filters") or {}
+    if flow.get("trigger_type") == "verkada_audit" and not trig.get("event_name") and not trig.get("category"):
+        out.append(
+            "This triggers on EVERY audit-log entry. Set an event_name (or at least a "
+            "category) so it fires on the thing you care about."
+        )
     if flow.get("trigger_type") == "verkada_webhook" and trig.get("family") == "camera":
         pinned = {
             str((n.get("config") or {}).get("camera_id"))
@@ -313,6 +332,17 @@ def _validate(tpl: dict[str, Any]) -> list[str]:
 
     trig = flow.get("trigger_config") or {}
     family = trig.get("family")
+    if flow.get("trigger_type") == "verkada_audit":
+        cat = trig.get("category")
+        if cat and cat not in AUDIT_CATEGORIES:
+            errors.append(
+                f"audit category {cat!r} is not one of: {', '.join(sorted(AUDIT_CATEGORIES))}"
+            )
+        actor = trig.get("actor")
+        if actor and actor not in ("user", "api_key", "support", "system"):
+            errors.append(f"audit actor {actor!r} must be user, api_key, support or system")
+        if not isinstance(trig.get("filters", {}), dict):
+            errors.append("audit trigger filters must be an object of path: value")
     if flow.get("trigger_type") == "verkada_webhook":
         if family and family not in TAXONOMY:
             errors.append(
@@ -576,6 +606,33 @@ def _replay_rows(
     }
 
 
+def _replay_audit_rows(payloads: list[dict[str, Any]], trigger_config: dict[str, Any]) -> dict[str, Any]:
+    """Same idea as ``_replay_rows``, over audit-log trigger payloads."""
+    hits = []
+    for p in payloads:
+        try:
+            if matches_audit(trigger_config, p):
+                hits.append({"id": p.get("id"), "received_at": p.get("timestamp"), "event_name": p.get("event_name")})
+        except Exception:  # noqa: BLE001
+            continue
+    stamps = [p.get("timestamp") for p in payloads if p.get("timestamp")]
+    span_days: float | None = None
+    if len(stamps) >= 2:
+        try:
+            newest = datetime.fromisoformat(str(max(stamps)))
+            oldest = datetime.fromisoformat(str(min(stamps)))
+            span_days = max((newest - oldest).total_seconds() / 86400.0, 0.0) or None
+        except ValueError:
+            span_days = None
+    return {
+        "scanned": len(payloads),
+        "matched": len(hits),
+        "samples": hits[:5],
+        "span_days": span_days,
+        "per_day": (len(hits) / span_days) if span_days else None,
+    }
+
+
 @router.get("/event-kinds")
 async def event_kinds(
     limit: int = 4000,
@@ -742,6 +799,7 @@ async def propose(
         )
 
     org = await _org_context(session, payload.verkada_connection_id)
+    audit_ctx = await flow_context.audit_context(session)
     endpoint_text, endpoint_index = await _endpoint_catalog(session)
     observed_costs = await _observed_step_costs(session)
     examples = _examples()
@@ -769,7 +827,39 @@ async def propose(
     example = await _example_event(
         session, payload.example_event_id, payload.example_epoch
     )
-    if payload.run_mode == "schedule":
+    audit_example = None
+    if payload.example_audit_event_id is not None:
+        audit_row = await session.get(AuditEvent, payload.example_audit_event_id)
+        if audit_row is not None:
+            audit_example = audit_trigger_payload(audit_row)
+            audit_example.pop("devices", None)
+    audit_replay_rows = [
+        audit_trigger_payload(r)
+        for r in (
+            await session.execute(
+                select(AuditEvent)
+                .where(AuditEvent.category != "api")
+                .order_by(AuditEvent.timestamp.desc())
+                .limit(REPLAY_LIMIT)
+            )
+        ).scalars().all()
+    ]
+    if audit_example is not None or payload.run_mode == "audit":
+        run_mode_block = (
+            "Use trigger_type \"verkada_audit\". "
+            + (
+                "The user pointed at a REAL audit-log entry of the kind that should fire "
+                "this flow:\n" + json.dumps(audit_example, indent=1, default=str)
+                + "\n\nSet trigger_config.event_name and category to match it exactly, "
+                "and add a filters entry for data.device_name when the entry names a "
+                "device, unless the user clearly wants every device."
+                if audit_example is not None
+                else "Choose category and event_name from events_seen in the AUDIT LOG "
+                "section (exact spelling) and add filters narrow enough that the flow "
+                "does not fire on unrelated activity. Say in assumptions which you chose."
+            )
+        )
+    elif payload.run_mode == "schedule":
         run_mode_block = (
             "Use trigger_type \"schedule\". Pick a sensible interval for the task "
             "and say what you chose in assumptions. Do NOT use a webhook trigger."
@@ -813,6 +903,8 @@ async def propose(
                 indent=1,
             ),
         )
+        .replace("__AUDIT_RULES__", flow_context.AUDIT_TRIGGER_RULES)
+        .replace("__AUDIT__", json.dumps(audit_ctx, indent=1, default=str)[:16000])
         .replace("__ACTIONS__", json.dumps(catalog, indent=1))
         .replace("__ORG__", json.dumps(org, indent=1)[:20000])
         .replace("__ENDPOINTS__", endpoint_text)
@@ -841,11 +933,22 @@ async def propose(
                     f"event from {example['received_at']}"
                 ),
             )
+        elif audit_example is not None:
+            yield line(
+                stage="grounded",
+                detail=(
+                    f"trigger modelled on a real audit entry: {audit_example.get('event_name')} "
+                    f"at {audit_example.get('timestamp')}"
+                ),
+            )
         elif payload.run_mode:
             yield line(stage="run-mode", detail=f"building a {payload.run_mode} trigger")
         yield line(
             stage="replay-ready",
-            detail=f"{len(replay_rows)} past webhook events loaded to test against",
+            detail=(
+                f"{len(replay_rows)} past webhook events and {len(audit_replay_rows)} "
+                "audit entries loaded to test against"
+            ),
         )
 
         attempts: list[dict[str, Any]] = []
@@ -940,6 +1043,13 @@ async def propose(
         if flow.get("trigger_type") == "verkada_webhook":
             yield line(stage="replaying", detail="testing the trigger on real events")
             replay = _replay_rows(replay_rows, flow.get("trigger_config") or {})
+            yield line(
+                stage="replayed",
+                detail=f"matched {replay['matched']} of {replay['scanned']}",
+            )
+        elif flow.get("trigger_type") == "verkada_audit":
+            yield line(stage="replaying", detail="testing the trigger on real audit entries")
+            replay = _replay_audit_rows(audit_replay_rows, flow.get("trigger_config") or {})
             yield line(
                 stage="replayed",
                 detail=f"matched {replay['matched']} of {replay['scanned']}",

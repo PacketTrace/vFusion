@@ -44,11 +44,11 @@ test.describe("Explorer", () => {
     const failures = watchForFailures(page);
     await signIn(page);
     // Include the install's own calls so a quiet org still has rows.
-    await page.goto("/explorer?tab=insights&range=7d&self=1");
+    await page.goto("/explorer?tab=audit&view=insights&range=7d&api=1");
     const api = page.getByRole("button", { name: /API requests/ });
     await expect(api).toBeVisible({ timeout: 60_000 });
     await api.click();
-    await expect(page).toHaveURL(/tab=audit/);
+    await expect(page).toHaveURL(/view=events/);
     await expect(page).toHaveURL(/category=api/);
     await expect(page.getByTestId("audit-list").or(page.getByText("Nothing matches."))).toBeVisible({
       timeout: 30_000,

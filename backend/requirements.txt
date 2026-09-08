@@ -20,3 +20,5 @@ PyYAML==6.0.2
 # the one dependency here where the newest version is usually the right
 # one.
 yt-dlp>=2026.8.19
+pyotp==2.9.0
+segno==1.6.1

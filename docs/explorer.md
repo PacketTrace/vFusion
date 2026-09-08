@@ -2,7 +2,7 @@
 
 *What is happening in your org, from two directions: what Verkada pushes to you, and what you pull from Verkada.*
 
-**Where:** the first item in the nav. Three tabs. Every filter you set lives in the URL, so a view can be bookmarked or pasted to someone else.
+**Where:** the first item in the nav. Two tabs: Webhooks, and Audit log with an Events view and an Insights view. Every filter you set lives in the URL, so a view can be bookmarked or pasted to someone else.
 
 ## Webhooks
 
@@ -23,9 +23,10 @@ A local, filterable copy of Command's audit log. Verkada's own audit log page fi
 - **Seven days back on first run**, then everything from that point on. *Pull older history* reaches back 30, 90 or 365 days more.
 - **Filter by anything on a row**: category (Verkada's own groupings: Admin, User management, Cameras, Access control, Sensors, Alarms…), event, actor (signed-in user, API key, Verkada Support, system), user or key, device, device type, site, IP address, API key name, HTTP method, status code, and free text across the details.
 - **Counts before you click.** The rail shows how many rows each value has in the current slice.
-- **Your own traffic is hidden by default.** API requests made with a key vFusion holds are most of a working org's log and rarely the question. One toggle shows them, with the count.
+- **API requests are hidden by default.** They are most of a working org's log (vFusion's own polling included) and rarely the question. One toggle shows them, with the count of what it was hiding.
 - **Where an address is.** Each IP shows a city and region, with proxy and hosting-provider flags in the detail view. See [geolocation](#geolocation).
 - **Detail view** shows who, from where, to what, the key's owner when a key did it, Verkada's raw details, and *show more from* links: this user, this key, this IP, this device, this event type, this endpoint.
+- **Automate this.** One button on any entry opens the flow editor with an Audit log trigger already set to that event, narrowed to its device when it has one. The next time it happens, the flow runs.
 - **Export CSV** for any slice, up to 50,000 rows.
 - **Retention** defaults to keep everything (Settings → Retention).
 
@@ -41,14 +42,14 @@ Lookups go to ip-api.com in batches, only for addresses on screen, and results a
 
 ## Insights
 
-The audit log as a picture. Same slice as the list, same filters, and every mark is a link into the rows behind it.
+The Insights view of the Audit log tab: the same slice as the list, same filters, drawn. Every mark is a link into the rows behind it.
 
 - **Activity over time**, stacked by category. Click a column to see that window.
 - **Who is active** and what each person or key spends their time doing.
 - **What is happening** — events by type.
 - **Devices** most touched, **IP addresses** with location and how many actors used each.
-- **API endpoints** with request and error counts, **API keys**, **status codes**.
-- **When** — a day-of-week × hour heatmap in your local time.
+- **API endpoints** with request and error counts, **API keys**, **status codes** (when API requests are shown).
+- **Streaming** — how cameras are being watched. Sessions, time streamed, average and longest, then a **swimlane per camera** with every viewing session drawn where it happened (history views as spans, live views as marks), the most-streamed cameras, and the top streamers. Built from the log's *Video History Streamed* and *Live Stream Started* entries.
 
 ## How it is built
 

@@ -26,8 +26,8 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 **See everything**
 
 - 📥 **Webhooks** — every event Verkada sends, captured at `/hooks/*`, classified into a family, HMAC-verified, searchable by camera and door *name*.
-- 🔎 **Audit log** — a local copy of Command's audit log, pulled every 10 seconds, filterable by user, event, device, IP, key, endpoint and status code, with counts on every value and CSV export. No 90-day cap.
-- 📈 **Insights** — who is active, what they do, from where, against which devices and endpoints, and when. Every chart drills into the rows behind it.
+- 🔎 **Audit log** — a local copy of Command's audit log, pulled every 10 seconds, filterable by user, event, device, IP, key, endpoint and status code, with counts on every value and CSV export. No 90-day cap. Any entry becomes a flow trigger with one click.
+- 📈 **Insights** — who is active, what they do, from where, against which devices and endpoints. **Streaming activity** on a swimlane per camera: who watched what, when, for how long. Every chart drills into the rows behind it.
 - 🌍 **Where an address is** — city and region beside every IP, with proxy and hosting flags.
 
 **Automate it**
@@ -54,7 +54,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 
 **Run it with confidence**
 
-- 🔐 **Secrets encrypted at rest**, generated signing keys, session revocation, login throttling, and a Security tab that measures the running install rather than reciting a checklist.
+- 🔐 **Two-factor sign-in** with any authenticator app and one-time backup codes, secrets encrypted at rest, generated signing keys, session revocation, login throttling, and a Security tab that measures the running install rather than reciting a checklist.
 - 🛡 **Is anyone else using my key?** A monitor that walks the audit log and flags any address using vFusion's Verkada key that is not vFusion.
 - 💸 **Cost tracking** for everything that spends, and a spending cap that pauses flows for the month.
 - 🌐 **Public URL built in** — a free TryCloudflare URL in quick mode, your own domain in lab mode; only `POST /hooks/verkada` is ever exposed.
@@ -152,7 +152,7 @@ That is quick mode: a free TryCloudflare URL that changes on restart. For a stab
 This tool can unlock doors, pull footage, post into Helix and call any endpoint your key allows. Treat it like the production system it talks to.
 
 - **Scope the Verkada API key to least privilege.** Grant only what your flows need. If you only want camera analytics, do not grant door control.
-- **Keep the dashboard off the public internet.** One password gates it, throttled but with no MFA and no per-user accounts. Bind it to LAN or localhost and reach it over Tailscale or a VPN. The only thing meant to face the internet is `POST /hooks/verkada`.
+- **Keep the dashboard off the public internet.** One password gates it, throttled, with optional two-factor but no per-user accounts. Bind it to LAN or localhost and reach it over Tailscale or a VPN. The only thing meant to face the internet is `POST /hooks/verkada`.
 - **Always set a webhook signing secret.** Without it, anyone who knows your public URL can forge events, and a forged event can trigger a real action.
 - **Cap Gemini spend twice.** vFusion's cap pauses flows; a budget alert in [Google AI Studio](https://aistudio.google.com/) is the real ceiling.
 - **Know what Google does with footage.** On a free-tier Gemini key, [Google's terms](https://ai.google.dev/gemini-api/terms) allow training on your prompts and frames, with human review. Enable billing on the linked project before pointing this at production cameras.
@@ -177,7 +177,7 @@ This tool can unlock doors, pull footage, post into Helix and call any endpoint 
 
 What is in the box:
 
-- **Single admin password**, bcrypt-hashed, throttled after five attempts. Sessions are signed cookies with an epoch, so **Sign out everywhere** and a password change revoke every session.
+- **Single admin password**, bcrypt-hashed, throttled after five attempts, with optional **two-factor** (TOTP plus backup codes; the secret lives encrypted in the secrets volume, never in the database). Sessions are signed cookies with an epoch, so **Sign out everywhere** and a password change revoke every session.
 - **Every stored credential is Fernet-encrypted.** The encryption key and the cookie-signing key are generated on first boot and kept in a Docker volume; the repo ships no defaults for either.
 - **Webhooks are HMAC-verified** against the signing secret, with replay tolerance and constant-time comparison.
 - **The public surface is one path.** Quick mode enforces `POST /hooks/verkada` with Caddy; lab mode with the tunnel's route. Everything else answers 404.
@@ -185,7 +185,7 @@ What is in the box:
 - **Sensitive headers are redacted** before a webhook body is stored. **Retention windows** sweep events, media and runs on a schedule.
 - **One outbound lookup**: IP geolocation for the audit log goes to ip-api.com, only for addresses on screen, never private ones. `GEOIP_PROVIDER=off` turns it off.
 
-What is not: multi-user accounts, MFA, RBAC, or horizontal scaling. Anyone with both the `vfusion_secrets` volume and the database can decrypt every credential. Details, the threat model and the reporting process: [docs/settings.md → Security](docs/settings.md#security) and [SECURITY.md](SECURITY.md).
+What is not: multi-user accounts, RBAC, or horizontal scaling. Anyone with both the `vfusion_secrets` volume and the database can decrypt every credential. Details, the threat model and the reporting process: [docs/settings.md → Security](docs/settings.md#security) and [SECURITY.md](SECURITY.md).
 
 ## Help expand the taxonomy
 

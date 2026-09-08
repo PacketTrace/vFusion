@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -20,9 +20,12 @@ import EndpointPicker from "./EndpointPicker";
 import HelixEventTypeEditor from "./HelixEventTypeEditor";
 import { autoWireAttributes } from "../lib/promptKeys";
 import VariablePicker from "./VariablePicker";
+import RefPreview from "./RefPreview";
 
 interface PriorStep {
   name: string;
+  /** What the canvas calls this step. Refs read as "<label> › field". */
+  label?: string;
   output_sample: unknown;
   /** Keys this step will put in output.json — read from a captured run
    *  if it has one, otherwise from its prompt. See lib/promptKeys. */
@@ -150,6 +153,32 @@ export default function StepConfigForm({
     enabled: !!triggerFamily,
     staleTime: 60_000,
   });
+
+  // Where the caret last was in each text field, so a picked variable
+  // lands there. Stored on blur/select because the picker button
+  // steals focus before its click handler runs.
+  const caret = useRef<Record<string, number>>({});
+  // The sample-fields list, folded back into an object so a preview can
+  // resolve {{ trigger.data.camera_id }} to the value it would take.
+  const triggerSampleObj = useMemo(() => {
+    const fields = triggerSample.data ?? [];
+    if (fields.length === 0) return null;
+    const root: Record<string, unknown> = {};
+    for (const f of fields) {
+      const parts = f.path.replace(/^trigger\./, "").split(".");
+      let cur: Record<string, unknown> = root;
+      for (let i = 0; i < parts.length; i++) {
+        const k = parts[i];
+        if (i === parts.length - 1) {
+          if (!(k in cur)) cur[k] = f.sample;
+        } else {
+          if (typeof cur[k] !== "object" || cur[k] === null) cur[k] = {};
+          cur = cur[k] as Record<string, unknown>;
+        }
+      }
+    }
+    return root;
+  }, [triggerSample.data]);
 
   const setOne = (name: string, value: unknown) => {
     const next = { ...config };
@@ -354,6 +383,8 @@ export default function StepConfigForm({
           triggerCameraId,
           triggerHasCameraId,
           triggerHasDoorId,
+          caret,
+          triggerSampleObj,
         )}
       </Field>
     );
@@ -396,7 +427,12 @@ function renderControl(
   triggerCameraId: string | undefined,
   triggerHasCameraId: boolean,
   triggerHasDoorId: boolean,
+  caret: React.MutableRefObject<Record<string, number>>,
+  triggerSampleObj: Record<string, unknown> | null,
 ): JSX.Element {
+  const rememberCaret = (name: string, el: HTMLInputElement | HTMLTextAreaElement) => {
+    if (typeof el.selectionStart === "number") caret.current[name] = el.selectionStart;
+  };
   if (f.type === "connection_ref") {
     // Lock verkada-type pickers to the flow's existing Verkada
     // connection when one is set elsewhere. A flow that spans two
@@ -690,6 +726,8 @@ function renderControl(
           <textarea
             value={currentValue}
             onChange={(e) => setOne(f.name, e.target.value)}
+            onBlur={(e) => rememberCaret(f.name, e.currentTarget)}
+            onSelect={(e) => rememberCaret(f.name, e.currentTarget)}
             rows={4}
             spellCheck={false}
             className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm focus:outline-none focus:border-sky-600"
@@ -698,6 +736,8 @@ function renderControl(
           <input
             value={currentValue}
             onChange={(e) => setOne(f.name, e.target.value)}
+            onBlur={(e) => rememberCaret(f.name, e.currentTarget)}
+            onSelect={(e) => rememberCaret(f.name, e.currentTarget)}
             className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm font-mono"
           />
         )}
@@ -707,12 +747,31 @@ function renderControl(
             notificationType={triggerNotificationType || undefined}
             priorSteps={priorSteps}
             onPick={(path) => {
+              // Insert where the caret was, not at the end: "Door {{ x }}
+              // is open" is what people write, and appending makes them
+              // cut and paste the reference into place afterwards.
               const current = (config[f.name] as string) ?? "";
-              setOne(f.name, current + `{{ ${path} }}`);
+              const at = caret.current[f.name] ?? current.length;
+              const ref = `{{ ${path} }}`;
+              const before = current.slice(0, at);
+              const after = current.slice(at);
+              const pad = before && !/\s$/.test(before) ? " " : "";
+              const padAfter = after && !/^\s/.test(after) ? " " : "";
+              setOne(f.name, `${before}${pad}${ref}${padAfter}${after}`);
+              caret.current[f.name] = (before + pad + ref + padAfter).length;
             }}
           />
         )}
       </div>
+      <RefPreview
+        value={currentValue}
+        steps={priorSteps}
+        triggerSample={triggerSampleObj}
+        onRemove={(path) => {
+          const current = (config[f.name] as string) ?? "";
+          setOne(f.name, current.replace(new RegExp(`\\{\\{\\s*${escapeRe(path)}\\s*\\}\\}\\s?`), "").trimEnd());
+        }}
+      />
       {matchedPairedTemplate && currentStepName && (
         <div className="bg-emerald-950/30 border border-emerald-900/60 rounded px-3 py-2 text-xs flex items-start gap-3">
           <div className="flex-1 min-w-0">
@@ -1765,4 +1824,9 @@ export function BetaChip() {
       BETA
     </span>
   );
+}
+
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

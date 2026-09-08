@@ -56,6 +56,24 @@ export interface AuthStatus {
   authenticated: boolean;
   min_password_length: number;
   max_password_length: number;
+  mfa_enabled?: boolean;
+  /** The password was right, but a code is needed to finish. */
+  mfa_required?: boolean;
+  mfa_challenge?: string | null;
+}
+
+export interface MfaStatus {
+  enabled: boolean;
+  enabled_at: string | null;
+  backup_codes_remaining: number;
+  backup_codes_issued: number;
+  pending_setup: boolean;
+}
+
+export interface MfaSetup {
+  secret: string;
+  otpauth_uri: string;
+  matrix: boolean[][];
 }
 
 // ---- Public config (tunnel + onboarding state) ----
@@ -811,7 +829,8 @@ export interface AuditFacets {
   site: AuditFacetValue[];
   device: AuditFacetValue[];
   ip: AuditFacetValue[];
-  self_hidden: number;
+  /** Rows the API-calls filter is hiding from this slice. */
+  api_hidden: number;
 }
 
 export interface AuditStatus {
@@ -846,7 +865,7 @@ export interface AuditStats {
   until: string;
   bucket_sec: number;
   totals: {
-    self_hidden: number;
+    api_hidden: number;
     events: number;
     users: number;
     ips: number;
@@ -873,4 +892,24 @@ export interface AuditStats {
   ips: Array<{ ip: string; count: number; users: number; last: string | null }>;
   devices: Array<{ device_id: string; name: string | null; type: string | null; site: string | null; count: number }>;
   heatmap: Array<{ dow: number; hour: number; count: number }>;
+  streaming: AuditStreaming;
+}
+
+/** Camera streaming activity, derived from the audit log's stream events. */
+export interface AuditStreaming {
+  sessions: number;
+  live_starts: number;
+  total_sec: number;
+  avg_sec: number;
+  median_sec: number;
+  longest_sec: number;
+  cameras: Array<{ device_id: string | null; name: string; sessions: number; total_sec: number; avg_sec: number }>;
+  streamers: Array<{ key: string; name: string; actor: string; sessions: number; total_sec: number; cameras: number }>;
+  timeseries: Array<{ t: number; sec: number; sessions: number }>;
+  lanes: Array<{
+    device_id: string | null;
+    name: string;
+    items: Array<{ id: string; start: number; end: number; who: string; kind: string; local: boolean }>;
+  }>;
+  truncated: boolean;
 }

@@ -21,8 +21,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import desc, func
+
 from app.engine.actions import ACTIONS
-from app.models import Flow, VerkadaCamera, VerkadaDoor, VerkadaHelixEventType
+from app.models import AuditEvent, Flow, VerkadaCamera, VerkadaDoor, VerkadaHelixEventType
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,72 @@ async def existing_flows(session: AsyncSession) -> list[dict[str, Any]]:
         }
         for f in rows
     ]
+
+
+async def audit_context(session: AsyncSession, days: int = 30) -> dict[str, Any]:
+    """The audit log as a trigger source: the categories, the events this
+    org has actually produced, the devices they touched, and the exact
+    shape a flow sees. Grounded in stored rows, so a model proposes an
+    event name that exists rather than one that sounds right."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.audit.ingest import trigger_payload
+    from app.audit.taxonomy import CATEGORIES
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    A = AuditEvent
+    kinds = (
+        await session.execute(
+            select(A.event_name, A.category, A.actor, func.count().label("n"))
+            .where(A.timestamp >= since, A.category != "api")
+            .group_by(A.event_name, A.category, A.actor)
+            .order_by(desc("n"))
+            .limit(60)
+        )
+    ).all()
+    devices = (
+        await session.execute(
+            select(A.device_name, A.device_type, func.count().label("n"))
+            .where(A.timestamp >= since, A.device_name.isnot(None), A.category != "api")
+            .group_by(A.device_name, A.device_type)
+            .order_by(desc("n"))
+            .limit(40)
+        )
+    ).all()
+    sample = (
+        await session.execute(
+            select(A).where(A.timestamp >= since, A.category != "api").order_by(desc(A.timestamp)).limit(1)
+        )
+    ).scalars().first()
+    return {
+        "categories": CATEGORIES,
+        "events_seen": [
+            {"event_name": e, "category": c, "actor": a, "count": int(n)} for e, c, a, n in kinds
+        ],
+        "devices_seen": [{"name": d, "type": t, "count": int(n)} for d, t, n in devices],
+        "sample_trigger_payload": trigger_payload(sample) if sample is not None else None,
+        "days": days,
+    }
+
+
+AUDIT_TRIGGER_RULES = """The "verkada_audit" trigger fires when an entry appears in Verkada
+Command's audit log: a user logging in, starting a live stream, viewing
+history, changing a door or camera setting, an API call, and so on.
+Config shape:
+  {"trigger_type": "verkada_audit",
+   "trigger_config": {"category": "cameras", "event_name": "Live Stream Started",
+                      "actor": "user", "filters": {"data.device_name": "Front Door"}}}
+- category MUST be one of the audit categories; event_name SHOULD be one
+  of events_seen (exact spelling). Leave either empty to match any.
+- actor is one of user | api_key | support | system, or empty.
+- filters are dot paths into the trigger payload with case-insensitive
+  equality: user_email, user_name, ip_address, status_code, data.device_name,
+  data.device_type, data.camera_id, data.url, method.
+- Steps read the entry as {{ trigger.<field> }} for who/when/what and
+  {{ trigger.data.<field> }} for the device and Verkada's details. A camera
+  event carries {{ trigger.data.camera_id }}.
+- Requests made with this install's own API key never fire unless
+  include_self is true. Backfilled history never fires."""
 
 
 def as_prompt_block(label: str, value: Any, limit: int = 24000) -> str:
