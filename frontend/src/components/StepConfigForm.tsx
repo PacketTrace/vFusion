@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   ActionFieldSpec,
   ActionSpec,
   ApiEndpointDetail,
   apiGet,
+  apiPost,
   Connection,
   HelixEventType,
   KnownDoor,
@@ -1019,6 +1020,7 @@ function HelixEventRefField({
   triggerSummary?: string | null;
   priorSteps?: PriorStep[];
 }) {
+  const qc = useQueryClient();
   const connId = f.connection_field
     ? (config[f.connection_field] as string | undefined)
     : undefined;
@@ -1075,6 +1077,32 @@ function HelixEventRefField({
       .filter(Boolean)
       .join("\n") || null;
   const current = (config[f.name] as string) ?? "";
+  // A uid this install has not synced is still a configured uid, and the
+  // step runs on it perfectly well -- Verkada is the one that has to
+  // recognise it, not us. Rendering it as "pick an event type" said the
+  // step was unconfigured when it was not, and the obvious reaction to
+  // that (open the dropdown, pick something) rewrites the field. So an
+  // unlisted uid gets an option of its own and an explanation.
+  const listed = (evtTypes.data ?? []).some((et) => et.event_type_uid === current);
+  const unlisted = !!current && !!evtTypes.data && !listed;
+  const isPlaceholder = current.startsWith("tpl:");
+  const resync = useMutation({
+    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${connId}/sync-helix`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helix-event-types", connId] }),
+  });
+  // The usual reason a configured uid is missing is that the type was
+  // created after this install last synced -- which is what happens the
+  // moment a template provisions one. Fetching the list again is a read,
+  // it is idempotent, and it turns the whole confusion into nothing. Once
+  // per mount: if the type genuinely is not on Verkada, retrying forever
+  // would not find it.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (!unlisted || isPlaceholder || !connId || autoSynced.current) return;
+    autoSynced.current = true;
+    resync.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlisted, isPlaceholder, connId]);
   return (
     <>
       <div className="flex gap-2 items-start">
@@ -1088,8 +1116,20 @@ function HelixEventRefField({
                 (et) => et.event_type_uid === uid,
               );
               const schema = picked?.event_schema ?? {};
-              const seeded: Record<string, string> = {};
-              for (const k of Object.keys(schema)) seeded[k] = "";
+              const existing =
+                config[attrsField] &&
+                typeof config[attrsField] === "object" &&
+                !Array.isArray(config[attrsField])
+                  ? (config[attrsField] as Record<string, string>)
+                  : {};
+              // Seed the new type's attributes without discarding what is
+              // already written. Values used to be wiped on every change
+              // of this dropdown, so brushing it after wiring six
+              // attributes threw all six away with no warning. Anything
+              // the new type does not declare is kept as well; the
+              // attribute editor flags it rather than deleting it.
+              const seeded: Record<string, string> = { ...existing };
+              for (const k of Object.keys(schema)) if (!(k in seeded)) seeded[k] = "";
               next[attrsField] = seeded;
             }
             setAll(next);
@@ -1100,10 +1140,17 @@ function HelixEventRefField({
           <option value="">
             {!connId
               ? "— pick a Verkada connection first —"
-              : evtTypes.data && evtTypes.data.length === 0
-                ? "— none synced yet (click 'Sync helix' on the connection) —"
-                : "— pick an event type —"}
+              : evtTypes.isLoading
+                ? "— loading event types… —"
+                : evtTypes.data && evtTypes.data.length === 0
+                  ? "— none synced yet (click 'Sync helix' on the connection) —"
+                  : "— pick an event type —"}
           </option>
+          {unlisted && (
+            <option value={current}>
+              {isPlaceholder ? `⚠ ${current} (template placeholder)` : `⚠ not in the synced list — ${current}`}
+            </option>
+          )}
           {(evtTypes.data ?? []).map((et) => (
             <option key={et.id} value={et.event_type_uid}>
               {et.name ?? "(unnamed)"}
@@ -1120,6 +1167,36 @@ function HelixEventRefField({
           + New type
         </button>
       </div>
+      {unlisted && (
+        <div className="mt-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100 flex items-start gap-2 flex-wrap">
+          <span className="flex-1 min-w-[16rem]">
+            {isPlaceholder ? (
+              <>
+                This is a template placeholder, not a real event type. The flow will fail
+                until you pick a real one or create it with <b>+ New type</b>.
+              </>
+            ) : resync.isPending ? (
+              <>Checking Verkada for this event type…</>
+            ) : (
+              <>
+                This step is set to an event type Verkada did not return. The step still runs —
+                Verkada is what has to recognise the id — but the attributes below cannot be
+                checked against a schema. It may have been deleted in Command.
+              </>
+            )}
+          </span>
+          {!isPlaceholder && (
+            <button
+              type="button"
+              onClick={() => resync.mutate()}
+              disabled={resync.isPending}
+              className="text-[11px] px-2 py-1 rounded border border-amber-400/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-50 disabled:opacity-50"
+            >
+              {resync.isPending ? "Syncing…" : "Sync from Verkada"}
+            </button>
+          )}
+        </div>
+      )}
       {creating && connId && (
         <HelixEventTypeEditor
           connId={connId}
@@ -1212,28 +1289,36 @@ function HelixAttributesField({
   });
   const picked = (evtTypes.data ?? []).find((et) => et.event_type_uid === uid);
   const schema = picked?.event_schema ?? null;
+  const [raw, setRaw] = useState(false);
 
-  const value =
-    config[f.name] && typeof config[f.name] === "object" && !Array.isArray(config[f.name])
-      ? (config[f.name] as Record<string, string>)
-      : {};
+  const isObject =
+    config[f.name] !== null &&
+    typeof config[f.name] === "object" &&
+    !Array.isArray(config[f.name]);
+  const value = isObject ? (config[f.name] as Record<string, string>) : {};
 
-  // Schema unknown → fall back to raw JSON so the user can still hand-edit.
-  if (!schema) {
-    return (
-      <JsonField
-        value={config[f.name]}
-        onChange={(v) => setOne(f.name, v)}
-        triggerFamily={triggerFamily}
-        triggerNotificationType={triggerNotificationType}
-        priorSteps={priorSteps}
-      />
-    );
-  }
+  // The rows are the schema's attributes plus anything already written,
+  // in that order. An unknown schema used to drop the whole field back to
+  // a JSON textarea -- which is when it is *hardest* to edit, because the
+  // values are long template refs that wrap mid-expression. The keys are
+  // right there in the saved value, so the form can be built from those
+  // and the schema is only ever an extra: type hints, and a warning for a
+  // name the event type does not declare.
+  const keys = [
+    ...Object.keys(schema ?? {}),
+    ...Object.keys(value).filter((k) => !(schema && k in schema)),
+  ];
 
-  const setKey = (k: string, v: string) => {
-    const next = { ...value, [k]: v };
+  const setKey = (k: string, v: string) => setOne(f.name, { ...value, [k]: v });
+  const removeKey = (k: string) => {
+    const next = { ...value };
+    delete next[k];
     setOne(f.name, next);
+  };
+  const addKey = (k: string) => {
+    const name = k.trim();
+    if (!name || name in value) return;
+    setOne(f.name, { ...value, [name]: "" });
   };
 
   // The analyze step above and this one are two halves of one idea, and
@@ -1242,27 +1327,46 @@ function HelixAttributesField({
   // on it, and get two empty boxes. The nearest upstream step that
   // produces JSON is asked what keys it will produce, and any Helix
   // attribute with the same name is wired to it.
-  //
-  // Nearest wins, since a flow with two analyze steps means the one just
-  // above is the one being logged.
   const source = [...priorSteps]
     .reverse()
     .find((p) => (p.jsonKeys?.length ?? 0) > 0);
-
   const suggestions = source
-    ? autoWireAttributes(Object.keys(schema), source.name, source.jsonKeys ?? [])
+    ? autoWireAttributes(keys, source.name, source.jsonKeys ?? [])
     : {};
   // Only offer what is not already filled in. Overwriting a considered
   // value with a guess is the one thing this must never do.
   const unfilled = Object.entries(suggestions).filter(
     ([k]) => !(value[k] ?? "").trim(),
   );
-
   const applyAll = () => {
     const next = { ...value };
     for (const [k, ref] of unfilled) next[k] = ref;
     setOne(f.name, next);
   };
+
+  // The escape hatch, for a value that is not a flat object of strings.
+  if (raw || (!isObject && config[f.name] !== undefined)) {
+    return (
+      <div className="space-y-1.5">
+        <JsonField
+          value={config[f.name]}
+          onChange={(v) => setOne(f.name, v)}
+          triggerFamily={triggerFamily}
+          triggerNotificationType={triggerNotificationType}
+          priorSteps={priorSteps}
+        />
+        {isObject && (
+          <button
+            type="button"
+            onClick={() => setRaw(false)}
+            className="text-[11px] text-sky-300 hover:underline"
+          >
+            ← back to one row per attribute
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -1282,47 +1386,156 @@ function HelixAttributesField({
           </button>
         </div>
       )}
-      {Object.entries(schema).map(([k, t]) => (
-        <div key={k} className="space-y-1">
-          <div className="text-[11px] font-medium text-slate-300 flex items-center gap-2">
-            <span>{k}</span>
-            <span className="text-[10px] text-slate-500 lowercase">{t}</span>
-          </div>
-          <div className="flex gap-2 items-start">
-            <input
-              value={value[k] ?? ""}
-              onChange={(e) => setKey(k, e.target.value)}
-              className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-              placeholder={
-                suggestions[k] && !(value[k] ?? "").trim()
-                  ? suggestions[k]
-                  : `{{ steps.<name>.output.* }}`
-              }
-            />
-            {suggestions[k] && !(value[k] ?? "").trim() && (
+
+      {keys.length === 0 && (
+        <div className="text-[11px] text-slate-500">
+          No attributes yet. Pick an event type above to load its attributes, or add one below.
+        </div>
+      )}
+
+      {keys.map((k) => {
+        const declared = schema ? schema[k] : undefined;
+        const extra = !!schema && !(k in schema);
+        return (
+          <div key={k} className="space-y-1">
+            <div className="text-[11px] font-medium text-slate-300 flex items-center gap-2">
+              <span>{k}</span>
+              {declared && <span className="text-[10px] text-slate-500 lowercase">{declared}</span>}
+              {extra && (
+                <span
+                  className="text-[10px] text-amber-300"
+                  title="This event type does not declare this attribute. Helix rejects attributes it does not know about."
+                >
+                  not on this event type
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => setKey(k, suggestions[k])}
-                title={`Use ${suggestions[k]}`}
-                className="text-[11px] px-2 py-1.5 rounded border border-sky-400/40 text-sky-200 hover:bg-sky-500/20 shrink-0"
+                onClick={() => removeKey(k)}
+                className="ml-auto text-slate-500 hover:text-rose-300 text-xs leading-none"
+                title={`Remove ${k}`}
+                aria-label={`remove ${k}`}
               >
-                use
+                ×
               </button>
-            )}
-            {triggerFamily && (
-              <VariablePicker
-                family={triggerFamily}
-                notificationType={triggerNotificationType || undefined}
-                priorSteps={priorSteps}
-                onPick={(path) =>
-                  setKey(k, (value[k] ?? "") + `{{ ${path} }}`)
+            </div>
+            <div className="flex gap-2 items-start">
+              <input
+                value={value[k] ?? ""}
+                onChange={(e) => setKey(k, e.target.value)}
+                className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+                placeholder={
+                  suggestions[k] && !(value[k] ?? "").trim()
+                    ? suggestions[k]
+                    : "Type a value, or insert one with + variable"
                 }
               />
-            )}
+              {suggestions[k] && !(value[k] ?? "").trim() && (
+                <button
+                  type="button"
+                  onClick={() => setKey(k, suggestions[k])}
+                  title={`Use ${suggestions[k]}`}
+                  className="text-[11px] px-2 py-1.5 rounded border border-sky-400/40 text-sky-200 hover:bg-sky-500/20 shrink-0"
+                >
+                  use
+                </button>
+              )}
+              {triggerFamily && (
+                <VariablePicker
+                  family={triggerFamily}
+                  notificationType={triggerNotificationType || undefined}
+                  priorSteps={priorSteps}
+                  onPick={(path) => setKey(k, (value[k] ?? "") + `{{ ${path} }}`)}
+                />
+              )}
+            </div>
+            <RefPreview
+              value={value[k] ?? ""}
+              steps={priorSteps}
+              triggerSample={null}
+              onRemove={(path) =>
+                setKey(
+                  k,
+                  (value[k] ?? "")
+                    .replace(new RegExp(`\\{\\{\\s*${escapeRe(path)}\\s*\\}\\}\\s?`), "")
+                    .trimEnd(),
+                )
+              }
+            />
           </div>
-        </div>
-      ))}
+        );
+      })}
+
+      <div className="flex items-center gap-2 pt-0.5">
+        <AddAttribute onAdd={addKey} />
+        <button
+          type="button"
+          onClick={() => setRaw(true)}
+          className="ml-auto text-[11px] text-slate-500 hover:text-slate-300"
+          title="Edit the whole object as JSON"
+        >
+          Edit as JSON
+        </button>
+      </div>
     </div>
+  );
+}
+
+
+/** Add an attribute name the event type does not declare, or that this
+ *  install could not look up. Deliberately a small affordance: with a
+ *  synced schema the names are Helix's to decide, not ours. */
+function AddAttribute({ onAdd }: { onAdd: (k: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:bg-white/10"
+      >
+        + attribute
+      </button>
+    );
+  }
+  const commit = () => {
+    onAdd(name);
+    setName("");
+    setOpen(false);
+  };
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+          if (e.key === "Escape") setOpen(false);
+        }}
+        autoFocus
+        placeholder="Attribute name"
+        className="px-2 py-1 rounded bg-white/5 border border-white/15 text-xs w-40"
+      />
+      <button
+        type="button"
+        onClick={commit}
+        disabled={!name.trim()}
+        className="text-[11px] px-2 py-1 rounded border border-sky-400/40 text-sky-200 hover:bg-sky-500/20 disabled:opacity-40"
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="text-[11px] text-slate-500 hover:text-slate-300"
+      >
+        Cancel
+      </button>
+    </span>
   );
 }
 
