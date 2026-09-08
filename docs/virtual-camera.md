@@ -20,6 +20,10 @@ The status strip shows ON AIR, how long the stream has been up, whether the enco
 
 ![Virtual camera](images/virtual-camera.png)
 
+Command's side of the same stream. The Connector treats it as an ordinary camera: it records continuously, runs motion and people analytics on it, and offers History, Archive and Stats like any other. Nothing in Command knows the footage came from a file.
+
+![The virtual camera in Verkada Command](images/virtual-camera-command.png)
+
 **What it plays.** Standby footage when the queue is empty; otherwise the queue, in order.
 
 ## Queue tab

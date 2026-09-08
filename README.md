@@ -105,6 +105,10 @@ Not on the list? Describe it in a sentence on the Automate tab and the builder p
 
 ![Virtual camera](docs/images/virtual-camera.png)
 
+And Command's side of it: a camera that does not exist, recording, with motion and people analytics running on whatever is playing.
+
+![The virtual camera in Verkada Command](docs/images/virtual-camera-command.png)
+
 More in the [documentation](#documentation): the [API runner](docs/workbench.md), [live cameras](docs/workbench.md), the [MQTT broker setup](docs/mqtt.md), and [retention and stats](docs/settings.md).
 
 ### From analysis to Verkada Helix
