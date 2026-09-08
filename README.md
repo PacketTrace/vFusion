@@ -177,7 +177,6 @@ This tool can unlock doors, pull footage, post into Helix and call any endpoint 
 | [MCP](docs/mcp.md) | The tool explorer and its history |
 | [Settings](docs/settings.md) | Connections and regions, retention, the Security and Cost tabs, Stats, Help |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability |
-| [One-pager](docs/one-pager.html) | The whole tool on one printable page |
 
 ## Security
 
