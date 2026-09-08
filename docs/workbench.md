@@ -9,7 +9,8 @@
 A smoke test for an idea. Run a prompt once against your own cameras and see whether it works here, on your scenes, in your lighting, before building a flow on top of it.
 
 - **Describe it, or write it.** Say what you want to find and the composer writes the prompt, the Helix event type and the mapping between them. Or start from a preset and edit.
-- **Three ways in:** a Verkada camera (live frame, a historical window, or the audio track), or an uploaded MP4 or image up to 200 MB. Picking an audio analytic switches the footage to audio automatically.
+- **Two questions, six answers.** *When* to capture — live, or a moment in the past — and *what* — a still frame, video, or audio. Every combination works: a frame from right now, a clip around last Tuesday at 3pm, ten seconds of audio recorded live. Or skip the camera and upload an MP4 or image up to 200 MB. Picking an audio analytic switches the medium to audio automatically.
+- **The cost is stated where the choice is made.** A still frame is the cheapest thing here; audio is about an eighth of video for the same span; a live capture takes its own length in real time.
 - **What happens to the result.** Optionally chain a Helix post, or, for an upload, see the exact JSON that *would* be posted with nothing sent to Verkada.
 - **Live cost estimate** before you run.
 - **Save it** as an analytic so it appears in the flow editor's analysis step and on Automate → Analytics. **Automate** builds a flow from a working run and asks only what should start it.

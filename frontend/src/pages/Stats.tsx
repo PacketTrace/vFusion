@@ -126,8 +126,7 @@ export default function Stats() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Stats</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Aggregate counters for ingest, flow runs, and on-disk storage. A
-          future Gemini-backed trend view will live here too.
+          Aggregate counters for ingest, flow runs, and on-disk storage.
         </p>
       </div>
 
@@ -312,14 +311,6 @@ export default function Stats() {
           </Card>
 
           {coverage.data && <CoverageCard data={coverage.data} />}
-
-          <Card title="Coming soon">
-            <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
-              <li>Daily webhook volume sparkline</li>
-              <li>Per-flow run timing breakdown</li>
-              <li>Top failing actions</li>
-            </ul>
-          </Card>
 
           <p className="text-xs text-slate-500">
             Refreshed {new Date(s.generated_at).toLocaleString()}.

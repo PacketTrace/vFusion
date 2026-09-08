@@ -395,11 +395,22 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             await session.commit()
             return {"error": run.error}
 
-        mode = params.get("mode")
+        # Two independent choices -- when to capture, and what to capture --
+        # rather than one list that mixed them. ``mode`` is what the older
+        # UI sent and is still accepted: "live" meant a live still frame,
+        # "historical" a past clip, "audio" live audio.
+        source = params.get("source")
+        medium = params.get("medium")
+        if not source or not medium:
+            legacy = params.get("mode")
+            source, medium = {
+                "historical": ("historical", "video"),
+                "audio": ("live", "audio"),
+            }.get(legacy, ("live", "still"))
         action_type = {
-            "historical": "gemini_analyze_camera",
+            "video": "gemini_analyze_camera",
             "audio": "gemini_analyze_audio",
-        }.get(mode, "gemini_analyze_still_image")
+        }.get(medium, "gemini_analyze_still_image")
         spec = ACTIONS.get(action_type)
         if spec is None:
             run.status = "failed"
@@ -431,16 +442,21 @@ async def run_byoa(ctx: dict[str, Any], run_id: str) -> dict[str, Any]:  # noqa:
             "prompt": params.get("prompt"),
             "model": params.get("model"),
         }
-        if mode in ("historical", "audio"):
-            # Absent for a live audio capture, which is what a blank
-            # start_epoch means to the action.
-            config["start_epoch"] = params.get("start_epoch")
+        if medium in ("video", "audio"):
+            # A blank start_epoch is what every one of these actions reads
+            # as "the live edge", so a live capture simply does not set it.
+            config["start_epoch"] = (
+                params.get("start_epoch") if source == "historical" else None
+            )
             config["duration_sec"] = params.get("duration_sec", 10)
             config["pre_roll_sec"] = params.get("pre_roll_sec", 2)
             # The BYOA UI never wants to sit through 60s of HD-backfill
             # waiting — the user picked the start time themselves and
             # is iterating live. Force the pre-grab delay off.
             config["pre_grab_delay_sec"] = 0
+        elif source == "historical":
+            # A still frame from a past moment.
+            config["start_epoch"] = params.get("start_epoch")
 
         record: dict[str, Any] = {
             "name": "byoa",

@@ -183,7 +183,12 @@ export default function Byoa() {
   );
   const [cameraId, setCameraId] = useState("");
   const [onlineOnly, setOnlineOnly] = useState(true);
-  const [mode, setMode] = useState<"live" | "historical" | "audio">("live");
+  // When to capture, and what to capture. One list used to mix the two
+  // and could only express three of the six real combinations — there was
+  // no way to ask for a frame from last Tuesday, or for the audio of a
+  // moment that has already happened.
+  const [when, setWhen] = useState<"live" | "historical">("live");
+  const [what, setWhat] = useState<"still" | "video" | "audio">("still");
   const [postToHelix, setPostToHelix] = useState(false);
   const [helixEventTypeUid, setHelixEventTypeUid] = useState<string>("");
   const [helixAttribute, setHelixAttribute] = useState<string>("");
@@ -264,8 +269,12 @@ export default function Byoa() {
         if (typeof inp.gemini_connection_id === "string")
           setGeminiConnId(inp.gemini_connection_id);
         if (typeof inp.camera_id === "string") setCameraId(inp.camera_id);
-        if (inp.mode === "live" || inp.mode === "historical" || inp.mode === "audio")
-          setMode(inp.mode);
+        if (inp.source === "live" || inp.source === "historical") setWhen(inp.source);
+        else if (inp.mode === "historical") setWhen("historical");
+        if (inp.medium === "still" || inp.medium === "video" || inp.medium === "audio")
+          setWhat(inp.medium);
+        else if (inp.mode === "historical") setWhat("video");
+        else if (inp.mode === "audio") setWhat("audio");
         if (typeof inp.model === "string") setModel(inp.model);
         if (typeof inp.prompt === "string") setPrompt(inp.prompt);
         if (typeof inp.start_epoch === "number") setStartEpoch(inp.start_epoch);
@@ -335,7 +344,8 @@ export default function Byoa() {
         if (camId) setCameraId(camId);
         if (typeof createdRaw === "number" && createdRaw > 0) {
           setStartEpoch(createdRaw);
-          setMode("historical");
+          setWhen("historical");
+          setWhat("video");
         }
         // Match the Verkada connection by org if we can — when an
         // operator has multiple Verkada connections, the event tells
@@ -459,7 +469,7 @@ export default function Byoa() {
         // save from audio mode takes the mode's. Getting this wrong puts
         // the prompt in the wrong picker, where it is not so much
         // missing as quietly offered in the one place it cannot work.
-        medium: editingAnalytic?.medium ?? (mode === "audio" ? "audio" : "video"),
+        medium: editingAnalytic?.medium ?? (what === "audio" ? "audio" : "video"),
         helix_event_type: editingAnalytic?.helix_event_type,
         helix_attribute_mapping: editingAnalytic?.helix_attribute_mapping,
       }),
@@ -524,9 +534,9 @@ export default function Byoa() {
   useEffect(() => {
     if (!pickedTemplate) return;
     if ((pickedTemplate.medium ?? "video") === "audio") {
-      setMode("audio");
+      setWhat("audio");
     } else {
-      setMode((m) => (m === "audio" ? "live" : m));
+      setWhat((w) => (w === "audio" ? "still" : w));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickedTemplate]);
@@ -561,8 +571,8 @@ export default function Byoa() {
     }
     if (!verkadaConnId) return "Pick a Verkada connection.";
     if (!cameraId.trim()) return "Pick a camera.";
-    if (mode === "historical" && !startEpoch)
-      return "Pick a start time for historical mode.";
+    if (when === "historical" && !startEpoch)
+      return "Pick the moment to capture.";
     if (postToHelix && !helixEventTypeUid)
       return "Pick a Helix event type or turn off 'Post to Helix'.";
     if (postToHelix && !helixAttribute)
@@ -606,20 +616,18 @@ export default function Byoa() {
         connection_id: verkadaConnId,
         gemini_connection_id: geminiConnId,
         camera_id: cameraId.trim(),
-        mode,
+        source: when,
+        medium: what,
         prompt,
         model,
       };
-      if (mode === "historical") {
+      if (when === "historical") {
         body.start_epoch = startEpoch;
-        body.duration_sec = durationSec;
-        body.pre_roll_sec = preRollSec;
+        // Lead-up only exists behind a past moment. A live capture runs
+        // forward from now, so there is nothing to reach back into.
+        if (what !== "still") body.pre_roll_sec = preRollSec;
       }
-      if (mode === "audio") {
-        // No start time and no pre-roll: the recording runs forward from
-        // now, so there is nothing behind it to reach back into.
-        body.duration_sec = durationSec;
-      }
+      if (what !== "still") body.duration_sec = durationSec;
       if (postToHelix) {
         body.post_to_helix = true;
         body.helix_event_type_uid = helixEventTypeUid;
@@ -1200,36 +1208,41 @@ export default function Byoa() {
         </Field>
 
         <Row>
-          <Field label="Footage" required>
-            <div className="flex gap-2 text-sm [&>button]:py-1.5">
-              <ModeBtn
-                active={mode === "live"}
-                onClick={() => setMode("live")}
-              >
-                Live (still frame)
-              </ModeBtn>
-              <ModeBtn
-                active={mode === "historical"}
-                onClick={() => setMode("historical")}
-              >
-                Historical (clip)
-              </ModeBtn>
-              <ModeBtn
-                active={mode === "audio"}
-                onClick={() => setMode("audio")}
-              >
-                Audio (live)
-              </ModeBtn>
+          <Field label="Capture" required>
+            <div className="space-y-1.5">
+              <div className="flex gap-2 text-sm [&>button]:py-1.5">
+                <ModeBtn active={when === "live"} onClick={() => setWhen("live")}>
+                  Live
+                </ModeBtn>
+                <ModeBtn
+                  active={when === "historical"}
+                  onClick={() => setWhen("historical")}
+                >
+                  Historical
+                </ModeBtn>
+              </div>
+              <div className="flex gap-2 text-sm [&>button]:py-1.5">
+                <ModeBtn active={what === "still"} onClick={() => setWhat("still")}>
+                  Still frame
+                </ModeBtn>
+                <ModeBtn active={what === "video"} onClick={() => setWhat("video")}>
+                  Video
+                </ModeBtn>
+                <ModeBtn active={what === "audio"} onClick={() => setWhat("audio")}>
+                  Audio
+                </ModeBtn>
+              </div>
+              <p className="text-[11px] text-slate-400">{captureBlurb(when, what)}</p>
+              {pickedTemplate &&
+                (pickedTemplate.medium ?? "video") === "audio" &&
+                what !== "audio" && (
+                  <p className="text-[11px] text-amber-300/90">
+                    This is an audio prompt. Against a frame or a silent clip it
+                    will still answer — with a guess about a picture it cannot
+                    hear, which posts to Helix looking like a result.
+                  </p>
+                )}
             </div>
-            {pickedTemplate &&
-              (pickedTemplate.medium ?? "video") === "audio" &&
-              mode !== "audio" && (
-                <p className="mt-1.5 text-[11px] text-amber-300/90">
-                  This is an audio prompt. Against a frame or a silent clip
-                  it will still answer — with a guess about a picture it
-                  cannot hear, which posts to Helix looking like a result.
-                </p>
-              )}
           </Field>
           <Field label="Model" required>
             <div className="space-y-1.5">
@@ -1265,28 +1278,42 @@ export default function Byoa() {
           </Field>
         </Row>
 
-        {mode === "historical" && (
-          <>
-            <Field label="Start time" required>
-              <EpochPicker value={startEpoch} onChange={setStartEpoch} />
+        {when === "historical" && (
+          <Field label="Moment" required>
+            <EpochPicker value={startEpoch} onChange={setStartEpoch} />
+          </Field>
+        )}
+
+        {what !== "still" && (
+          <Row>
+            <Field
+              label={what === "audio" ? "Listen for (sec)" : "Clip length (sec)"}
+              help={
+                when === "live"
+                  ? "Recorded from the camera as it happens, so this takes that long in real time."
+                  : what === "audio"
+                    ? "Audio bills at roughly 32 tokens/sec — about an eighth of video for the same span."
+                    : "Gemini bills per second of video, so this is the number that moves the cost."
+              }
+            >
+              <input
+                type="number"
+                min="1"
+                max={when === "live" ? 60 : undefined}
+                step="1"
+                value={durationSec}
+                onChange={(e) => setDurationSec(Number(e.target.value) || 10)}
+                className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
+              />
             </Field>
-            <Row>
-              <Field
-                label="Duration (sec)"
-                help="How long the clip is. Gemini bills per second of video."
-              >
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={durationSec}
-                  onChange={(e) => setDurationSec(Number(e.target.value) || 10)}
-                  className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-                />
-              </Field>
+            {when === "historical" ? (
               <Field
                 label="Pre-roll (sec)"
-                help="Clip starts this many seconds before start time."
+                help={
+                  what === "audio"
+                    ? "Starts this many seconds early so a sentence already underway is not clipped at the front."
+                    : "Starts this many seconds before the moment, to catch the lead-up."
+                }
               >
                 <input
                   type="number"
@@ -1297,25 +1324,10 @@ export default function Byoa() {
                   className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
                 />
               </Field>
-            </Row>
-          </>
-        )}
-
-        {mode === "audio" && (
-          <Field
-            label="Listen for (sec)"
-            help="Recorded live from the camera, so this takes that long in real time. Audio bills at roughly 32 tokens/sec — about an eighth of video for the same span."
-          >
-            <input
-              type="number"
-              min="1"
-              max="60"
-              step="1"
-              value={durationSec}
-              onChange={(e) => setDurationSec(Number(e.target.value) || 10)}
-              className="w-full px-2 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
-            />
-          </Field>
+            ) : (
+              <div />
+            )}
+          </Row>
         )}
         </>
         )}
@@ -1617,7 +1629,7 @@ export default function Byoa() {
             analyticName={pickedTemplate?.name ?? "Analytic"}
             prompt={prompt}
             model={model}
-            mode={mode}
+            what={what}
             cameraId={cameraId}
             verkadaConnId={verkadaConnId}
             geminiConnId={geminiConnId}
@@ -2279,7 +2291,7 @@ function MakeItRun({
   analyticName,
   prompt,
   model,
-  mode,
+  what,
   cameraId,
   verkadaConnId,
   geminiConnId,
@@ -2291,7 +2303,7 @@ function MakeItRun({
   analyticName: string;
   prompt: string;
   model: string;
-  mode: "live" | "historical" | "audio";
+  what: "still" | "video" | "audio";
   cameraId: string;
   verkadaConnId: string | null;
   geminiConnId: string | null;
@@ -2322,7 +2334,7 @@ function MakeItRun({
           analyticName,
           prompt,
           model,
-          mode,
+          what,
           cameraId,
           verkadaConnId: verkadaConnId ?? "",
           geminiConnId: geminiConnId ?? "",
@@ -2370,3 +2382,20 @@ function MakeItRun({
   );
 }
 
+
+
+/** One sentence for the chosen pair, so the cost and the wait are stated
+ *  where the choice is made rather than discovered afterwards. */
+function captureBlurb(
+  when: "live" | "historical",
+  what: "still" | "video" | "audio",
+): string {
+  if (when === "live") {
+    if (what === "still") return "One frame from the camera as it is right now. Instant, and by far the cheapest thing here.";
+    if (what === "video") return "Records from the camera starting now, so it takes the clip length in real time.";
+    return "Records the camera's microphone starting now, in real time. Audio costs about an eighth of video for the same span.";
+  }
+  if (what === "still") return "One frame from the moment you pick. Same footage a clip comes from, so the same retention applies.";
+  if (what === "video") return "A clip from around the moment you pick. Returns as fast as Verkada can serve it.";
+  return "The audio from around the moment you pick — about an eighth the cost of the video for the same span.";
+}

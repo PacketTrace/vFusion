@@ -83,13 +83,19 @@ class ByoaRunRequest(BaseModel):
     connection_id: UUID
     gemini_connection_id: UUID
     camera_id: str
-    # "audio" is a third medium, not a third video mode: it extracts the
-    # audio track for the same historical window "historical" would have
-    # pulled video for, and sends that instead.
-    mode: Literal["live", "historical", "audio"]
+    # Two independent choices. ``source`` is when to capture -- the live
+    # edge, or a moment in the past. ``medium`` is what to capture. Every
+    # combination is real: a frame from last Tuesday and ten seconds of
+    # audio recorded right now are both things people ask for, and the
+    # old single list could only express three of the six.
+    source: Literal["live", "historical"] | None = None
+    medium: Literal["still", "video", "audio"] | None = None
+    # What the previous UI sent. Kept so saved analytics and anything
+    # replaying an old request still run.
+    mode: Literal["live", "historical", "audio"] | None = None
     prompt: str
     model: str | None = None
-    # Historical mode only:
+    # Historical only:
     start_epoch: int | None = None
     duration_sec: float | None = None
     pre_roll_sec: float | None = None
@@ -113,6 +119,20 @@ class ByoaRunResponse(BaseModel):
     run_id: UUID
 
 
+def _resolve_capture(p: "ByoaRunRequest") -> tuple[str, str]:
+    """(source, medium), from whichever the caller sent.
+
+    Legacy ``mode`` collapsed the two: "live" was a live still frame,
+    "historical" a past clip, "audio" live audio.
+    """
+    if p.source and p.medium:
+        return p.source, p.medium
+    return {
+        "historical": ("historical", "video"),
+        "audio": ("live", "audio"),
+    }.get(p.mode or "", ("live", "still"))
+
+
 @router.post("/run-once", response_model=ByoaRunResponse)
 async def run_once(
     payload: ByoaRunRequest,
@@ -129,9 +149,11 @@ async def run_once(
         raise HTTPException(status_code=400, detail="camera_id is required")
     if not payload.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
-    if payload.mode == "historical" and not payload.start_epoch:
+    source, medium = _resolve_capture(payload)
+    if source == "historical" and not payload.start_epoch:
         raise HTTPException(
-            status_code=400, detail="start_epoch is required for historical mode"
+            status_code=400,
+            detail="Pick a moment to capture — historical needs a start time.",
         )
     if payload.post_to_helix and not payload.helix_event_type_uid:
         raise HTTPException(
@@ -144,27 +166,28 @@ async def run_once(
     # tied to any flow.
     input_blob: dict[str, Any] = {
         "byoa": True,
-        "mode": payload.mode,
+        "source": source,
+        "medium": medium,
+        # Still written so an older worker, or a re-run of this row, reads
+        # something it understands.
+        "mode": payload.mode or ("historical" if source == "historical" else ("audio" if medium == "audio" else "live")),
         "camera_id": payload.camera_id,
         "prompt": payload.prompt,
         "model": payload.model,
         "connection_id": str(payload.connection_id),
         "gemini_connection_id": str(payload.gemini_connection_id),
     }
-    if payload.mode == "historical":
+    if source == "historical":
         input_blob["start_epoch"] = payload.start_epoch
+    if medium in ("video", "audio"):
         input_blob["duration_sec"] = payload.duration_sec or 10
-        input_blob["pre_roll_sec"] = payload.pre_roll_sec if payload.pre_roll_sec is not None else 2
-    if payload.mode == "audio":
-        # Recorded from the live edge, so there is no start time to pick
-        # and no pre-roll to take: the audio does not exist yet. A
-        # start_epoch is honoured if one was sent (re-running a webhook
-        # event), otherwise the worker records forward from now.
-        input_blob["duration_sec"] = payload.duration_sec or 10
-        if payload.start_epoch:
-            input_blob["start_epoch"] = payload.start_epoch
+        # Lead-up only exists for a past moment; a live capture starts now
+        # and there is nothing before it to roll back into.
+        if source == "historical":
             input_blob["pre_roll_sec"] = (
-                payload.pre_roll_sec if payload.pre_roll_sec is not None else 3
+                payload.pre_roll_sec
+                if payload.pre_roll_sec is not None
+                else (3 if medium == "audio" else 2)
             )
     if payload.post_to_helix:
         input_blob["post_to_helix"] = True

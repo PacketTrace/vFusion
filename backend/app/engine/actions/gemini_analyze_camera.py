@@ -110,10 +110,10 @@ SCHEMA: dict[str, Any] = {
             "name": "start_epoch",
             "label": "Start time (unix seconds)",
             "type": "text",
-            "required": True,
+            "required": False,
             "group": "advanced",
             "default_template": "{{ trigger.data.created }}",
-            "help": "Auto-fills from {{ trigger.data.created }} when present.",
+            "help": "Auto-fills from {{ trigger.data.created }} when present. Leave it blank to record live from now instead — which takes the clip duration in real time, and has no lead-up to capture.",
         },
         {
             "name": "model",
@@ -259,11 +259,23 @@ async def run(
 
     if not isinstance(camera_id, str) or not camera_id:
         raise ValueError("camera_id is required (string)")
+    # No start time means the live edge. The clip endpoint already treats
+    # a missing window that way, and the two options either side of this
+    # -- a live still frame, and live audio -- have always worked. Only
+    # live *video* was refused here, which made "watch this camera for
+    # ten seconds now" the one thing a flow could not ask for.
     start_epoch = _coerce_int(start_epoch_raw, 0)
-    if start_epoch <= 0:
-        raise ValueError(f"start_epoch must be positive unix-seconds, got {start_epoch_raw!r}")
-    grab_start_epoch = max(0, start_epoch - int(pre_roll_sec))
-    grab_duration = duration_sec + pre_roll_sec
+    live = start_epoch <= 0
+    if live:
+        # Nothing precedes now, so there is no lead-up to roll back into
+        # and no HD backfill to wait for.
+        grab_start_epoch = None
+        grab_duration = duration_sec
+        capture_epoch = int(time.time())
+    else:
+        grab_start_epoch = max(0, start_epoch - int(pre_roll_sec))
+        grab_duration = duration_sec + pre_roll_sec
+        capture_epoch = start_epoch
 
     prompt = resolve_deep(config.get("prompt"), ctx) or _DEFAULT_PROMPT
     if not isinstance(prompt, str):
@@ -288,7 +300,7 @@ async def run(
 
     # ---- Phase 1: wait for HD backfill ----
     wait_until = start_epoch + int(delay_sec)
-    wait_remaining = wait_until - int(time.time())
+    wait_remaining = 0 if live else wait_until - int(time.time())
     if wait_remaining > 0:
         if progress:
             await progress.phase(
@@ -302,7 +314,11 @@ async def run(
             await progress.phase("wait_hd_backfill", "success")
     elif progress:
         await progress.phase(
-            "wait_hd_backfill", "success", "no wait needed (event already aged)"
+            "wait_hd_backfill",
+            "success",
+            "recording live — nothing to backfill"
+            if live
+            else "no wait needed (event already aged)",
         )
 
     # ---- Phase 2: ffmpeg grab ----
@@ -311,7 +327,9 @@ async def run(
         await progress.phase(
             "ffmpeg_grab",
             "running",
-            f"pulling {grab_duration:.0f}s clip starting at epoch {grab_start_epoch} → {clip_path.name}",
+            f"recording {grab_duration:.0f}s live → {clip_path.name} (takes that long in real time)"
+            if live
+            else f"pulling {grab_duration:.0f}s clip starting at epoch {grab_start_epoch} → {clip_path.name}",
         )
     grab_started = time.time()
     try:
@@ -378,7 +396,8 @@ async def run(
         "clip_path": str(clip_path),
         "duration_sec": duration_sec,
         "file_size": size,
-        "started_at_epoch": start_epoch,
+        "started_at_epoch": capture_epoch,
+        "live": live,
         "tokens_in": result["tokens_in"],
         "tokens_out": result["tokens_out"],
     }

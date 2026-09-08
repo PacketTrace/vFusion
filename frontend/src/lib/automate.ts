@@ -17,7 +17,8 @@ export interface AutomateArgs {
   analyticName: string;
   prompt: string;
   model: string;
-  mode: "live" | "historical" | "audio";
+  /** What the analytic looks at. When it looks is the trigger's job. */
+  what: "still" | "video" | "audio";
   cameraId: string;
   verkadaConnId: string;
   geminiConnId: string;
@@ -41,26 +42,39 @@ export function buildFlowBody(a: AutomateArgs): Record<string, unknown> {
     model: a.model,
     prompt: a.prompt,
   };
-  if (a.mode === "historical" || a.mode === "audio") {
-    analyzeConfig.start_epoch = "{{ trigger.data.created }}";
+  // Every medium takes its moment from the trigger, and one ref is right
+  // for both trigger shapes: on a webhook it resolves to the event's own
+  // timestamp, and on a schedule it resolves to nothing — which each of
+  // these actions reads as the live edge. Whether the Workbench run was
+  // live or historical is therefore not carried over, because in a flow
+  // it is the trigger that decides when.
+  analyzeConfig.start_epoch = "{{ trigger.data.created }}";
+  if (a.what !== "still") {
     analyzeConfig.duration_sec = String(a.durationSec);
-    analyzeConfig.pre_roll_sec = a.mode === "audio" ? "3" : "2";
+    analyzeConfig.pre_roll_sec = a.what === "audio" ? "3" : "2";
   }
 
   // Audio runs a different action against the same camera and window —
   // the step name changes with it, because every {{ steps.<name>.* }}
   // reference below is built from it.
-  const analyzeId = a.mode === "audio" ? "listen" : "analyze";
-  // Live and historical both stay on gemini_analyze_camera, as before —
-  // only the medium changes the action.
+  const analyzeId = a.what === "audio" ? "listen" : "analyze";
   const analyzeAction =
-    a.mode === "audio" ? "gemini_analyze_audio" : "gemini_analyze_camera";
+    a.what === "audio"
+      ? "gemini_analyze_audio"
+      : a.what === "still"
+        ? "gemini_analyze_still_image"
+        : "gemini_analyze_camera";
 
   const nodes: Record<string, unknown>[] = [
     {
       id: analyzeId,
       name: analyzeId,
-      label: a.mode === "audio" ? "Listen to the audio" : "Analyze the camera",
+      label:
+        a.what === "audio"
+          ? "Listen to the audio"
+          : a.what === "still"
+            ? "Look at the camera"
+            : "Analyze the camera",
       kind: "action",
       action_type: analyzeAction,
       // No position: the editor computes the layout when one is absent,
@@ -142,10 +156,17 @@ export function argsFromRunInput(
     analyticName: "Analytic",
     prompt: str("prompt"),
     model: str("model"),
-    mode:
-      input.mode === "historical" || input.mode === "audio"
-        ? input.mode
-        : "live",
+    // Newer runs record the two separately; older ones only have the
+    // combined mode, where "audio" meant live audio and "historical"
+    // meant a video clip.
+    what:
+      input.medium === "video" || input.medium === "audio" || input.medium === "still"
+        ? (input.medium as "still" | "video" | "audio")
+        : input.mode === "historical"
+          ? "video"
+          : input.mode === "audio"
+            ? "audio"
+            : "still",
     cameraId: str("camera_id"),
     verkadaConnId: str("connection_id"),
     geminiConnId: str("gemini_connection_id"),

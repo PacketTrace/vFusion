@@ -65,9 +65,11 @@ The flow sees the event as `trigger`. For audit entries, who and when are at the
 
 | Action | What it does |
 |---|---|
-| **Gemini: analyze camera video** | Pulls a historical clip from the camera at trigger time, sends the MP4 to Gemini, returns the text or JSON. |
-| **Gemini: analyze camera still image** | One live frame instead of a clip. About ten times cheaper; pick it when a single frame answers the question. |
-| **Gemini: analyze camera audio** | The audio track only. Roughly eight times cheaper than video for "what did you hear". |
+| **Gemini: analyze camera video** | A clip from the camera, sent to Gemini as MP4. Takes its moment from the trigger; leave the start time blank and it records live instead. |
+| **Gemini: analyze camera still image** | One frame instead of a clip. About ten times cheaper — pick it when a single frame answers the question. Live by default, or from a moment you name. |
+| **Gemini: analyze camera audio** | The audio track only. Roughly eight times cheaper than video for "what did you hear". Live or historical, like the other two. |
+
+All three take an optional moment, so `{{ trigger.data.created }}` gives you the event's own timestamp on a webhook flow and the live edge on a scheduled one, from the same configuration.
 | **Verkada: Helix event** | Posts a video-tagging event with arbitrary attributes, validated against the event type's schema. |
 | **Verkada: unlock door** | Admin unlock. |
 | **Verkada: activate / release Access scenario** | Lockdown, Evacuate, Shelter, Hold, Secure, and the all-clear. |

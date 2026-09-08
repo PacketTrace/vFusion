@@ -24,6 +24,7 @@ from app.engine.actions.gemini_analyze_camera import (
     GEMINI_MODELS,
     _DEFAULT_FALLBACK_CHAIN,
     _DEFAULT_MODEL,
+    _coerce_int,
 )
 from app.engine.actions.gemini_analyze_video import (
     _DEFAULT_PROMPT,
@@ -60,6 +61,14 @@ SCHEMA: dict[str, Any] = {
             "type": "camera_ref",
             "required": True,
             "help": "Pick from synced cameras (for schedule-triggered flows) or paste a UUID / {{ trigger.data.camera_id }} template ref for webhook-triggered flows.",
+        },
+        {
+            "name": "start_epoch",
+            "label": "Moment (unix seconds)",
+            "type": "text",
+            "required": False,
+            "group": "advanced",
+            "help": "Blank grabs the frame from the live edge. Set it — or use {{ trigger.data.created }} — to take the frame from that moment instead. Same footage a clip comes from, so the same retention applies.",
         },
         {
             "name": "model",
@@ -187,14 +196,18 @@ async def run(
 
     progress = ctx.get("_progress")
 
-    # ---- Phase 1: ffmpeg grab one live frame ----
+    # ---- Phase 1: ffmpeg grab one frame ----
+    at_epoch = _coerce_int(resolve_deep(config.get("start_epoch"), ctx), 0)
+    at_epoch = at_epoch if at_epoch > 0 else None
     image_path = IMAGE_ROOT / f"{uuid4().hex}.jpg"
-    captured_at = int(time.time())
+    captured_at = at_epoch or int(time.time())
     if progress:
         await progress.phase(
             "ffmpeg_grab_frame",
             "running",
-            f"pulling one live frame → {image_path.name}",
+            f"pulling one frame from epoch {at_epoch} → {image_path.name}"
+            if at_epoch
+            else f"pulling one live frame → {image_path.name}",
         )
     grab_started = time.time()
     try:
@@ -205,6 +218,7 @@ async def run(
             out_path=image_path,
             progress=progress,
             base_url=region,
+            start_epoch=at_epoch,
         )
     except FootageError as e:
         if progress:
