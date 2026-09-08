@@ -17,7 +17,7 @@ Eight starter flows ship with the product, pre-wired with a trigger, the Gemini 
 
 | Template | Starts on | What it does |
 |---|---|---|
-| 🦌 Animal species detection | Motion webhook, objects = animal | Gemini returns `{animal, breed, behavior}`; posts all three to Helix. Command alerts on the animal you chose. |
+| 🦌 Animal species detection | Motion webhook, objects = animal | Gemini returns `{animal, breed, behavior}`. Log every animal that passes, or alert only on the species you name. Posts all three to Helix. |
 | 🎙 Audio extractor | Webhook | Pulls the audio track, Gemini transcribes and describes it; posts Sound, Transcript and Description to Helix. |
 | 🩺 Camera FOV health check | Daily schedule | Gemini judges whether a view is blocked, blurry or mis-aimed; posts Issue, Severity and Reasoning only when something is wrong. |
 | 🚪 Door obstruction check | Schedule | Checks a door-facing camera for boxes, pallets or clutter blocking egress; posts Object Type, Severity and Reasoning. |
@@ -26,7 +26,7 @@ Eight starter flows ship with the product, pre-wired with a trigger, the Gemini 
 | 🚨 POI-triggered lockdown | Person-of-interest webhook | Activates a Command Access scenario (Lockdown, Shelter, Evacuate). |
 | ⛅ Weather sentry | Every 30 minutes | Pulls live conditions from OpenWeatherMap and posts them to a Helix Weather event. |
 
-- **Templates ask before they build.** Which camera, which animal, which door: the questions a template cannot answer itself are asked on install, with skip one click away.
+- **Templates ask before they build.** Which camera, which animal, which door: the questions a template cannot answer itself are asked on install, with skip one click away. An answer can decide several fields at once and can hide a question that no longer applies, so choosing "log every animal" both drops the species box and rewrites the comparison behind it.
 - **Search and facets** are computed from what the flow actually does, not hand-written tags, so a new template is categorised the moment it exists.
 - **Your own templates.** *Save as template* in the flow editor promotes any flow into this list. Export and import move a flow between installs as JSON, with the Helix event types it needs embedded so the importer can recreate them.
 - **Draft a flow from a sentence.** The builder on this tab takes "when a person shows up at the back door after midnight, describe what they're carrying" or "when anyone starts a live stream of the nursery camera, log who to Helix" and proposes a flow: grounded in your real cameras, doors, event types and the events your audit log has actually produced, validated against the live action registry, and replayed against stored webhooks or audit entries so "will this fire?" is evidence. It proposes; it never saves without you.

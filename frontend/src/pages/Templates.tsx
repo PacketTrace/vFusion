@@ -16,6 +16,7 @@ import {
   HelixEventTypeDef,
   BuiltinAnalytic,
   SavedAnalytic,
+  TemplateInputOption,
 } from "../lib/api";
 import AnalyticEditor from "../components/AnalyticEditor";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -351,7 +352,7 @@ function FlowTemplatesPanel() {
    *  looks for all of it, and the question is what to drop. */
   const initial = (i: TemplateInput) =>
     i.type === "checklist"
-      ? (i.checked ?? i.options ?? []).join(", ")
+      ? (i.checked ?? (i.options ?? []).map((o) => optionParts(o).val)).join(", ")
       : (i.default ?? "");
 
   const finalizeApply = async (
@@ -740,6 +741,12 @@ function FlowTemplatesPanel() {
             </div>
             <div className="px-5 py-4 space-y-4">
               {asking.inputs.map((inp, idx) => {
+                // A question that only applies to one branch is worse
+                // than absent when it does not: the animal template's
+                // species box is meaningless once "every animal" is
+                // chosen, and leaving it on screen invites an answer
+                // that will be ignored.
+                if (!shouldAsk(inp, answers)) return null;
                 const value = answers[inp.key] ?? "";
                 const set = (v: string) =>
                   setAnswers((a) => ({ ...a, [inp.key]: v }));
@@ -770,11 +777,14 @@ function FlowTemplatesPanel() {
                         onChange={(e) => set(e.target.value)}
                         className="w-full px-3 py-1.5 rounded bg-white/5 border border-white/15 text-sm"
                       >
-                        {(inp.options ?? []).map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
+                        {(inp.options ?? []).map((o) => {
+                          const { label, val } = optionParts(o);
+                          return (
+                            <option key={val} value={val}>
+                              {label}
+                            </option>
+                          );
+                        })}
                       </select>
                     ) : inp.type === "checklist" ? (
                       // Everything it looks for, listed, with the ability
@@ -782,7 +792,8 @@ function FlowTemplatesPanel() {
                       // list is most of the value — a check you did not
                       // know it made is one you cannot judge.
                       <div className="space-y-1">
-                        {(inp.options ?? []).map((o) => {
+                        {(inp.options ?? []).map((raw) => {
+                          const o = optionParts(raw).val;
                           const on = value
                             .split(",")
                             .map((x) => x.trim())
@@ -808,6 +819,7 @@ function FlowTemplatesPanel() {
                                   // they were ticked.
                                   set(
                                     (inp.options ?? [])
+                                      .map((x) => optionParts(x).val)
                                       .filter((x) => next.includes(x))
                                       .join(", "),
                                   );
@@ -900,3 +912,18 @@ function FlowTemplatesPanel() {
 }
 
 
+/** A template option is either a bare string, where the label is the
+ *  value, or an object that splits the two. */
+function optionParts(o: string | TemplateInputOption): { label: string; val: string } {
+  return typeof o === "string" ? { label: o, val: o } : { label: o.label, val: o.value };
+}
+
+/** Whether a question applies, given the answers so far. `when` names
+ *  other keys and the values they must hold. */
+function shouldAsk(inp: TemplateInput, answers: Record<string, string>): boolean {
+  if (!inp.when) return true;
+  return Object.entries(inp.when).every(([key, want]) => {
+    const have = answers[key] ?? "";
+    return Array.isArray(want) ? want.includes(have) : have === want;
+  });
+}

@@ -1,9 +1,9 @@
 {
   "id": "animal-detection-alerts",
   "name": "Animal species detection",
-  "tagline": "🦌 Spot animals on camera. Alert on the one you pick; log species, breed and behaviour to Helix.",
+  "tagline": "🦌 Spot animals on camera. Log every one, or alert on the species you name; species, breed and behaviour go to Helix.",
   "description": "Catch motion events from a wildlife or outdoor camera, ask Gemini what animal is in the frame and what it is doing, and post the result to Helix. You choose which animal raises the alert when you use the template — it is not fixed to any one species.",
-  "summary": "Webhook → Gemini analyze (JSON) → condition on the animal you chose → Helix event with Animal + Breed + Behavior",
+  "summary": "Webhook → Gemini analyze (JSON) → log every animal, or only the one you name → Helix event with Animal + Breed + Behavior",
   "default_name": "Animal species detection",
   "flow": {
     "trigger_type": "verkada_webhook",
@@ -50,11 +50,11 @@
       {
         "id": "is_match",
         "name": "is_match",
-        "label": "Is it the one we watch for?",
+        "label": "{{ input.match_label }}",
         "kind": "condition",
         "config": {
           "left": "{{ steps.analyze.output.json.animal }}",
-          "operator": "contains",
+          "operator": "{{ input.match_op }}",
           "right": "{{ input.species }}"
         },
         "position": {
@@ -105,11 +105,40 @@
   ],
   "inputs": [
     {
+      "key": "scope",
+      "label": "What should it log?",
+      "type": "select",
+      "default": "all",
+      "options": [
+        {
+          "label": "Every animal it sees",
+          "value": "all",
+          "sets": {
+            "match_op": "not_equals",
+            "species": "none",
+            "match_label": "Was an animal actually there?"
+          }
+        },
+        {
+          "label": "Only one animal I name",
+          "value": "one",
+          "sets": {
+            "match_op": "contains",
+            "match_label": "Is it the one we watch for?"
+          }
+        }
+      ],
+      "help": "Logging everything gives you a Helix timeline of every animal that passed the camera. Naming one turns it into an alert for that species and stays quiet otherwise."
+    },
+    {
       "key": "species",
-      "label": "Which animal should this alert on?",
-      "help": "Matched against what Gemini reports, so plain words work — bear, coyote, deer. Leave it blank on the next screen to log every animal instead of alerting on one.",
+      "label": "Which animal?",
       "default": "bear",
-      "placeholder": "bear"
+      "placeholder": "bear",
+      "when": {
+        "scope": "one"
+      },
+      "help": "Matched against what Gemini reports, so plain words work — bear, coyote, deer."
     },
     {
       "key": "seconds",

@@ -276,9 +276,21 @@ export interface TemplateInput {
    *  one of a few · "checklist" for "here is what it looks for, untick
    *  what you do not care about". */
   type?: "text" | "textarea" | "select" | "checklist" | "camera";
-  options?: string[];
+  /** A plain string is both the label and the value. An object splits
+   *  them, and may carry `sets`: further answers written when that
+   *  option is chosen, so one question can decide several fields. */
+  options?: Array<string | TemplateInputOption>;
   /** Checklist only — which options start ticked. Defaults to all. */
   checked?: string[];
+  /** Only ask this when another answer has one of these values. Keeps a
+   *  question that only applies to one branch out of the way. */
+  when?: Record<string, string | string[]>;
+}
+
+export interface TemplateInputOption {
+  label: string;
+  value: string;
+  sets?: Record<string, string>;
 }
 
 export interface FlowTemplateFacets {

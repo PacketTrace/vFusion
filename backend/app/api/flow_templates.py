@@ -501,6 +501,52 @@ def _fill_inputs(value: Any, answers: dict[str, str]) -> Any:
     return value
 
 
+def _resolve_answers(
+    tpl: dict[str, Any], submitted: dict[str, str] | None
+) -> dict[str, str]:
+    """One value per declared input, from the operator's answers.
+
+    ``default`` pre-fills the box and is the answer until they change
+    it. ``fallback`` never appears in the form and is what the flow
+    should say when the question is deliberately left blank. Asking
+    "which door is this?" with "a door" already typed in is a question
+    that answers itself, which is why the two are separate.
+
+    Clearing a box used to put the default straight back, because an
+    empty answer and an absent one were both falsy. That made every
+    "leave it blank to…" instruction untrue: the animal template said
+    blanking the species logs every animal, and blanking it logged
+    bears. A key that was submitted is now honoured whatever it holds.
+
+    An option may also carry ``sets``, which writes further answers when
+    that option is chosen. One question can then decide several fields
+    at once -- "log every animal" has to change both the comparison and
+    the value it compares against, and asking that as two questions
+    invites the two halves to disagree.
+    """
+    submitted = submitted or {}
+    answers: dict[str, str] = {}
+    derived: dict[str, str] = {}
+    for spec in tpl.get("inputs") or []:
+        if not isinstance(spec, dict) or not spec.get("key"):
+            continue
+        key = str(spec["key"])
+        if key in submitted:
+            raw = str(submitted[key] or "")
+        else:
+            raw = str(spec.get("default") or "")
+        value = raw.strip() or str(spec.get("fallback") or "")
+        answers[key] = value
+        for opt in spec.get("options") or []:
+            if isinstance(opt, dict) and str(opt.get("value", "")) == value:
+                for k, v in (opt.get("sets") or {}).items():
+                    derived[str(k)] = str(v)
+    # Derived values win: they are the consequence of a choice the
+    # operator made, not a box they filled in.
+    answers.update(derived)
+    return answers
+
+
 class ApplyTemplateBody(BaseModel):
     """Optional body for template apply — currently just the Helix uid
     rewrite map produced by ``POST /api/flows/helix-bootstrap``.
@@ -549,20 +595,7 @@ async def apply_flow_template(
 
     # Fill the template's own blanks before anything else looks at it,
     # so every later step sees a flow with real values.
-    # ``fallback`` is what the flow should say when the question is left
-    # blank. Distinct from ``default``: a default pre-fills the box and
-    # is the operator's answer until they change it, while a fallback
-    # never appears in the form. Asking "which door is this?" with "a
-    # door" already typed in is a question that answers itself.
-    answers = {
-        str(spec.get("key")): (
-            (body.inputs.get(str(spec.get("key"))) if body else None)
-            or str(spec.get("default") or "")
-        ).strip()
-        or str(spec.get("fallback") or "")
-        for spec in (tpl.get("inputs") or [])
-        if isinstance(spec, dict) and spec.get("key")
-    }
+    answers = _resolve_answers(tpl, body.inputs if body else None)
     if answers:
         flow = _fill_inputs(flow, answers)
 
