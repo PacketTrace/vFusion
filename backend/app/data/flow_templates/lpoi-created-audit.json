@@ -1,0 +1,67 @@
+{
+  "id": "lpoi-created-audit",
+  "name": "License plate of interest added",
+  "tagline": "🔖 Someone adds a plate to the watch list → log who, which plate, and from where, to Helix.",
+  "description": "Adding a licence plate of interest is a policy decision: from that moment a camera watches for that vehicle and alerts on it. Verkada records the change in the audit log, but the audit log is a separate place to go and look. This puts each addition on a camera's Helix timeline instead, next to the footage, with the plate, the label it was given, who added it, and whether alerting and fuzzy matching were switched on.\n\nNo AI, no footage pulled, nothing metered — it reads one audit entry and writes one Helix event.",
+  "summary": "Audit log → Helix event with Plate, Label, Added by, and the alert settings",
+  "default_name": "License plate of interest added",
+  "tags": ["Cameras", "Audit"],
+  "inputs": [
+    {
+      "key": "camera",
+      "label": "Which camera should these land on?",
+      "type": "camera",
+      "help": "An audit entry has no camera of its own, so pick where the record belongs. An LPR camera puts it next to the plate reads it affects.",
+      "default": ""
+    }
+  ],
+  "flow": {
+    "trigger_type": "verkada_audit",
+    "trigger_config": {
+      "event_name": "Profile Created",
+      "filters": {
+        "event_description": "License Plate of Interest created"
+      }
+    },
+    "nodes": [
+      {
+        "id": "post_helix",
+        "name": "post_helix",
+        "label": "Log the new plate",
+        "kind": "action",
+        "action_type": "verkada_helix_event",
+        "config": {
+          "connection_id": null,
+          "camera_id": "{{ input.camera }}",
+          "event_type_uid": "tpl:lpoi-added",
+          "attributes": {
+            "Plate": "{{ trigger.data.license_plate }}",
+            "Label": "{{ trigger.data.identity_name }}",
+            "Added by": "{{ trigger.user_name }}",
+            "Email": "{{ trigger.user_email }}",
+            "From IP": "{{ trigger.ip_address }}",
+            "Alerting": "{{ trigger.data.is_lpoi_alert }}",
+            "Fuzzy match": "{{ trigger.data.is_lpoi_fuzzy_match_enabled }}"
+          },
+          "time_ms": "{{ trigger.timestamp_ms }}"
+        }
+      }
+    ],
+    "edges": [],
+    "helix_event_types": [
+      {
+        "event_type_uid": "tpl:lpoi-added",
+        "name": "🔖 Plate Watch List",
+        "event_schema": {
+          "Plate": "string",
+          "Label": "string",
+          "Added by": "string",
+          "Email": "string",
+          "From IP": "string",
+          "Alerting": "string",
+          "Fuzzy match": "string"
+        }
+      }
+    ]
+  }
+}

@@ -362,6 +362,11 @@ def trigger_payload(row: dict[str, Any] | AuditEvent, row_id: Any = None) -> dic
     for k in PAYLOAD_TOP:
         v = get(k)
         out[k] = v.isoformat() if isinstance(v, datetime) else v
+    # The same moment as unix milliseconds, because that is what Helix
+    # wants and an ISO string is not it. Without this a flow can only
+    # stamp its event "now", which is up to a poll interval late.
+    ts = get("timestamp")
+    out["timestamp_ms"] = int(ts.timestamp() * 1000) if isinstance(ts, datetime) else None
     devices = get("devices") or []
     details = get("details") or {}
     data: dict[str, Any] = dict(details) if isinstance(details, dict) else {}

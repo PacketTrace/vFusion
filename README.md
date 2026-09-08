@@ -74,6 +74,7 @@ Every row is a one-click starter template on the Automate tab: trigger, steps an
 | 📦 **Hourly shelf-stock check** | Hourly | Shelf fullness 0–100 to Helix; Command alerts floor staff when it drops. |
 | 🔤 **OCR-triggered door unlock** | Motion webhook | Gemini reads a plate, badge or sign; on a match, unlocks the door and logs why. |
 | 🚨 **POI-triggered lockdown** | Person-of-interest webhook | Activates a Command Access scenario. |
+| 🔖 **License plate of interest added** | Audit log | Someone adds a plate to the watch list; the plate, the label, who added it and the alert settings go to Helix. No AI, nothing metered. |
 | ⛅ **Weather sentry** | Every 30 minutes | Live conditions from OpenWeatherMap into a Helix Weather event. |
 
 Not on the list? Describe it in a sentence on the Automate tab and the builder proposes the flow.

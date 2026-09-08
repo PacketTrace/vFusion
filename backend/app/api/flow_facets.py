@@ -107,6 +107,15 @@ def starts_with(flow: dict[str, Any]) -> dict[str, str]:
     config = flow.get("trigger_config") or {}
     if trigger == "schedule":
         return {"group": "On a schedule", "detail": "Schedule"}
+    if trigger == "verkada_audit":
+        # Named rather than left in "Other": an audit-log trigger is a
+        # first-class way to start a flow, and the event is the thing
+        # somebody is looking for when they scan the list.
+        ev = config.get("event_name") or config.get("category")
+        return {
+            "group": "When something happens in Command",
+            "detail": str(ev) if ev else "Any audit entry",
+        }
     if trigger == "verkada_webhook":
         nt = config.get("notification_type")
         detail = _EVENT_LABELS.get(str(nt), str(nt)) if nt else "Any camera event"
