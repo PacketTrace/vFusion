@@ -8,6 +8,8 @@
 
 A smoke test for an idea. Run a prompt once against your own cameras and see whether it works here, on your scenes, in your lighting, before building a flow on top of it.
 
+![Workbench, analytics builder](images/workbench-analytics.png)
+
 - **Describe it, or write it.** Say what you want to find and the composer writes the prompt, the Helix event type and the mapping between them. Or start from a preset and edit.
 - **Two questions, six answers.** *When* to capture — live, or a moment in the past — and *what* — a still frame, video, or audio. Every combination works: a frame from right now, a clip around last Tuesday at 3pm, ten seconds of audio recorded live. Or skip the camera and upload an MP4 or image up to 200 MB. Picking an audio analytic switches the medium to audio automatically.
 - **The cost is stated where the choice is made.** A still frame is the cheapest thing here; audio is about an eighth of video for the same span; a live capture takes its own length in real time.
@@ -20,6 +22,8 @@ A smoke test for an idea. Run a prompt once against your own cameras and see whe
 
 Run any Verkada endpoint against a connection you already hold and read the response properly.
 
+![Workbench, API runner](images/api-runner.png)
+
 - Browse by category, the way Verkada's docs are organised, or search.
 - Body parameters render as fields, like the docs.
 - Camera, door and time pickers fill ids you cannot know by heart.
@@ -30,6 +34,8 @@ The catalog behind it is crawled from Verkada's published OpenAPI specs every fo
 ## Live cameras
 
 Watch any camera in the browser. Useful for checking a camera is pointed where you think it is before writing an analytic against it.
+
+![Workbench, live cameras](images/live-cameras.png)
 
 Verkada's stream URL carries a token good for the whole org's footage, so the browser never sees it: ffmpeg reads the stream and the browser is served re-encoded HLS from local disk. Sessions are shared between viewers of the same camera, capped at three at once (`LIVE_MAX_SESSIONS`), and stopped the moment nobody is watching.
 

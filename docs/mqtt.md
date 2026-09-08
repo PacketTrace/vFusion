@@ -25,6 +25,8 @@ A checklist, then a configurator:
 
 Then, per camera: see the exact request before sending it, push the configuration, and read it back. Counters for the broker, cameras publishing, data and messages reconcile with each other.
 
+![MQTT, server](images/mqtt-server.png)
+
 **Live view.** A still from the camera with the tracked boxes drawn on it and a walking figure for each person, plus an estimated latency.
 
 **Noise filter.** Cameras report things that are not there. Measured over 227 tracks on one camera, 221 never moved more than 2% of the frame and clustered in the same three spots. Every false positive was under 0.6% of the frame; every real detection over 2.6%. So the default filter is area, movement is optional, and the page previews exactly which tracks a threshold would remove before you apply it.
@@ -32,6 +34,8 @@ Then, per camera: see the exact request before sending it, push the configuratio
 ## History tab
 
 Completed tracks, one row per object, written when it leaves view: its path, how long it stayed, and a replay beside the footage it came from, with a timeline and a nudge control to align the two.
+
+![MQTT, history](images/mqtt-history.png)
 
 ## What a broker has to do
 

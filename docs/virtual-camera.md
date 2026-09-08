@@ -18,6 +18,8 @@ A Command Connector adds a third-party camera by URL and expects that URL to kee
 
 The status strip shows ON AIR, how long the stream has been up, whether the encoder is keeping up, and the viewer count. Click the count to see who is connected.
 
+![Virtual camera](images/virtual-camera.png)
+
 **What it plays.** Standby footage when the queue is empty; otherwise the queue, in order.
 
 ## Queue tab

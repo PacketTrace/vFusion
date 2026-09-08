@@ -80,38 +80,31 @@ Not on the list? Describe it in a sentence on the Automate tab and the builder p
 
 ## Screenshots
 
-<!--
-Drop the new set into docs/images/ with these names and they appear here.
-Blur emails, IPs, org ids, camera ids and key tails first; this repo is public.
+**Draft a flow from a sentence.** Say what should happen and the builder proposes the trigger, the steps and any Helix event type onto the canvas, grounded in your real cameras and doors. Nothing is saved until you press Save.
 
-  explorer-audit.png      Explorer → Audit log, a facet selected, an entry open
-  explorer-insights.png   Explorer → Insights, last 7 days
-  automate-templates.png  Automate → Templates
-  flow-editor.png         a template flow on the canvas, a node selected
-  flow-builder.png        the "draft from a sentence" proposal
-  run-detail.png          a run with a Gemini result and a Helix post
-  workbench-analytics.png Workbench → Analytics builder with a result
-  api-runner.png          Workbench → API runner with a response
-  helix.png               Helix → event types grid
-  virtual-camera.png      Virtual camera, ON AIR
-  mqtt-live.png           MQTT → Server, live view with a box
-  mcp.png                 MCP → Server, a tool selected
-  security.png            Settings → Security
--->
+![Draft a flow from a sentence](docs/images/flow-builder.png)
 
-<!-- <img src="docs/images/explorer-audit.png" alt="Explorer → Audit log"> -->
-<!-- <img src="docs/images/explorer-insights.png" alt="Explorer → Insights"> -->
-<!-- <img src="docs/images/flow-editor.png" alt="Flow editor"> -->
-<!-- <img src="docs/images/flow-builder.png" alt="Draft a flow from a sentence"> -->
-<!-- <img src="docs/images/run-detail.png" alt="Run detail"> -->
-<!-- <img src="docs/images/workbench-analytics.png" alt="Workbench"> -->
-<!-- <img src="docs/images/helix.png" alt="Helix"> -->
-<!-- <img src="docs/images/virtual-camera.png" alt="Virtual camera"> -->
-<!-- <img src="docs/images/mqtt-live.png" alt="MQTT live view"> -->
-<!-- <img src="docs/images/mcp.png" alt="MCP explorer"> -->
-<!-- <img src="docs/images/security.png" alt="Security tab"> -->
+**Explorer.** Every webhook Verkada sends, captured, classified and signature-checked, with the payload and its images beside the list. One click turns any event into a flow.
 
-*Screenshots of the current UI are on their way. The images below are from Verkada Command and show what a flow's output looks like there.*
+![Explorer, webhooks](docs/images/explorer-webhooks.png)
+
+**Templates.** Eight complete automations, pre-wired with a trigger, the analysis and a Helix event type, grouped by what starts them.
+
+![Automate, templates](docs/images/automate-templates.png)
+
+**Workbench.** Describe an analytic and have it written, or start from one that ships. Then run it once against a real camera before building anything on top of it.
+
+![Workbench, analytics builder](docs/images/workbench-analytics.png)
+
+**MQTT object positions.** Every object a camera tracked through frame and out again, recorded as it happened, with the boxes replayed beside the footage they came from.
+
+![MQTT, history](docs/images/mqtt-history.png)
+
+**Virtual camera.** One unbroken RTSP stream for a Command Connector to record, with ONVIF Profile S so Advanced Analytics works on it.
+
+![Virtual camera](docs/images/virtual-camera.png)
+
+More in the [documentation](#documentation): the [API runner](docs/workbench.md), [live cameras](docs/workbench.md), the [MQTT broker setup](docs/mqtt.md), and [retention and stats](docs/settings.md).
 
 ### From analysis to Verkada Helix
 

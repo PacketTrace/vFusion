@@ -13,6 +13,8 @@
 
 Eight starter flows ship with the product, pre-wired with a trigger, the Gemini and Verkada steps, and the Helix event type they post to.
 
+![Automate, templates](images/automate-templates.png)
+
 | Template | Starts on | What it does |
 |---|---|---|
 | 🦌 Animal species detection | Motion webhook, objects = animal | Gemini returns `{animal, breed, behavior}`; posts all three to Helix. Command alerts on the animal you chose. |
@@ -28,6 +30,8 @@ Eight starter flows ship with the product, pre-wired with a trigger, the Gemini 
 - **Search and facets** are computed from what the flow actually does, not hand-written tags, so a new template is categorised the moment it exists.
 - **Your own templates.** *Save as template* in the flow editor promotes any flow into this list. Export and import move a flow between installs as JSON, with the Helix event types it needs embedded so the importer can recreate them.
 - **Draft a flow from a sentence.** The builder on this tab takes "when a person shows up at the back door after midnight, describe what they're carrying" or "when anyone starts a live stream of the nursery camera, log who to Helix" and proposes a flow: grounded in your real cameras, doors, event types and the events your audit log has actually produced, validated against the live action registry, and replayed against stored webhooks or audit entries so "will this fire?" is evidence. It proposes; it never saves without you.
+
+![Draft a flow from a sentence](images/flow-builder.png)
 
 ## Analytics
 

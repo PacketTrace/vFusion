@@ -24,6 +24,8 @@ The credentials this install can use. Secrets are Fernet-encrypted before they r
 
 The hourly cleanup deletes anything older than these windows. `0` keeps a bucket forever. Each row shows what it is currently holding.
 
+![Settings, retention](images/retention.png)
+
 | Bucket | Default |
 |---|---|
 | Webhook events | 30 days |
@@ -57,6 +59,8 @@ The cap can only stop vFusion. Set a budget on the Google Cloud project as well;
 ## Stats
 
 Ingest counters for 24 hours, 7 days and 30 days, webhooks by family, top event types with drill-down into the Explorer, estimated Gemini spend per model, on-disk storage per bucket, and real-time server load.
+
+![Settings, stats](images/stats.png)
 
 ## Help
 

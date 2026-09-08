@@ -8,6 +8,8 @@
 
 Every request to `https://<your-public-url>/hooks/<anything>` is captured, classified and signature-checked.
 
+![Explorer, webhooks](images/explorer-webhooks.png)
+
 - **Classified into a family** — camera, access, LPR, sensor, intercom, credential, alarm — and a notification type, using a built-in taxonomy. Anything it cannot place lands on the **Unrecognized** page, where the shape is one click from an issue you can file so the taxonomy grows.
 - **Signature-verified.** With a signing secret on the org's connection, every event is HMAC-checked and shows **✓ verified**. Without one, events still land, marked *unverified*.
 - **Searchable by name, not just id.** Type "Front Door" and the search expands to the door's UUID, because the payload only carries the id.
