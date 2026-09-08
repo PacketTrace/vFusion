@@ -73,10 +73,14 @@ All three take an optional moment, so `{{ trigger.data.created }}` gives you the
 | **Verkada: Helix event** | Posts a video-tagging event with arbitrary attributes, validated against the event type's schema. |
 | **Verkada: unlock door** | Admin unlock. |
 | **Verkada: activate / release Access scenario** | Lockdown, Evacuate, Shelter, Hold, Secure, and the all-clear. |
+| **Slack: Send a message** | Posts to a channel through an incoming webhook. The channel belongs to the webhook, so the step only says what to send. |
+| **Discord: Send a message** | The same, for a Discord channel webhook, and the name and avatar can be overridden per step. |
 | **Weather: fetch current conditions** | OpenWeatherMap by zip or lat/lon. |
 | **Verkada API call** | Any endpoint from the catalog, with path, query and body fields that accept variables. |
 
 Lower-level pieces (grab a clip without analyzing it, analyze an on-disk file) exist for flows that need them.
+
+Chat messages are text. Neither Slack nor Discord can attach an image through an incoming webhook, because both fetch a URL themselves and vFusion's frames sit behind a session cookie on a host that is not meant to be public. A message longer than the service accepts is truncated rather than rejected, and a rate-limited message is retried once.
 
 Models offered for analysis steps: Gemini 3.1 Pro preview, Gemini 2.5 Pro, Gemini 2.5 Flash, with fallback rules when one is unavailable.
 

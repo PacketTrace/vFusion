@@ -45,8 +45,10 @@ it lands on the camera's timeline.
 
 WHAT IT DOES NOT DO -- say so plainly when asked, because it is the most \
 common wrong expectation:
-- It does not send emails, texts or phone notifications. It writes a \
-Helix event; the alert on that event is configured in Verkada Command.
+- It does not send emails, texts or phone notifications. For a person to \
+be told something, there are two routes: a Helix event with an alert \
+configured on it in Verkada Command, or a message posted straight to a \
+Slack or Discord channel with the chat actions in the catalog below.
 - It cannot invent action types. The catalog below is all there is.
 - It cannot act on data Verkada does not send.
 

@@ -37,6 +37,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 - 🧠 **Draft a flow from a sentence** — grounded in your real cameras, doors and event types, validated against the action registry, replayed against stored events so "will this fire?" has evidence.
 - 🎥 **Gemini on your cameras** — a historical clip, a single live frame (about 10× cheaper), or just the audio track (about 8× cheaper). Gemini 3.1 Pro, 2.5 Pro, 2.5 Flash.
 - 🚪 **Verkada actions** — unlock doors, activate and release Access scenarios, post schema-validated Helix events, or call any cataloged endpoint.
+- 💬 **Slack and Discord** — post the result to a channel through an incoming webhook, with the analysis in the message rather than just "something happened".
 - 🧩 **Starter templates** that ask their own questions on install, plus save-as-template, export and import.
 
 **Try before you build**
@@ -143,6 +144,12 @@ cp .env.example .env
 docker compose --profile quick up --build -d
 ```
 
+That starts everything except the two features that need their own containers: **MQTT** object positions and the **virtual camera**. Add them when you want them, in any combination:
+
+```bash
+docker compose --profile quick --profile mqtt --profile rtsp up --build -d
+```
+
 Open **http://localhost:15173**, set the admin password, and follow the welcome modal: copy the public URL and a generated signing secret into **Command → Admin → API & Integrations → Webhooks**. The first webhook to arrive unlocks the dashboard and creates your Verkada connection; add the API key under **Settings → Connections**.
 
 That is quick mode: a free TryCloudflare URL that changes on restart. For a stable URL on your own domain, optional profiles (MQTT, virtual camera), browsing from another machine, every environment variable, updating and backups, see **[Deploying](docs/deploying.md)**.
@@ -218,7 +225,7 @@ No telemetry, no analytics, nothing phones home. Keys are encrypted in your Post
 <details>
 <summary><strong>How does it get me notified?</strong></summary>
 
-It does not send email, SMS or push. It writes a Helix event; you configure an alert on that event type in Command, and Command notifies you. That is deliberate: Command already has the notification rules, the app and the audit trail.
+Two ways. A flow can post straight to a **Slack or Discord channel**, which is the right answer when the people who need to know live in chat. Or it writes a **Helix event** and you configure the alert on that event type in Command, which puts the notification next to the footage it came from. No email, SMS or push by any route.
 
 </details>
 

@@ -53,6 +53,16 @@ from app.engine.actions.verkada_release_scenario import (
     SCHEMA as VERKADA_RELEASE_SCENARIO_SCHEMA,
     run as run_verkada_release_scenario,
 )
+from app.engine.actions.slack_message import (
+    SAMPLE_OUTPUT as SLACK_MESSAGE_OUTPUT,
+    SCHEMA as SLACK_MESSAGE_SCHEMA,
+    run as run_slack_message,
+)
+from app.engine.actions.discord_message import (
+    SAMPLE_OUTPUT as DISCORD_MESSAGE_OUTPUT,
+    SCHEMA as DISCORD_MESSAGE_SCHEMA,
+    run as run_discord_message,
+)
 from app.engine.actions.weather_fetch import (
     SAMPLE_OUTPUT as WEATHER_FETCH_OUTPUT,
     SCHEMA as WEATHER_FETCH_SCHEMA,
@@ -128,6 +138,33 @@ ACTIONS: dict[str, ActionSpec] = {
         output_sample=VERKADA_HELIX_EVENT_OUTPUT,
         run=run_verkada_helix_event,
         default_step_name="post_helix",
+    ),
+    "slack_message": ActionSpec(
+        type="slack_message",
+        label="Slack: Send a message",
+        description=(
+            "Post a message to Slack through an incoming webhook. The channel "
+            "belongs to the webhook, so the flow only says what to send. Pair it "
+            "with an analysis step to send the answer, not just the fact that "
+            "something happened."
+        ),
+        schema=SLACK_MESSAGE_SCHEMA,
+        output_sample=SLACK_MESSAGE_OUTPUT,
+        run=run_slack_message,
+        default_step_name="notify",
+    ),
+    "discord_message": ActionSpec(
+        type="discord_message",
+        label="Discord: Send a message",
+        description=(
+            "Post a message to Discord through a channel webhook. The channel "
+            "belongs to the webhook, and the name and avatar can be overridden "
+            "per step, so one webhook can carry several kinds of alert."
+        ),
+        schema=DISCORD_MESSAGE_SCHEMA,
+        output_sample=DISCORD_MESSAGE_OUTPUT,
+        run=run_discord_message,
+        default_step_name="notify",
     ),
     "verkada_unlock_door": ActionSpec(
         type="verkada_unlock_door",

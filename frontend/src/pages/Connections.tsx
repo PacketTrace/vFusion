@@ -176,6 +176,9 @@ export default function Connections() {
                           Finish setup
                         </button>
                       )}
+                      {c.setup_complete && (c.type === "slack" || c.type === "discord") && (
+                        <TestMessageBtn conn={c} />
+                      )}
                       <button
                         onClick={() => {
                           if (confirm(`Delete "${c.name}"? This can't be undone.`)) {
@@ -930,4 +933,50 @@ function renderHelpWithLinks(text: string): React.ReactNode {
     }
     return <span key={i}>{part}</span>;
   });
+}
+
+
+/**
+ * Post one message to a chat webhook, from the row that holds it.
+ *
+ * A webhook URL that has been revoked and one with a typo in it are the
+ * same string of characters to look at, and both fail identically: the
+ * flow runs, reports success at every step it can see, and nothing
+ * arrives. Sending a real message is the only way to know, and the
+ * moment it is pasted is the cheapest time to find out.
+ */
+function TestMessageBtn({ conn }: { conn: Connection }) {
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const send = useMutation({
+    mutationFn: () => apiPost<{ ok: boolean }>(`/api/connections/${conn.id}/test-message`, {}),
+    onSuccess: () => {
+      setResult({ ok: true, msg: "sent — check the channel" });
+      window.setTimeout(() => setResult(null), 6000);
+    },
+    onError: (e: Error) => setResult({ ok: false, msg: e.message }),
+  });
+  return (
+    <>
+      {result && (
+        <span
+          className={`mr-2 text-[11px] ${result.ok ? "text-emerald-300" : "text-rose-300"}`}
+          title={result.msg}
+        >
+          {result.ok ? "✓ " : "✗ "}
+          {result.msg.length > 70 ? result.msg.slice(0, 67) + "…" : result.msg}
+        </span>
+      )}
+      <button
+        onClick={() => {
+          setResult(null);
+          send.mutate();
+        }}
+        disabled={send.isPending}
+        className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-sky-200 hover:border-sky-700 mr-2 disabled:opacity-50"
+        title="Post a short message to the channel this webhook points at"
+      >
+        {send.isPending ? "Sending…" : "Send test"}
+      </button>
+    </>
+  );
 }

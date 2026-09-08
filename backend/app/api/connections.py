@@ -16,6 +16,7 @@ from app.connectors.verkada.sync import (
     sync_people_of_interest_for_connection,
     sync_scenarios_for_connection,
 )
+from app.connectors import chat
 from app.crypto import encrypt_secret, decrypt_secret
 from app.db import get_session
 from app.models import (
@@ -56,6 +57,34 @@ CONNECTION_TYPES: dict[str, dict[str, Any]] = {
         "required_for_setup": "api_key",
         "fields": [
             {"name": "api_key", "label": "OpenWeatherMap API key", "type": "secret", "required": True, "help": "Free tier is plenty for most flows. Sign up at https://home.openweathermap.org/users/sign_up , then grab a key from https://home.openweathermap.org/api_keys . New keys take a few minutes to activate."},
+        ],
+    },
+    "slack": {
+        "label": "Slack",
+        "description": "An incoming-webhook URL for one Slack channel. The channel is chosen when you create the webhook, so add one connection per channel you want flows to post to.",
+        "required_for_setup": "webhook_url",
+        "fields": [
+            {
+                "name": "webhook_url",
+                "label": "Incoming webhook URL",
+                "type": "secret",
+                "required": True,
+                "help": "Slack → your app → Incoming Webhooks → Add New Webhook to Workspace, then copy the https://hooks.slack.com/services/… URL. Treat it as a password: anyone holding it can post to that channel.",
+            },
+        ],
+    },
+    "discord": {
+        "label": "Discord",
+        "description": "A channel webhook URL for Discord. The channel is chosen when you create the webhook; a flow step can still override the name and avatar it posts under.",
+        "required_for_setup": "webhook_url",
+        "fields": [
+            {
+                "name": "webhook_url",
+                "label": "Webhook URL",
+                "type": "secret",
+                "required": True,
+                "help": "Discord → the channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL. Treat it as a password: anyone holding it can post to that channel.",
+            },
         ],
     },
     "verkada": {
@@ -671,6 +700,43 @@ async def trigger_helix_sync(
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@router.post("/{conn_id}/test-message")
+async def send_test_message(
+    conn_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Post a short message to the connection's chat webhook.
+
+    A webhook URL either works or it does not, and there is no way to
+    tell by looking at it: a revoked one and a typo'd one are the same
+    string of characters. Sending one message answers the question at
+    the moment it is pasted, rather than the first time a flow fires.
+    """
+    conn = await session.get(Connection, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if conn.type not in ("slack", "discord"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{conn.type} connections have no message to send",
+        )
+    try:
+        secret = decrypt_secret(conn.encrypted_secret) or {}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"could not decrypt secret: {e}") from e
+    try:
+        return await chat.send(
+            service=conn.type,
+            url=secret.get("webhook_url") or "",
+            text=(
+                f"Test message from {BRAND_NAME}. This connection works — "
+                "flows using it will post here."
+            ),
+        )
+    except chat.ChatError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _spec(type_: str) -> dict[str, Any]:

@@ -150,10 +150,13 @@ Also return:
 - "assumptions": array of strings — anything you guessed, and anything the \
 user asked for that this flow does NOT do.
 
-Important: vFusion posts events to Verkada Helix. It does not send phone \
-notifications or emails. If the user asked to "be notified", put an \
-assumption saying the alert itself is configured in Verkada Command on the \
-Helix event this flow writes.
+Important: when the user asks to "be notified", pick the route that fits \
+what they said. Naming Slack or Discord means the slack_message or \
+discord_message action, which posts to a channel directly -- put it after \
+any analysis step so the message can carry the result. Anything else means \
+a verkada_helix_event step, and an assumption saying the alert itself is \
+configured in Verkada Command on the Helix event this flow writes. vFusion \
+sends no emails, texts or push notifications by any route.
 
 === TRIGGER TAXONOMY (verkada_webhook) ===
 __TAXONOMY__

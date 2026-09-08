@@ -62,12 +62,23 @@ MIN_DOCSTRING = 40
 # cannot go stale.
 KEY_FACTS = """### The short answers to the questions people actually ask
 
-**Getting notified.** vFusion does not send notifications. It writes an
-event to Verkada Helix; you then configure an alert on that Helix event
-type inside Verkada Command, and Command sends the notification. There
-is no email, SMS or push anywhere in vFusion, and no setting that adds
-one. Anyone asking to "be told when X happens" needs: a flow that writes
-a Helix event, then an alert on that event type in Command.
+**Getting notified.** Two ways, and which one to recommend depends on
+who is being told.
+
+*Into Verkada Command* — a flow writes a Helix event, and an alert is
+configured on that event type inside Command. Command sends the
+notification. This is the right answer when the audience already lives
+in Command, because the alert lands next to the footage it came from.
+
+*Into a chat channel* — a flow posts to Slack or Discord directly, with
+the "Slack: Send a message" or "Discord: Send a message" action. Add a
+Slack or Discord connection holding the channel's incoming-webhook URL,
+then put the action after an analysis step so the message carries the
+answer rather than just the fact that something fired. The message is
+text; neither service can attach an image through an incoming webhook.
+
+There is still no email, SMS or push anywhere in vFusion, and no
+setting that adds one.
 
 **Flows versus analytics.** A flow is a whole automation — a trigger,
 some steps, usually a Helix event at the end. An analytic is only the

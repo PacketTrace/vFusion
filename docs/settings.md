@@ -11,10 +11,13 @@ The credentials this install can use. Secrets are Fernet-encrypted before they r
 | **Verkada Org** | Org id, API key, webhook signing secret, API region (US, EU, AU, GovCloud) | Every Verkada action, footage, Helix, the API runner, the audit log, MCP |
 | **Google Gemini** | API key | Analysis steps, the analytic composer, the flow builder and assistant, Helix drafting and demos, the help chat, video generation |
 | **OpenWeatherMap** | API key | The weather action |
+| **Slack** | Incoming webhook URL | The Slack message action. One connection per channel |
+| **Discord** | Channel webhook URL | The Discord message action. One connection per channel |
 
 - The first webhook **auto-creates** the Verkada connection; you add the API key afterwards.
 - **Generate** produces a signing secret from 48 random bytes. Paste it into Command's webhook config so every event is HMAC-verified.
 - **Sync** cameras, doors and Persons of Interest so pickers show names instead of UUIDs.
+- **Send test** on a Slack or Discord connection posts one message to the channel. A revoked webhook and a mistyped one look identical until something tries to use them, so this answers it when the URL is pasted rather than when a flow fires.
 - The region matters: an API key only authenticates against its own region's hostname, and the wrong one fails every call with a 401 or 403.
 
 ## Retention
