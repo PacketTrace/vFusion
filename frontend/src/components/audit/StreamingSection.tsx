@@ -17,10 +17,10 @@ import { HBars, StatTile } from "./charts";
  */
 export default function StreamingSection({
   s,
-  showInList,
+  onFilter,
 }: {
   s: AuditStats;
-  showInList: (next: (f: AuditFilters) => AuditFilters) => void;
+  onFilter: (next: (f: AuditFilters) => AuditFilters) => void;
 }) {
   const st = s.streaming;
   const since = new Date(s.since).getTime() / 1000;
@@ -39,22 +39,22 @@ export default function StreamingSection({
   }
 
   return (
-    <Card title="Streaming" hint="who watched which camera, and for how long · click anything to see the rows">
+    <Card title="Streaming" hint="who watched which camera, and for how long · click anything to narrow to it">
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-3">
         <StatTile
           label="Sessions"
           value={fmtNum(st.sessions)}
           hint="history views with a duration"
-          onClick={() => showInList((f) => ({ ...f, event_name: streamEvents }))}
+          onClick={() => onFilter((f) => ({ ...f, event_name: streamEvents }))}
         />
-        <StatTile label="Live views" value={fmtNum(st.live_starts)} onClick={() => showInList((f) => ({ ...f, event_name: ["Live Stream Started"] }))} />
+        <StatTile label="Live views" value={fmtNum(st.live_starts)} onClick={() => onFilter((f) => ({ ...f, event_name: ["Live Stream Started"] }))} />
         <StatTile label="Time streamed" value={fmtDuration(st.total_sec)} />
         <StatTile label="Average" value={fmtDuration(st.avg_sec)} hint={`median ${fmtDuration(st.median_sec)}`} />
         <StatTile label="Longest" value={fmtDuration(st.longest_sec)} />
         <StatTile label="Cameras" value={fmtNum(st.cameras.length)} hint={`${fmtNum(st.streamers.length)} viewers`} />
       </div>
 
-      <Swimlanes lanes={st.lanes} since={since} until={until} onPick={(id) => showInList((f) => ({ ...f, event_name: streamEvents, device_id: id }))} />
+      <Swimlanes lanes={st.lanes} since={since} until={until} onPick={(id) => onFilter((f) => ({ ...f, event_name: streamEvents, device_id: id }))} />
       {st.truncated && (
         <div className="text-[11px] text-amber-300 mt-1">
           Only the most recent {fmtNum(3000)} stream events are drawn. Narrow the range for a complete picture.
@@ -72,7 +72,7 @@ export default function StreamingSection({
               count: c.total_sec,
               title: `${fmtDuration(c.total_sec)} streamed`,
             }))}
-            onPick={(k) => showInList((f) => ({ ...f, event_name: streamEvents, device_id: k }))}
+            onPick={(k) => onFilter((f) => ({ ...f, event_name: streamEvents, device_id: k }))}
           />
         </div>
         <div>
@@ -85,7 +85,7 @@ export default function StreamingSection({
               count: w.total_sec,
               title: `${fmtDuration(w.total_sec)} streamed`,
             }))}
-            onPick={(k) => showInList((f) => ({ ...f, event_name: streamEvents, user: k }))}
+            onPick={(k) => onFilter((f) => ({ ...f, event_name: streamEvents, user: k }))}
           />
         </div>
       </div>

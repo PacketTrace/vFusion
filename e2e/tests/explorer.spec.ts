@@ -40,15 +40,30 @@ test.describe("Explorer", () => {
     expect(failures.list()).toEqual([]);
   });
 
-  test("insights drills into the list with the filter applied", async ({ page }) => {
+  test("filtering from Insights narrows the chart instead of navigating away", async ({ page }) => {
+    // The regression: clicking a mark applied the filter and dropped you
+    // into the Events list, ending whatever exploration you were in the
+    // middle of. Filtering must never change which view you are in.
     const failures = watchForFailures(page);
     await signIn(page);
-    // Include the install's own calls so a quiet org still has rows.
+    // Own API calls included, so a quiet org still has something to draw.
     await page.goto("/explorer?tab=audit&view=insights&range=7d&api=1");
+    const insights = page.getByTestId("audit-view-insights");
+    await expect(insights).toHaveAttribute("aria-pressed", "true");
+
     const api = page.getByRole("button", { name: /API requests/ });
     await expect(api).toBeVisible({ timeout: 60_000 });
     await api.click();
-    await expect(page).toHaveURL(/view=events/);
+
+    await expect(page).toHaveURL(/category=api/);
+    await expect(page).toHaveURL(/view=insights/);
+    await expect(insights).toHaveAttribute("aria-pressed", "true");
+    // Still the charts, not the row list.
+    await expect(page.getByTestId("audit-list")).toHaveCount(0);
+
+    // And the filter survives the trip to the rows, which is the thing
+    // that makes staying put acceptable.
+    await page.getByTestId("audit-view-events").click();
     await expect(page).toHaveURL(/category=api/);
     await expect(page.getByTestId("audit-list").or(page.getByText("Nothing matches."))).toBeVisible({
       timeout: 30_000,

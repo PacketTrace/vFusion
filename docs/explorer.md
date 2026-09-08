@@ -42,7 +42,9 @@ Lookups go to ip-api.com in batches, only for addresses on screen, and results a
 
 ## Insights
 
-The Insights view of the Audit log tab: the same slice as the list, same filters, drawn. Every mark is a link into the rows behind it.
+The Insights view of the Audit log tab: the same slice as the Events view, same filters, drawn.
+
+Clicking any mark narrows the filters and **stays on Insights**, so one question leads to the next without leaving the picture. Switch to Events for the rows whenever you want them; the filters describe both views, so nothing is lost either way.
 
 - **Activity over time**, stacked by category. Click a column to see that window.
 - **Who is active** and what each person or key spends their time doing.

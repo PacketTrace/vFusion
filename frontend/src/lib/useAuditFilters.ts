@@ -7,29 +7,32 @@ type Updater = AuditFilters | ((prev: AuditFilters) => AuditFilters);
 
 /**
  * Filters read from, and written to, the URL. Both Explorer tabs use
- * this, which is what makes "click a bar, land on those rows" a URL
- * change rather than a shared store.
+ * this, which is what makes a filter a shareable link rather than a
+ * shared store.
+ *
+ * Filtering deliberately never changes which view you are looking at.
+ * Clicking a bar on Insights used to drop you into the Events list,
+ * which ended the exploration you were in the middle of: the whole
+ * point of a chart is the next question, and answering it meant
+ * clicking back every time. The view is one segmented control away,
+ * and the same filters describe both.
  */
 export function useAuditFilters(): {
   filters: AuditFilters;
   setFilters: (next: Updater) => void;
-  /** Apply filters and switch to the Events view of the Audit log tab. */
-  showInList: (next: Updater) => void;
 } {
   const [sp, setSp] = useSearchParams();
   const filters = useMemo(() => filtersFromSearch(sp), [sp]);
 
-  const write = useCallback(
-    (next: Updater, tab?: string) => {
+  // ``tab``, ``view`` and ``event`` ride along in the URL; filtersToSearch
+  // carries the first two through untouched. The selected row is dropped,
+  // because a different slice may not contain it.
+  const setFilters = useCallback(
+    (next: Updater) => {
       setSp(
         (prev) => {
           const resolved = typeof next === "function" ? next(filtersFromSearch(prev)) : next;
           const out = filtersToSearch(resolved, prev);
-          if (tab) {
-            out.set("tab", tab);
-            out.set("view", "events");
-          }
-          // A different slice means the selected row no longer belongs.
           out.delete("event");
           return out;
         },
@@ -39,7 +42,5 @@ export function useAuditFilters(): {
     [setSp],
   );
 
-  const setFilters = useCallback((next: Updater) => write(next), [write]);
-  const showInList = useCallback((next: Updater) => write(next, "audit"), [write]);
-  return { filters, setFilters, showInList };
+  return { filters, setFilters };
 }

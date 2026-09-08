@@ -197,7 +197,7 @@ export function StackedColumns({
                 <span className="tabular-nums text-slate-200">{fmtNum(hovered.by_category[c])}</span>
               </div>
             ))}
-          {onPick && <div className="text-slate-500 mt-1">click to see these rows</div>}
+          {onPick && <div className="text-slate-500 mt-1">click to narrow to this window</div>}
         </div>
       )}
     </div>

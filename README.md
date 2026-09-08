@@ -27,7 +27,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 
 - 📥 **Webhooks** — every event Verkada sends, captured at `/hooks/*`, classified into a family, HMAC-verified, searchable by camera and door *name*.
 - 🔎 **Audit log** — a local copy of Command's audit log, pulled every 10 seconds, filterable by user, event, device, IP, key, endpoint and status code, with counts on every value and CSV export. No 90-day cap. Any entry becomes a flow trigger with one click.
-- 📈 **Insights** — who is active, what they do, from where, against which devices and endpoints. **Streaming activity** on a swimlane per camera: who watched what, when, for how long. Every chart drills into the rows behind it.
+- 📈 **Insights** — who is active, what they do, from where, against which devices and endpoints. **Streaming activity** on a swimlane per camera: who watched what, when, for how long. Click any mark to narrow every chart at once, then switch to the rows when you want them.
 - 🌍 **Where an address is** — city and region beside every IP, with proxy and hosting flags.
 
 **Automate it**

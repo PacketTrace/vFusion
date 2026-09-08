@@ -11,13 +11,17 @@ import { HBars, Legend, StackedColumns, StatTile } from "../components/audit/cha
 import StreamingSection from "../components/audit/StreamingSection";
 
 /**
- * Explorer → Insights. The big picture of the same slice the Audit log
- * tab lists: who is active, what they do, from where, against which
- * devices and endpoints, and when. Every mark is a link into the rows
- * behind it.
+ * Explorer → Audit log → Insights. The big picture of the same slice
+ * the Events view lists: who is active, what they do, from where, and
+ * against which devices and endpoints.
+ *
+ * Every mark narrows the filters and leaves you here. Marks used to
+ * navigate to the row list, which ended the exploration on the first
+ * click — the next question is nearly always another chart, and the
+ * rows are one segmented control away when they are wanted.
  */
 export default function AuditInsights({ embedded = false }: { embedded?: boolean }) {
-  const { filters, setFilters, showInList } = useAuditFilters();
+  const { filters, setFilters } = useAuditFilters();
   const key = filtersKey(filters);
 
   const stats = useQuery({
@@ -76,7 +80,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
       ) : (
         <>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            <StatTile label="Events" value={fmtNum(s.totals.events)} onClick={() => showInList((f) => f)} />
+            <StatTile label="Events" value={fmtNum(s.totals.events)} hint="in this slice" />
             <StatTile
               label="People & keys"
               value={fmtNum(s.totals.users)}
@@ -88,26 +92,26 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
               label="API requests"
               value={fmtNum(s.totals.api_requests)}
               hint={filters.hide_api ? "hidden from this view" : "including this install's own"}
-              onClick={() => showInList((f) => ({ ...f, category: ["api"] }))}
+              onClick={() => setFilters((f) => ({ ...f, category: ["api"] }))}
             />
             <StatTile
               label="API errors"
               value={fmtNum(s.totals.errors)}
               tone={s.totals.errors > 0 ? "text-rose-300" : "text-white"}
               hint={s.totals.errors > 0 ? "⚠ status ≥ 400" : "status ≥ 400"}
-              onClick={() => showInList((f) => ({ ...f, status: ["4xx", "5xx"] }))}
+              onClick={() => setFilters((f) => ({ ...f, status: ["4xx", "5xx"] }))}
             />
           </div>
 
           <Card
             title="Activity over time"
-            hint={`per ${bucketLabel(s.bucket_sec)} · click a column to see those rows`}
+            hint={`per ${bucketLabel(s.bucket_sec)} · click a column to narrow to it`}
           >
             <StackedColumns
               data={s.timeseries}
               categories={categories}
               bucketSec={s.bucket_sec}
-              onPick={(since, until) => showInList((f) => ({ ...f, range: "custom", since, until }))}
+              onPick={(since, until) => setFilters((f) => ({ ...f, range: "custom", since, until }))}
             />
             <div className="mt-2">
               <Legend categories={categories} />
@@ -127,7 +131,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                         <button
                           type="button"
                           onClick={() =>
-                            showInList((f) => ({
+                            setFilters((f) => ({
                               ...f,
                               user: u.actor === "api_key" ? "" : u.key,
                               api_key: u.actor === "api_key" ? [u.key] : f.api_key,
@@ -174,7 +178,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                   count: e.count,
                   color: categoryColor(e.category),
                 }))}
-                onPick={(k) => showInList((f) => ({ ...f, event_name: [k] }))}
+                onPick={(k) => setFilters((f) => ({ ...f, event_name: [k] }))}
               />
             </Card>
           </div>
@@ -188,7 +192,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                   sub: [d.type, d.site].filter(Boolean).join(" · "),
                   count: d.count,
                 }))}
-                onPick={(k) => showInList((f) => ({ ...f, device_id: k }))}
+                onPick={(k) => setFilters((f) => ({ ...f, device_id: k }))}
               />
             </Card>
             <Card title="Where from" hint="IP addresses">
@@ -209,7 +213,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                     {s.ips.map((ip) => (
                       <tr
                         key={ip.ip}
-                        onClick={() => showInList((f) => ({ ...f, ip: ip.ip }))}
+                        onClick={() => setFilters((f) => ({ ...f, ip: ip.ip }))}
                         className="cursor-pointer hover:bg-white/5 transition-colors"
                       >
                         <td className="py-1 font-mono text-slate-200">{ip.ip}</td>
@@ -242,7 +246,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                       <tr
                         key={`${ep.method}:${ep.url}`}
                         onClick={() =>
-                          showInList((f) => ({
+                          setFilters((f) => ({
                             ...f,
                             category: ["api"],
                             url: ep.url,
@@ -274,7 +278,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                       sub: `${k.ips} IP${k.ips === 1 ? "" : "s"}${k.errors ? ` · ⚠ ${fmtNum(k.errors)} errors` : ""} · last ${fmtRel(k.last)}`,
                       count: k.count,
                     }))}
-                    onPick={(k) => showInList((f) => ({ ...f, api_key: [k] }))}
+                    onPick={(k) => setFilters((f) => ({ ...f, api_key: [k] }))}
                   />
                 </Card>
                 <Card title="Status codes">
@@ -283,7 +287,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                       <li key={st.status}>
                         <button
                           type="button"
-                          onClick={() => showInList((f) => ({ ...f, status: [String(st.status)] }))}
+                          onClick={() => setFilters((f) => ({ ...f, status: [String(st.status)] }))}
                           className="text-xs px-2 py-1 rounded border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
                         >
                           <span className={`font-mono ${statusTone(st.status)}`}>{st.status}</span>
@@ -297,7 +301,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
             </div>
           )}
 
-          <StreamingSection s={s} showInList={showInList} />
+          <StreamingSection s={s} onFilter={setFilters} />
 
           <Card title="By category">
             <div className="flex flex-wrap gap-2">
@@ -305,7 +309,7 @@ export default function AuditInsights({ embedded = false }: { embedded?: boolean
                 <button
                   key={c.category}
                   type="button"
-                  onClick={() => showInList((f) => ({ ...f, category: [c.category] }))}
+                  onClick={() => setFilters((f) => ({ ...f, category: [c.category] }))}
                   className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 hover:bg-white/10 transition-colors"
                 >
                   <CategoryBadge category={c.category} small />
