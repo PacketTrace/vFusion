@@ -24,7 +24,7 @@ Nine starter flows ship with the product, pre-wired with a trigger, the Gemini a
 | 📦 Hourly shelf-stock check | Hourly schedule | Scores shelf fullness 0–100; posts Stock Level and Reasoning. |
 | 🔤 OCR-triggered door unlock | Motion webhook | OCRs a plate, badge or sign; when it matches, unlocks the door and logs what and why to Helix. |
 | 🚨 POI-triggered lockdown | Person-of-interest webhook | Activates a Command Access scenario (Lockdown, Shelter, Evacuate). |
-| 🔖 License plate of interest added | Someone adds a plate to the watch list | Posts the plate, the label, who added it, the IP they did it from, and whether alerting and fuzzy matching were on. No AI and no footage, so it costs nothing to run. |
+| 🔖 License plate of interest added | Someone adds a plate to the watch list | Posts to Slack or Discord with the plate, the label, who added it, the address they did it from, and whether alerting and fuzzy matching were on. No AI and no footage, so it costs nothing to run. |
 | ⛅ Weather sentry | Every 30 minutes | Pulls live conditions from OpenWeatherMap and posts them to a Helix Weather event. |
 
 - **Templates ask before they build.** Which camera, which animal, which door: the questions a template cannot answer itself are asked on install, with skip one click away. An answer can decide several fields at once and can hide a question that no longer applies, so choosing "log every animal" both drops the species box and rewrites the comparison behind it.

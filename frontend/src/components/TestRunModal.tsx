@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
@@ -327,8 +327,18 @@ function AuditTestRun({
     return () => window.clearTimeout(t);
   }, [search]);
 
+  // Frozen when the modal opens. This used to be computed inline, which
+  // put a millisecond timestamp in the query key below: every render
+  // produced a key react-query had never seen, so it started another
+  // request, whose result re-rendered the component, which made another
+  // key. The list stayed on "Loading…" forever and the backend took a
+  // COUNT and a SELECT over the whole audit table for every frame of it.
+  const since = useMemo(
+    () => new Date(Date.now() - 7 * 86400_000).toISOString(),
+    [],
+  );
   const params = new URLSearchParams({ limit: "25" });
-  params.set("since", new Date(Date.now() - 7 * 86400_000).toISOString());
+  params.set("since", since);
   if (trigger.category) params.append("category", trigger.category);
   if (trigger.eventName) params.append("event_name", trigger.eventName);
   if (trigger.actor) params.append("actor", trigger.actor);
@@ -390,6 +400,10 @@ function AuditTestRun({
         <div className="flex-1 min-h-0 overflow-y-auto">
           {recent.isLoading ? (
             <div className="p-4 text-xs text-slate-500">Loading…</div>
+          ) : recent.isError ? (
+            <div className="p-4 text-xs text-rose-300">
+              Could not read the audit log: {(recent.error as Error).message}
+            </div>
           ) : items.length === 0 ? (
             <div className="p-4 text-xs text-slate-500">
               {debounced

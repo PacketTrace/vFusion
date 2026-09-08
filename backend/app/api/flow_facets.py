@@ -27,6 +27,8 @@ _DOES: dict[str, str] = {
     "verkada_activate_scenario": "Activates a scenario",
     "verkada_release_scenario": "Releases a scenario",
     "verkada_api_call": "Calls the Verkada API",
+    "slack_message": "Posts to Slack",
+    "discord_message": "Posts to Discord",
 }
 
 # Which analytic an action is, if it is one. Drives the "Vision"/"Audio"
@@ -48,6 +50,8 @@ _NEEDS: dict[str, str] = {
     "gemini_analyze_video": "Gemini",
     "gemini_analyze_audio": "Gemini",
     "weather_fetch": "Weather",
+    "slack_message": "Slack",
+    "discord_message": "Discord",
 }
 
 # Webhook event types, in operator words. Anything not listed falls back

@@ -1,18 +1,22 @@
 {
   "id": "lpoi-created-audit",
   "name": "License plate of interest added",
-  "tagline": "🔖 Someone adds a plate to the watch list → log who, which plate, and from where, to Helix.",
-  "description": "Adding a licence plate of interest is a policy decision: from that moment a camera watches for that vehicle and alerts on it. Verkada records the change in the audit log, but the audit log is a separate place to go and look. This puts each addition on a camera's Helix timeline instead, next to the footage, with the plate, the label it was given, who added it, and whether alerting and fuzzy matching were switched on.\n\nNo AI, no footage pulled, nothing metered — it reads one audit entry and writes one Helix event.",
-  "summary": "Audit log → Helix event with Plate, Label, Added by, and the alert settings",
+  "tagline": "🔖 Someone adds a plate to the watch list → a message in Slack or Discord.",
+  "description": "Adding a licence plate of interest is a policy decision: from that moment a camera watches for that vehicle and alerts on it. Verkada records the change in the audit log, but nobody reads the audit log on a normal day. This puts each addition in the channel the people who care about it are already in, with the plate, the label it was given, who added it, where they did it from, and whether alerting and fuzzy matching were switched on.\n\nNo AI, no footage, nothing metered — it reads one audit entry and posts one message.",
+  "summary": "Audit log → a Slack or Discord message naming the plate, the label, and who added it",
   "default_name": "License plate of interest added",
   "tags": ["Cameras", "Audit"],
   "inputs": [
     {
-      "key": "camera",
-      "label": "Which camera should these land on?",
-      "type": "camera",
-      "help": "An audit entry has no camera of its own, so pick where the record belongs. An LPR camera puts it next to the plate reads it affects.",
-      "default": ""
+      "key": "channel",
+      "label": "Where should it post?",
+      "type": "select",
+      "default": "slack",
+      "options": [
+        {"label": "Slack", "value": "slack", "sets": {"action": "slack_message"}},
+        {"label": "Discord", "value": "discord", "sets": {"action": "discord_message"}}
+      ],
+      "help": "Whichever you pick, the channel comes from the connection's webhook URL. Add that under Settings → Connections if you have not already."
     }
   ],
   "flow": {
@@ -25,43 +29,17 @@
     },
     "nodes": [
       {
-        "id": "post_helix",
-        "name": "post_helix",
-        "label": "Log the new plate",
+        "id": "notify",
+        "name": "notify",
+        "label": "Say who added it",
         "kind": "action",
-        "action_type": "verkada_helix_event",
+        "action_type": "{{ input.action }}",
         "config": {
           "connection_id": null,
-          "camera_id": "{{ input.camera }}",
-          "event_type_uid": "tpl:lpoi-added",
-          "attributes": {
-            "Plate": "{{ trigger.data.license_plate }}",
-            "Label": "{{ trigger.data.identity_name }}",
-            "Added by": "{{ trigger.user_name }}",
-            "Email": "{{ trigger.user_email }}",
-            "From IP": "{{ trigger.ip_address }}",
-            "Alerting": "{{ trigger.data.is_lpoi_alert }}",
-            "Fuzzy match": "{{ trigger.data.is_lpoi_fuzzy_match_enabled }}"
-          },
-          "time_ms": "{{ trigger.timestamp_ms }}"
+          "text": "🔖 License plate of interest added: {{ trigger.data.license_plate }}\nLabel: {{ trigger.data.identity_name }}\nAdded by {{ trigger.user_name }} ({{ trigger.user_email }}) from {{ trigger.ip_address }}\nAlerting: {{ trigger.data.is_lpoi_alert }} · Fuzzy match: {{ trigger.data.is_lpoi_fuzzy_match_enabled }}"
         }
       }
     ],
-    "edges": [],
-    "helix_event_types": [
-      {
-        "event_type_uid": "tpl:lpoi-added",
-        "name": "🔖 Plate Watch List",
-        "event_schema": {
-          "Plate": "string",
-          "Label": "string",
-          "Added by": "string",
-          "Email": "string",
-          "From IP": "string",
-          "Alerting": "string",
-          "Fuzzy match": "string"
-        }
-      }
-    ]
+    "edges": []
   }
 }

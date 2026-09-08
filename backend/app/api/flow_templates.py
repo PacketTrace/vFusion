@@ -98,6 +98,13 @@ async def list_flow_templates(
     out: list[dict[str, Any]] = []
     for tpl in _load_builtins().values():
         flow = tpl.get("flow") or {}
+        # The card describes what you get if you accept every default,
+        # so the derived fields are read off the flow with the template's
+        # own answers filled in. Reading the raw flow instead shows the
+        # {{ input.… }} token wherever a question decides something --
+        # which is now the action itself on templates that ask where to
+        # send a message.
+        preview = _fill_inputs(flow, _resolve_answers(tpl, None))
         out.append(
             {
                 "id": tpl["id"],
@@ -116,10 +123,10 @@ async def list_flow_templates(
                 "tagline": tpl.get("tagline") or _first_sentence(tpl.get("description")),
                 "description": tpl.get("description"),
                 "summary": tpl.get("summary"),
-                "summary_steps": _summary_steps(flow),
+                "summary_steps": _summary_steps(preview),
                 "trigger_type": flow.get("trigger_type"),
                 # Derived from the flow, not declared. See flow_facets.
-                "facets": facets(flow),
+                "facets": facets(preview),
                 "inputs": tpl.get("inputs") or [],
                 "default_name": tpl.get("default_name", tpl.get("name", tpl["id"])),
             }
