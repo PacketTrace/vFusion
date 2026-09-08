@@ -148,10 +148,34 @@ async def _usage_for(key: str, session: AsyncSession) -> SettingUsage:
         n = int(
             (await session.execute(select(func.count(AuditEvent.id)))).scalar() or 0
         )
+        # Ask Postgres for the table's real footprint rather than summing
+        # a size column, because this table does not have one: an entry is
+        # Verkada's whole JSONB payload plus a search column, and it
+        # carries ten indexes. A row count understates all of that badly.
+        # pg_total_relation_size reads catalog metadata, so it costs the
+        # same on a hundred rows as on ten million -- which matters here,
+        # since this is the one bucket that keeps everything by default.
+        b: int | None = None
+        try:
+            b = int(
+                (
+                    await session.execute(
+                        text("SELECT pg_total_relation_size(CAST(:t AS regclass))"),
+                        {"t": AuditEvent.__tablename__},
+                    )
+                ).scalar()
+                or 0
+            )
+        except Exception:  # noqa: BLE001 — a missing table is not a settings error
+            b = None
         return SettingUsage(
-            bytes=None,
+            bytes=b,
             count=n,
-            summary=_fmt_count(n, "event"),
+            summary=(
+                f"{_fmt_count(n, 'event')} · {_fmt_bytes(b)} on disk"
+                if b is not None
+                else _fmt_count(n, "event")
+            ),
         )
     return SettingUsage(summary="—")
 

@@ -105,7 +105,10 @@ SETTINGS: dict[str, SettingSpec] = {
             "How long the local copy of the Verkada audit log stays. "
             "0 keeps everything, which is the default: the log is the "
             "history the Insights charts are drawn from, and Verkada's "
-            "own page only reaches back 90 days at a time."
+            "own page only reaches back 90 days at a time. The size "
+            "shown includes this table's indexes; shortening the window "
+            "frees that space for new entries rather than shrinking the "
+            "file on disk."
         ),
     ),
 }
