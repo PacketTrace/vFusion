@@ -249,7 +249,6 @@ function VerkadaOrgCard({
   const [status, setStatus] = useState<
     Record<string, { kind: "ok" | "err"; msg: string } | undefined>
   >({});
-  const [poiCount, setPoiCount] = useState<number | null>(null);
 
   // Strip the api wrapper's `METHOD /path → STATUS:` prefix so what is
   // surfaced is the server's actual reason.
@@ -320,8 +319,10 @@ function VerkadaOrgCard({
       apiPost<{ count: number }>(`/api/connections/${c.id}/sync-poi`, {}),
     onMutate: () => clear("poi"),
     onSuccess: (d) => {
+      // connections too: the count and the timestamp live on that
+      // response now, so without this the tile keeps the stale ones.
+      qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["filter-fields"] });
-      setPoiCount(d.count);
       set("poi", "ok", `${d.count} synced`);
     },
     onError: (e: Error) => set("poi", "err", cleanErr(e)),
@@ -394,8 +395,8 @@ function VerkadaOrgCard({
     {
       key: "poi",
       label: "People of interest",
-      count: poiCount,
-      ts: null,
+      count: c.poi_count,
+      ts: c.poi_last_synced_at,
       pending: syncPoi.isPending,
       run: () => syncPoi.mutate(),
       title:
@@ -480,26 +481,34 @@ function VerkadaOrgCard({
             </div>
           </div>
 
-          {/* The streaming probe: not a sync, so not in the grid */}
-          <div className="border-t border-white/10 p-4">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="min-w-0">
-                <div className="text-[11px] uppercase tracking-wider text-slate-500">
-                  Streaming permissions
+          {/* The streaming probe. Not a sync, so not in the grid above —
+              but it wears the grid's box, because a bare button floating
+              at the far right edge of a wide screen reads as belonging
+              to nothing. Inside the box its right edge lines up with the
+              last tile's, and the label it belongs to is beside it. */}
+          <div className="px-4 pb-4">
+            <div className="bg-black/20 border border-white/10 rounded-md p-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-300">
+                    Streaming permissions
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 max-w-prose">
+                    Pulls a real live frame and a real historical clip from an
+                    online camera, so the answer is what your key can actually
+                    do rather than what the scope list claims.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-400 mt-1 max-w-prose">
-                  Pulls a real live frame and a real historical clip from an
-                  online camera, so the answer is what your key can actually
-                  do rather than what the scope list claims.
-                </p>
+                <button
+                  type="button"
+                  onClick={() => testStreaming.mutate()}
+                  disabled={testStreaming.isPending}
+                  title="Probe Streaming - Live and Streaming - Live/Historical via a real HLS pull"
+                  className="shrink-0 text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-sky-500 hover:bg-white/5 disabled:opacity-50 transition-colors"
+                >
+                  {testStreaming.isPending ? "Testing…" : "Test streaming"}
+                </button>
               </div>
-              <SyncBtn
-                label="Test streaming"
-                pending={testStreaming.isPending}
-                onClick={() => testStreaming.mutate()}
-                title="Probe Streaming - Live and Streaming - Live/Historical via a real HLS pull"
-              />
-            </div>
 
             {status.streaming?.kind === "err" && (
               <div className="text-[11px] text-rose-300 mt-2 break-words">
@@ -537,6 +546,7 @@ function VerkadaOrgCard({
                 )}
               </div>
             )}
+            </div>
           </div>
         </>
       )}
@@ -620,31 +630,6 @@ function ResourceTile({
         </div>
       )}
     </div>
-  );
-}
-
-
-function SyncBtn({
-  label,
-  pending,
-  onClick,
-  title,
-}: {
-  label: string;
-  pending: boolean;
-  onClick: () => void;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={pending}
-      title={title}
-      className="text-xs px-2 py-1 rounded border border-white/15 hover:border-sky-500 hover:bg-white/5 disabled:opacity-50"
-    >
-      {pending ? "Syncing…" : label}
-    </button>
   );
 }
 

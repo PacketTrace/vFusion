@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -28,6 +29,8 @@ from app.models import (
 )
 from sqlalchemy import func
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -135,6 +138,14 @@ class ConnectionOut(BaseModel):
     helix_event_count: int = 0
     scenarios_last_synced_at: datetime | None = None
     scenario_count: int = 0
+    # People of interest live in a JSON cache on the assets volume rather
+    # than a table, so these two come off that file instead of a column.
+    # They were simply absent before, which the old table hid (there was
+    # no POI column at all) and the new card could not: a tile that shows
+    # a count and a last-synced time has to have both, or it reports
+    # "never synced" thirty seconds after a successful sync.
+    poi_last_synced_at: datetime | None = None
+    poi_count: int = 0
     # Last few characters of the stored API key, for telling two keys
     # apart at a glance. Never the whole thing.
     api_key_hint: str | None = None
@@ -219,6 +230,15 @@ async def _build_out(session: AsyncSession, conn: Connection) -> ConnectionOut:
     out.door_count = door_count
     out.helix_event_count = helix_count
     out.scenario_count = scenario_count
+    out.poi_count = poi_store.count(str(conn.id))
+    synced = poi_store.synced_at(str(conn.id))
+    if synced:
+        try:
+            out.poi_last_synced_at = datetime.fromisoformat(synced)
+        except ValueError:
+            # A malformed timestamp in the cache is not worth failing the
+            # whole connections list over; the count still tells the truth.
+            logger.warning("unparseable POI synced_at for %s: %r", conn.id, synced)
     return out
 
 

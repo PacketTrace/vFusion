@@ -106,3 +106,17 @@ def labels(connection_id: str | None = None) -> list[str]:
 def synced_at(connection_id: str) -> str | None:
     entry = _load().get(str(connection_id))
     return entry.get("synced_at") if isinstance(entry, dict) else None
+
+
+def count(connection_id: str) -> int:
+    """How many people the last sync stored for this connection.
+
+    Deliberately not ``len(labels())``: that one dedupes and unions, so
+    two people sharing a label would be counted once and the number on
+    the Connections page would disagree with the number the sync just
+    reported.
+    """
+    entry = _load().get(str(connection_id))
+    if not isinstance(entry, dict):
+        return 0
+    return len(entry.get("people") or [])

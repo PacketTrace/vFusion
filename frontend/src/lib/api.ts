@@ -242,6 +242,11 @@ export interface Connection {
   helix_event_count: number;
   scenarios_last_synced_at: string | null;
   scenario_count: number;
+  /** People of interest live in a JSON cache rather than a table, so
+   *  these come off that file. Absent before, which is why the tile used
+   *  to forget the count on refresh and claim it had never synced. */
+  poi_last_synced_at: string | null;
+  poi_count: number;
   /** Masked tail of the stored API key, e.g. "••••••••1a2b3". Enough to
    *  tell two keys apart when a 403 shows up, not enough to use. */
   api_key_hint: string | null;
