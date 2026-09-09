@@ -1,0 +1,226 @@
+# vFusion from published images.
+#
+#   docker compose -f docker-compose.release.yml --profile quick up -d
+#
+# The difference from docker-compose.yml is what happens on an upgrade.
+# That file builds from source: every update recompiles the frontend,
+# reinstalls node_modules and rebuilds the Python image on your
+# hardware, which is several minutes on a workstation and considerably
+# worse on a Pi. This one pulls images that CI already built, so an
+# upgrade is a download and a restart.
+#
+# It is otherwise the same stack, with two intentional differences:
+#
+#   * The frontend is a static bundle behind nginx rather than a Vite
+#     dev server, and that nginx proxies /api to the backend. The
+#     dashboard and its API are therefore same-origin, so nothing here
+#     needs CORS configured.
+#   * Nothing bind-mounts the source, so editing files on the host has
+#     no effect. Use docker-compose.yml if you are changing code.
+#
+# Deliberately a whole file rather than an override of the other one.
+# Compose appends volume lists instead of replacing them, so an override
+# cannot remove the source bind mounts, which is the entire point.
+# Duplication that works beats sharing that silently does not.
+
+name: vfusion
+
+# Which images to run. Pin this in anything you care about: `latest`
+# follows the newest release, which is fine until the morning a release
+# you have not read about restarts your stack.
+x-images:
+  backend: &backend_image ghcr.io/packettrace/vfusion-backend:${VFUSION_TAG:-latest}
+  frontend: &frontend_image ghcr.io/packettrace/vfusion-frontend:${VFUSION_TAG:-latest}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: verkada
+      POSTGRES_PASSWORD: verkada
+      POSTGRES_DB: vfusion
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verkada -d vfusion"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    image: *backend_image
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://verkada:verkada@postgres:5432/vfusion
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-}
+      FERNET_KEY: ${FERNET_KEY:-}
+      # Same-origin by default here, so this only matters if you point
+      # VFUSION_API_BASE at a backend on another host.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173}
+      PUBLIC_WEBHOOK_BASE: ${PUBLIC_WEBHOOK_BASE:-}
+      # See docker-compose.yml: python:3.x-slim defaults to the C locale,
+      # and any library that logs a non-ASCII character then crashes the
+      # call that emitted it.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      # "beta" (default), "stable", or "off" to stop checking GitHub for
+      # new releases. See backend/app/updates.py.
+      UPDATE_CHANNEL: ${UPDATE_CHANNEL:-beta}
+      GEOIP_PROVIDER: ${GEOIP_PROVIDER:-ip-api}
+      MQTT_INGEST_ENABLED: ${MQTT_INGEST_ENABLED:-}
+      MQTT_HOST: ${MQTT_HOST:-mqtt-broker}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_BROKER_HOST_PORT: ${MQTT_BROKER_HOST_PORT:-}
+      RTSP_PUBLIC_PORT: ${RTSP_PUBLIC_PORT:-8554}
+      ONVIF_PUBLIC_PORT: ${ONVIF_PUBLIC_PORT:-8090}
+    ports:
+      # Still published, so the API is reachable directly and existing
+      # bookmarks and webhook URLs keep working. The dashboard does not
+      # need it — nginx proxies.
+      - "18080:8000"
+      - "${ONVIF_PUBLIC_PORT:-8090}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # No source mount. The code is in the image.
+      - webhook_assets:/app/data
+      - vfusion_secrets:/app/secrets
+      - ./mqtt:/app/mqtt-host
+      - ./rtsp:/app/rtsp-host
+    # No --reload: there is nothing on disk for it to watch, and the
+    # reloader costs a process and a file-system poll for nothing.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    image: *backend_image
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://verkada:verkada@postgres:5432/vfusion
+      REDIS_URL: redis://redis:6379/0
+      FERNET_KEY: ${FERNET_KEY:-}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Migrations run in the backend's command. Without this the worker
+      # can open a session against a schema that is one release behind
+      # and fail on a column that exists in its code and not yet in the
+      # database.
+      backend:
+        condition: service_healthy
+    volumes:
+      - webhook_assets:/app/data
+      - vfusion_secrets:/app/secrets
+    command: arq app.worker.WorkerSettings
+
+  frontend:
+    image: *frontend_image
+    restart: unless-stopped
+    environment:
+      # Empty means same origin: the nginx serving this bundle proxies
+      # /api, /hooks and /onvif to the backend. Set it only if the
+      # backend lives somewhere this nginx cannot reach, and add this
+      # dashboard's URL to CORS_ORIGINS if you do.
+      VFUSION_API_BASE: ${VFUSION_API_BASE:-}
+    ports:
+      - "15173:8080"
+    depends_on:
+      - backend
+
+  # ---- Optional profiles. Identical to docker-compose.yml. ----
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
+    depends_on:
+      - backend
+    profiles: ["cloudflared"]
+
+  caddy-quick:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    volumes:
+      - ./caddy/quick.Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+    profiles: ["quick"]
+
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://caddy-quick:8080
+    depends_on:
+      - caddy-quick
+    profiles: ["quick"]
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    profiles: ["mqtt"]
+    restart: unless-stopped
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/passwd:/mosquitto/config/passwd:ro
+    networks: [default]
+
+  mqtt-tls:
+    image: nginx:alpine
+    profiles: ["mqtt"]
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./mqtt/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./mqtt/certs:/etc/nginx/certs:ro
+    depends_on:
+      - mqtt-broker
+    networks: [default]
+
+  rtsp-server:
+    image: bluenviron/mediamtx:latest
+    profiles: ["rtsp"]
+    restart: unless-stopped
+    ports:
+      - "${RTSP_PUBLIC_PORT:-8554}:8554"
+    volumes:
+      - ./rtsp:/rtsp
+    command: ["/rtsp/mediamtx.yml"]
+    networks: [default]
+
+volumes:
+  postgres_data:
+  webhook_assets:
+  vfusion_secrets:

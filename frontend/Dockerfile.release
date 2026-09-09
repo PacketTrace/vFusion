@@ -1,0 +1,50 @@
+# The frontend as a published artifact, rather than as the dev server
+# the default compose file runs.
+#
+# The dev image mounts the source, installs node_modules on every boot
+# and runs Vite. That is right for editing and wrong for a release: the
+# npm install is the slowest and most failure-prone step in the whole
+# upgrade, and it is doing work that should have happened once, on CI,
+# for everybody.
+#
+# So this builds the bundle at image-build time and serves the static
+# output from nginx, which also reverse-proxies the API. Same origin for
+# the app and its backend means no CORS configuration, no second
+# published port, and no cookie that silently fails to stick because the
+# dashboard and the API disagreed about what "site" means.
+
+# ---------------------------------------------------------------- build
+FROM node:20-slim AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+# --include=optional for the same reason the dev image needs it: npm
+# prunes rollup's platform-specific native binary out of an inherited
+# lock file and then reports "up to date" forever. See npm/cli#4828.
+RUN npm install --no-audit --no-fund --include=optional
+
+COPY . .
+
+# Left empty on purpose. Vite inlines this at build time, so baking a
+# hostname here would make the published image specific to one
+# deployment. Empty means every request is relative, which nginx below
+# proxies to the backend. An operator who really does serve the API from
+# somewhere else overrides it at *runtime* via VFUSION_API_BASE, which
+# entrypoint.sh writes into config.js.
+ENV VITE_API_BASE=""
+
+RUN npm run build
+
+# ---------------------------------------------------------------- serve
+FROM nginx:alpine
+
+# nginx:alpine's default site would otherwise shadow ours.
+RUN rm -f /etc/nginx/conf.d/default.conf
+COPY release/nginx.conf /etc/nginx/conf.d/vfusion.conf
+COPY release/entrypoint.sh /docker-entrypoint.d/40-vfusion-config.sh
+RUN chmod +x /docker-entrypoint.d/40-vfusion-config.sh
+
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 8080

@@ -150,7 +150,27 @@ docker compose --profile quick --profile mqtt --profile rtsp up --build -d
 
 Open **http://localhost:15173**, set the admin password, and follow the welcome modal: copy the public URL and a generated signing secret into **Command → Admin → API & Integrations → Webhooks**. The first webhook to arrive unlocks the dashboard and creates your Verkada connection; add the API key under **Settings → Connections**.
 
-That is quick mode: a free TryCloudflare URL that changes on restart. For a stable URL on your own domain, optional profiles (MQTT, virtual camera), browsing from another machine, every environment variable, updating and backups, see **[Deploying](docs/deploying.md)**.
+That is quick mode: a free TryCloudflare URL that changes on restart. For a stable URL on your own domain, optional profiles (MQTT, virtual camera), browsing from another machine, every environment variable and backups, see **[Deploying](docs/deploying.md)**.
+
+### Skipping the build
+
+The command above compiles the frontend and builds the Python image on your machine, which is a few minutes on a workstation and considerably longer on a Pi. To run the images CI already built for `amd64` and `arm64` instead:
+
+```bash
+docker compose -f docker-compose.release.yml --profile quick up -d
+```
+
+Same stack, no build step, and the dashboard and its API are same-origin — so browsing from another machine needs no `VITE_API_BASE` and no CORS. Use the first form when you want to change the code.
+
+### Updating
+
+```bash
+./update.sh
+```
+
+It shows you what changed, backs the database up before the migrations, restarts with the profiles you already had running, and confirms the new version answered. `--check` says what it would do without doing it.
+
+vFusion tells you when there is something to get: a green **Update** badge appears in the header with the version, the release notes and the command. It never updates itself — the only way to give a container that power is to hand it the Docker socket, which is root on the host, and this app already holds a key that can unlock doors. Set `UPDATE_CHANNEL=off` to stop it checking.
 
 ## Before you deploy
 
@@ -188,7 +208,8 @@ What is in the box:
 - **The public surface is one path.** Quick mode enforces `POST /hooks/verkada` with Caddy; lab mode with the tunnel's route. Everything else answers 404.
 - **A Security tab that measures the install**: which keys it stands on, what answers without a session, whether the throttle is engaged, and whether any other address is using your Verkada key.
 - **Sensitive headers are redacted** before a webhook body is stored. **Retention windows** sweep events, media and runs on a schedule.
-- **One outbound lookup**: IP geolocation for the audit log goes to ip-api.com, only for addresses on screen, never private ones. `GEOIP_PROVIDER=off` turns it off.
+- **Two outbound lookups, both optional.** IP geolocation for the audit log goes to ip-api.com, only for addresses on screen, never private ones (`GEOIP_PROVIDER=off`). The update check reads GitHub's public release list every six hours and sends nothing about the install, not even its version (`UPDATE_CHANNEL=off`).
+- **No self-update.** A newer release is a badge and a command, never a button that runs one. Giving a container the power to replace itself means giving it the Docker socket, which is root on the host.
 
 What is not: multi-user accounts, RBAC, or horizontal scaling. Anyone with both the `vfusion_secrets` volume and the database can decrypt every credential. Details, the threat model and the reporting process: [docs/settings.md → Security](docs/settings.md#security) and [SECURITY.md](SECURITY.md).
 
@@ -215,7 +236,9 @@ Usually within a few percent. Token counts come off each Gemini response and are
 <details>
 <summary><strong>Does my key or data go anywhere?</strong></summary>
 
-No telemetry, no analytics, nothing phones home. Keys are encrypted in your Postgres and only leave the host when a flow calls Verkada or Gemini. Google sees what you send Gemini, under terms that depend on whether the key's project has billing enabled. Cloudflare sees TLS-encrypted webhook traffic if you use a tunnel. The audit log's geolocation sends public IP addresses to ip-api.com, and can be turned off.
+No telemetry and no analytics. Keys are encrypted in your Postgres and only leave the host when a flow calls Verkada or Gemini. Google sees what you send Gemini, under terms that depend on whether the key's project has billing enabled. Cloudflare sees TLS-encrypted webhook traffic if you use a tunnel.
+
+Two requests go out that are not yours, and both can be turned off. The audit log's geolocation sends public IP addresses to ip-api.com (`GEOIP_PROVIDER=off`). The update check reads GitHub's public list of releases every six hours (`UPDATE_CHANNEL=off`); it is a plain unauthenticated read that carries no version, no org and no identifier, so GitHub learns your IP address and nothing else.
 
 </details>
 

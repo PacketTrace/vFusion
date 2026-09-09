@@ -535,3 +535,35 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .qr-module { animation: none; opacity: 1; }
   .qr-ring { display: none; }
 }
+
+/* The update dot.
+
+   A release lands every few weeks, so this is the rare case where a
+   looping animation is defensible: it is the only thing on the page
+   asking for attention, and it stops the moment the popover opens
+   because by then it has done its job. Opacity and transform only, and
+   it holds still when motion is turned down — the dot is the signal,
+   the pulse is only the volume knob. */
+.update-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(52 211 153);
+  box-shadow: 0 0 0 0 rgb(52 211 153 / 0.6);
+  animation: update-pulse 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes update-pulse {
+  0%, 70%, 100% {
+    box-shadow: 0 0 0 0 rgb(52 211 153 / 0.5);
+  }
+  35% {
+    box-shadow: 0 0 0 4px rgb(52 211 153 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-dot {
+    animation: none;
+  }
+}

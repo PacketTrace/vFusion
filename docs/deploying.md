@@ -104,6 +104,9 @@ Volumes: `postgres_data`, `webhook_assets` (clips, frames, uploads, and every fi
 | `ONVIF_PUBLIC_PORT` | `8090` | Virtual camera ONVIF port. |
 | `GEOIP_PROVIDER` | `ip-api` | `off` disables audit-log IP geolocation. |
 | `LIVE_MAX_SESSIONS` | `3` | Concurrent live-camera transcodes. |
+| `UPDATE_CHANNEL` | `beta` | Which release line the update check follows. `stable`, or `off` for no outbound request. |
+| `VFUSION_TAG` | `latest` | Which published image tag `docker-compose.release.yml` runs. |
+| `VFUSION_API_BASE` | same origin | Published image only. Where the dashboard sends API calls. Empty means through its own nginx. |
 | `E2E_PASSWORD` | — | The admin password, for the test profile only. |
 
 ## Vault-backed secrets
@@ -125,11 +128,57 @@ The same pattern works with any secrets manager that can render a file.
 ## Updating
 
 ```bash
+cd ~/vFusion
+./update.sh
+```
+
+That is the whole thing. The script fetches the branch, shows you what changed, dumps the database to `backups/`, updates the containers, and waits until the backend answers with its new version before it says it is done.
+
+It also handles the three ways the manual sequence goes wrong. It restarts with the profiles that were already running, because a plain `docker compose up -d` treats every profiled service as one you did not ask for and stops your tunnel, broker or virtual camera. It discards the `package-lock.json` the frontend container rewrites on every boot, which is why `git pull` refuses. And it takes the backup before the migrations rather than after, since migrations are one-way.
+
+```
+./update.sh --check       say what would happen, change nothing
+./update.sh --yes         no prompts
+./update.sh --no-backup   skip the database dump
+```
+
+vFusion tells you when there is something to update: the header grows a green **Update** badge carrying the new version, the release notes and the command. Turn the check off with `UPDATE_CHANNEL=off`.
+
+### Why there is no update button
+
+The badge is a notification, not an action, and that is deliberate. A container cannot replace itself, so the only way to give an app that power is to mount the Docker socket into it — which is root on the host, handed to a web application that already holds a key that can unlock doors. Home Assistant gets away with one-click updates because a supervisor owns the whole machine. vFusion is one container among yours, so the last step is yours.
+
+### Doing it by hand
+
+```bash
+git checkout -- frontend/package-lock.json
 git pull
 docker compose --profile <your profiles> up --build -d
 ```
 
 Migrations run on backend boot. The `worker` image must be rebuilt alongside `backend`; a deploy that rebuilds only one leaves them on different code.
+
+## Published images
+
+The default `docker-compose.yml` builds from source, which is right while you are editing it and slow when you are not: every update recompiles the frontend, reinstalls `node_modules` and rebuilds the Python image on your hardware. On a Raspberry Pi that is the difference between a coffee and an afternoon.
+
+`docker-compose.release.yml` runs images that CI already built, for `linux/amd64` and `linux/arm64`:
+
+```bash
+docker compose -f docker-compose.release.yml --profile quick up -d
+```
+
+`update.sh` notices which of the two you are running and does the right thing, so the update command does not change.
+
+Two things differ. The dashboard is a static bundle behind nginx instead of a Vite dev server, and that nginx proxies `/api` to the backend — so the app and its API are same-origin and **there is no CORS to configure and no `VITE_API_BASE` to set**, even when you browse from another machine. And nothing bind-mounts the source, so editing files on the host has no effect; switch back to `docker-compose.yml` when you want to change code.
+
+Pin the version on anything you care about:
+
+```
+VFUSION_TAG=1.1.0
+```
+
+`latest` follows the newest release, which is fine right up until a morning you had not planned to upgrade. The images are at [ghcr.io/packettrace/vfusion-backend](https://github.com/PacketTrace/vFusion/pkgs/container/vfusion-backend) and [vfusion-frontend](https://github.com/PacketTrace/vFusion/pkgs/container/vfusion-frontend).
 
 ## Backups
 

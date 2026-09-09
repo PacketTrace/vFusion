@@ -73,6 +73,11 @@
         min-height: 100%;
       }
     </style>
+    <!-- Per-deployment settings for a prebuilt image. Written at
+         container start by release/entrypoint.sh; absent in dev, where
+         Vite's own env vars answer instead. Must load before the app
+         bundle, and must never be cached. -->
+    <script src="/config.js"></script>
   </head>
   <body class="text-slate-100">
     <div id="vanta-bg" aria-hidden="true"></div>

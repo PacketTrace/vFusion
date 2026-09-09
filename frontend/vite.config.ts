@@ -29,8 +29,24 @@ const allowedHosts: true | string[] = rawAllowed
   ? rawAllowed.split(",").map((s) => s.trim()).filter(Boolean)
   : true;
 
+// index.html loads /config.js unconditionally, because the published
+// image writes per-deployment settings there at container start. In dev
+// there is no such file, and a 404 in the console on every page load is
+// the kind of noise that trains people to ignore the console. Serve an
+// empty one instead: absent values fall through to Vite's env vars,
+// which is exactly the dev behaviour.
+const devRuntimeConfig = {
+  name: "vfusion-dev-config",
+  configureServer(server: { middlewares: { use: (p: string, h: unknown) => void } }) {
+    server.middlewares.use("/config.js", (_req: unknown, res: any) => {
+      res.setHeader("Content-Type", "application/javascript");
+      res.end("/* dev: see release/entrypoint.sh */\n");
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), devRuntimeConfig],
   server: {
     host: "0.0.0.0",
     port: 5173,

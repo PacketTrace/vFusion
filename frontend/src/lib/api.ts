@@ -1,5 +1,22 @@
+declare global {
+  interface Window {
+    /** Written at container start by the release image's entrypoint.
+     *  Empty string means "same origin", which is what the published
+     *  image does: nginx serves the bundle and proxies /api to the
+     *  backend, so there is no second port and no CORS to configure.
+     *  Absent in dev, where Vite's build-time env var answers. */
+    __VFUSION_API_BASE__?: string;
+  }
+}
+
+// Runtime first, then build time, then the dev default. The runtime
+// value is checked with ?? rather than || on purpose: "" is a real
+// answer meaning same-origin, and || would throw it away and send every
+// request to localhost:18080 instead.
 export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:18080";
+  (typeof window !== "undefined" ? window.__VFUSION_API_BASE__ : undefined) ??
+  (import.meta.env.VITE_API_BASE as string | undefined) ??
+  "http://localhost:18080";
 
 // Custom event name AuthGate listens on. Any fetch that comes back 401
 // fires this so the gate can re-check status and flip to the login

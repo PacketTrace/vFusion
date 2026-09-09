@@ -107,6 +107,16 @@ Connections, Retention, Security and Stats.
 
 **Verkada's 403.** The API answers 403 both for a key that lacks a scope
 and for a path it does not serve, so a 403 does not tell you which.
+
+**Updating.** Run ``./update.sh`` in the vFusion directory on the host.
+It backs up the database, restarts with the profiles that were already
+running, and confirms the new version came up. There is no update button
+and there will not be one: a container cannot replace itself, and the
+only way to give it that power is the Docker socket, which is root on
+the host. When a newer release exists, a green **Update** badge appears
+in the header carrying the version, the notes and the command. The check
+reads GitHub's public release list every six hours and sends nothing
+about the install; ``UPDATE_CHANNEL=off`` disables it.
 """
 
 def _python_knowledge() -> list[str]:

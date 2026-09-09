@@ -4,6 +4,7 @@ import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom"
 
 import AuthGate from "./components/AuthGate";
 import BuildStamp from "./components/BuildStamp";
+import UpdateBadge from "./components/UpdateBadge";
 import HelpChat from "./components/HelpChat";
 import VfusionAtom from "./components/VfusionAtom";
 import OnboardingGate from "./components/OnboardingGate";
@@ -183,6 +184,7 @@ function AppShell() {
             </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <UpdateBadge />
             <button
               type="button"
               onClick={() => setHelpOpen(true)}

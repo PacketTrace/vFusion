@@ -21,6 +21,7 @@ from app.api import security as security_api
 from app.api import video as video_api
 from app.api import rtsp as rtsp_api
 from app.api import live as live_api
+from app.api import updates as updates_api
 from app.live import hls as live_hls
 from app.mqtt import ingest as mqtt_ingest
 from app.rtsp import pump as rtsp_pump
@@ -211,6 +212,7 @@ app.include_router(security_api.router)
 app.include_router(video_api.router)
 app.include_router(settings_api.router)
 app.include_router(live_api.router)
+app.include_router(updates_api.router)
 
 
 @app.get("/api/health")

@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.git
+.venv
+venv
+# Runtime state, not source. These are bind-mounted or on volumes at
+# run time; copying a developer's copy into a published image would
+# ship one install's clips, keys and cursors to everybody.
+data
+secrets
+*.log

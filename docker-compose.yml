@@ -41,6 +41,14 @@ services:
       FERNET_KEY: ${FERNET_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173}
       PUBLIC_WEBHOOK_BASE: ${PUBLIC_WEBHOOK_BASE:-}
+      # "beta" (default), "stable", or "off" to stop asking GitHub
+      # whether a newer release exists. See backend/app/updates.py.
+      UPDATE_CHANNEL: ${UPDATE_CHANNEL:-beta}
+      # Was documented in .env.example but never passed through, so
+      # setting it there had no effect: the backend reads it from the
+      # process environment, and compose only used .env for its own
+      # substitutions.
+      GEOIP_PROVIDER: ${GEOIP_PROVIDER:-ip-api}
       # Force UTF-8 everywhere. python:3.x slim images default to the
       # C/POSIX locale, which makes locale.getpreferredencoding()
       # return 'ANSI_X3.4-1968' (ASCII). Any library that emits a
