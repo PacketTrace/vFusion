@@ -382,11 +382,18 @@ export default function CostSettings() {
           <table className="w-full text-sm">
             <tbody>
               {(breakdown.data?.flows ?? []).map((f) => (
-                <tr key={f.flow_id} className="border-t border-white/10">
+                <tr key={f.flow_id || "orphaned"} className="border-t border-white/10">
                   <td className="py-1.5 pr-3 text-slate-200">
                     {f.name ?? (
+                      // No id at all means the flow is gone: the foreign
+                      // key is ON DELETE SET NULL, so its runs survive
+                      // with nothing to point at. An id with no name is
+                      // the rarer case of a row that vanished some other
+                      // way, and there the id is worth showing.
                       <span className="text-slate-500">
-                        deleted flow · {f.flow_id.slice(0, 8)}
+                        {f.flow_id
+                          ? `deleted flow · ${f.flow_id.slice(0, 8)}`
+                          : "deleted flows"}
                       </span>
                     )}
                   </td>

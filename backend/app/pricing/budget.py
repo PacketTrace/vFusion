@@ -157,17 +157,22 @@ async def breakdown(session: AsyncSession, since: datetime) -> dict[str, Any]:
             amount = float(cost.get("cost_usd") or 0)
             totals[src.FLOW_RUN] += amount
             calls[src.FLOW_RUN] += 1
-            key = str(flow_id)
+            # A run outlives its flow: the foreign key is ON DELETE SET
+            # NULL so history stays readable. That leaves flow_id None,
+            # and str(None) is "None", which is not a UUID -- the name
+            # lookup below used to be handed it and raise, taking the
+            # whole page down with a 500. The money was still spent, so
+            # it is collected under one unnamed row rather than dropped.
+            key = str(flow_id) if flow_id is not None else ""
             row = per_flow.setdefault(key, {"flow_id": key, "name": None, "cost_usd": 0.0, "steps": 0})
             row["cost_usd"] += amount
             row["steps"] += 1
 
-    if per_flow:
+    real_ids = [k for k in per_flow if k]
+    if real_ids:
         names = (
             await session.execute(
-                select(Flow.id, Flow.name).where(
-                    Flow.id.in_([UUID(k) for k in per_flow])
-                )
+                select(Flow.id, Flow.name).where(Flow.id.in_([UUID(k) for k in real_ids]))
             )
         ).all()
         for fid, name in names:
