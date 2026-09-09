@@ -33,7 +33,7 @@ APP_DIR = Path(__file__).resolve().parent
 # The one place the product version is written down. The frontend's
 # package.json mirrors it for npm's benefit; everything a person sees
 # reads it from here, through /api/config.
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 STARTED_AT = datetime.now(timezone.utc)
 _STARTED_MONOTONIC = time.monotonic()
