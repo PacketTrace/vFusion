@@ -1,6 +1,6 @@
 # Settings
 
-**Where:** the **Settings** item in the nav. Five tabs: Retention, Connections, Security, Cost, Stats.
+**Where:** the **Settings** item in the nav. Six tabs: Retention, Connections, Security, Cost, Stats, Updates.
 
 ## Connections
 
@@ -58,7 +58,9 @@ The cap can only stop vFusion. Set a budget on the Google Cloud project as well;
 
 ## Stats
 
-Ingest counters for 24 hours, 7 days and 30 days, webhooks by family, top event types with drill-down into the Explorer, estimated Gemini spend per model, on-disk storage per bucket, and real-time server load.
+Ingest and flow-run counters for 24 hours, 7 days and 30 days, on-disk storage per bucket, event-type coverage, and real-time server load.
+
+Two things used to live here and no longer do. The webhook breakdowns moved to **Explorer → Webhooks → Insights**, because they summarise the rows on the other half of that tab and the reason to look at one is always to go and look at the other. Gemini spend moved to **Cost**, because it is the answer to why the number at the top of that page is the size it is.
 
 ![Settings, stats](images/stats.png)
 

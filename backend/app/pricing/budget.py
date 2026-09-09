@@ -192,3 +192,56 @@ async def breakdown(session: AsyncSession, since: datetime) -> dict[str, Any]:
             {"name": k, "cost_usd": round(v, 6)} for k, v in unregistered.items()
         ],
     }
+
+
+async def by_model(session: AsyncSession, since: datetime) -> list[dict[str, Any]]:
+    """Spend per Gemini model, from both places it can happen.
+
+    Lived on the Stats page until now, next to disk usage and webhook
+    counts, which is not what it is. It is the answer to "why is the
+    number at the top of the Cost page that size", so it belongs beside
+    that number.
+
+    Two sources, and leaving either out understates the total:
+
+    * **Run steps.** Each ``gemini_*`` action records what it spent onto
+      its own output, priced with the table that was live at the time.
+      Recomputing from raw token counts here would let a price change at
+      Google silently rewrite last month's history.
+    * **The ledger.** Composing an analytic, drafting a flow, a Helix
+      demo and a Workbench dry-run all bill the same key and create no
+      run at all. Those were missing from the total for as long as
+      nobody happened to check, and they are precisely the spend an
+      operator iterating on prompts is trying to watch.
+    """
+    totals: dict[str, dict[str, Any]] = {}
+
+    def _bucket(model: str) -> dict[str, Any]:
+        return totals.setdefault(
+            model,
+            {"model": model, "runs": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0},
+        )
+
+    rows = (
+        await session.execute(select(Run.steps).where(Run.created_at >= since))
+    ).all()
+    for (steps,) in rows:
+        for step in steps or []:
+            out = step.get("output") if isinstance(step, dict) else None
+            cost = out.get("cost") if isinstance(out, dict) else None
+            if not isinstance(cost, dict):
+                continue
+            b = _bucket(str(cost.get("model") or step.get("type") or "unknown"))
+            b["runs"] += 1
+            b["tokens_in"] += int(cost.get("tokens_in") or 0)
+            b["tokens_out"] += int(cost.get("tokens_out") or 0)
+            b["cost_usd"] += float(cost.get("cost_usd") or 0)
+
+    for entry in await ledger.since(since):
+        b = _bucket(str(entry.get("model") or "unknown"))
+        b["runs"] += 1
+        b["tokens_in"] += int(entry.get("tokens_in") or 0)
+        b["tokens_out"] += int(entry.get("tokens_out") or 0)
+        b["cost_usd"] += float(entry.get("cost_usd") or 0)
+
+    return sorted(totals.values(), key=lambda m: m["cost_usd"], reverse=True)

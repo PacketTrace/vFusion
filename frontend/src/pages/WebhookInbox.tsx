@@ -20,6 +20,7 @@ import PendingSetupBanner from "../components/PendingSetupBanner";
 import { useBrand } from "../lib/brand";
 import { useCameraLookup } from "../lib/cameras";
 import ConfirmDialog from "../components/ConfirmDialog";
+import WebhookInsights from "./WebhookInsights";
 
 const methodColor: Record<string, string> = {
   GET: "bg-sky-500/15 text-sky-300 border border-sky-500/25",
@@ -69,6 +70,18 @@ export default function WebhookInbox() {
   );
   const [pageCount, setPageCount] = useState(1);
   const qc = useQueryClient();
+
+  // Events or Insights over the same webhooks, the way the audit tab
+  // already works.
+  const view: "events" | "insights" =
+    searchParams.get("view") === "insights" ? "insights" : "events";
+  const setView = (v: "events" | "insights") => {
+    const p = new URLSearchParams(searchParams);
+    p.set("view", v);
+    if (v === "insights") p.delete("event");
+    setSearchParams(p, { replace: true });
+  };
+
   useEffect(() => {
     if (
       searchParams.get("family") ||
@@ -76,9 +89,16 @@ export default function WebhookInbox() {
       searchParams.get("webhook_type") ||
       searchParams.get("event")
     ) {
+      // These four are deep-link seeds: read once into state, then
+      // cleared so later edits in the UI are not fighting the URL.
+      // Everything that is genuinely page state has to survive that,
+      // or arriving from the Runs page would silently reset the view
+      // and the chart window.
       const keep = new URLSearchParams();
-      const tab = searchParams.get("tab");
-      if (tab) keep.set("tab", tab);
+      for (const k of ["tab", "view", "range", "fam"]) {
+        const v = searchParams.get(k);
+        if (v) keep.set(k, v);
+      }
       setSearchParams(keep, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,6 +201,9 @@ export default function WebhookInbox() {
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
+        <ViewSwitch view={view} onChange={setView} />
+        {view === "events" && (
+        <>
         <div className="relative flex-1 min-w-[12rem] max-w-md">
           <input
             type="text"
@@ -244,8 +267,35 @@ export default function WebhookInbox() {
         <span className="text-xs text-slate-500">
           {list.data?.total ?? 0} match{(list.data?.total ?? 0) === 1 ? "" : "es"} • auto-refresh 2s
         </span>
+        </>
+        )}
       </div>
 
+      {view === "insights" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <WebhookInsights
+            onPickType={(item) => {
+              // Land on the events list already narrowed. A chart you
+              // can only look at is a poster; the reason to click a bar
+              // is always to go and read the rows behind it.
+              if (item.label_source === "webhook_type") {
+                setWebhookTypeFilter(item.label);
+                setNotificationTypeFilter("");
+              } else if (
+                item.label_source === "null" ||
+                item.label === "(unrecognized)"
+              ) {
+                setNotificationTypeFilter("__null__");
+                setWebhookTypeFilter("__null__");
+              } else {
+                setNotificationTypeFilter(item.label);
+                setWebhookTypeFilter("");
+              }
+              setView("events");
+            }}
+          />
+        </div>
+      ) : (
       <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
         <div className="col-span-5 border border-white/15 rounded-lg overflow-hidden bg-white/5 flex flex-col min-h-0">
           {items.length === 0 ? (
@@ -317,6 +367,7 @@ export default function WebhookInbox() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -398,6 +449,41 @@ function WebhookEndpointBanner() {
           own domain (see README).
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** Events or Insights. A high-frequency toggle, so no motion: the
+ *  active segment changes colour and that is all. Same component shape
+ *  as the audit tab's, so the two halves of Explorer behave alike. */
+function ViewSwitch({
+  view,
+  onChange,
+}: {
+  view: "events" | "insights";
+  onChange: (v: "events" | "insights") => void;
+}) {
+  const seg = (key: "events" | "insights", label: string) => (
+    <button
+      type="button"
+      onClick={() => onChange(key)}
+      aria-pressed={view === key}
+      data-testid={`webhook-view-${key}`}
+      className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+        view === key ? "bg-white/15 text-white" : "text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 p-0.5 rounded-lg border border-white/10 bg-white/5"
+      role="tablist"
+    >
+      {seg("events", "Events")}
+      {seg("insights", "Insights")}
     </div>
   );
 }

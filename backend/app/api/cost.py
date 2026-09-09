@@ -35,6 +35,38 @@ async def breakdown(session: AsyncSession = Depends(get_session)) -> dict[str, A
     return await budget.breakdown(session, budget.month_start())
 
 
+@router.get("/models")
+async def models(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Per-model spend this month, and the rates it was priced with.
+
+    Month to date rather than a rolling thirty days, so it agrees with
+    the number at the top of this page. Those two disagreeing by a few
+    days of spend, with no label saying why, is worse than not showing
+    the breakdown at all.
+    """
+    from sqlalchemy import select
+
+    from app.models import GeminiPricing
+
+    since = budget.month_start()
+    rows = (
+        await session.execute(select(GeminiPricing).order_by(GeminiPricing.model.asc()))
+    ).scalars().all()
+    return {
+        "since": since.isoformat(),
+        "by_model": await budget.by_model(session, since),
+        "pricing": [
+            {
+                "model": r.model,
+                "input_per_1m_usd": r.input_per_1m_usd,
+                "output_per_1m_usd": r.output_per_1m_usd,
+                "fetched_at": r.fetched_at.isoformat() if r.fetched_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.put("/cap")
 async def set_cap(
     body: CapRequest,

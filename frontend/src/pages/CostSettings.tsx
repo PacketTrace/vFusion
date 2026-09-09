@@ -29,6 +29,37 @@ interface Breakdown {
   unregistered: { name: string; cost_usd: number }[];
 }
 
+interface ModelSpend {
+  model: string;
+  // Billed calls. Named "runs" on the wire from when a run was the only
+  // way to reach Gemini; it counts ledger entries too now.
+  runs: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+}
+
+interface PricingRow {
+  model: string;
+  input_per_1m_usd: number;
+  output_per_1m_usd: number;
+  fetched_at: string | null;
+}
+
+interface ModelsResponse {
+  since: string;
+  by_model: ModelSpend[];
+  pricing: PricingRow[];
+}
+
+function fmtUsd(n: number): string {
+  if (n === 0) return "$0.00";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+
 interface CostState {
   enabled: boolean;
   cap_usd: number;
@@ -49,6 +80,15 @@ export default function CostSettings() {
   const breakdown = useQuery({
     queryKey: ["cost-breakdown"],
     queryFn: () => apiGet<Breakdown>("/api/cost/breakdown"),
+    refetchInterval: 60_000,
+  });
+
+  // Per-model spend and the rates behind it. These were on the Stats
+  // page, between disk usage and webhook counts, which is not what they
+  // are: they are why the number at the top of this page is that size.
+  const models = useQuery({
+    queryKey: ["cost-models"],
+    queryFn: () => apiGet<ModelsResponse>("/api/cost/models"),
     refetchInterval: 60_000,
   });
 
@@ -179,6 +219,103 @@ export default function CostSettings() {
           cap releases whatever was waiting. A run stopped this way is recorded
           as skipped with the reason, rather than failing.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+          By model
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Month to date, so it agrees with the number at the top of this page.
+          Costs are priced with the table that was live when the call was made,
+          which keeps last month&rsquo;s history stable if Google moves a rate.
+        </p>
+        {(models.data?.by_model.length ?? 0) === 0 ? (
+          <div className="text-sm text-slate-500">
+            No Gemini calls this month yet — run a flow with an analysis step,
+            or compose an analytic.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
+                <th className="pb-2 pr-4">Model</th>
+                <th className="pb-2 pr-4 text-right">Calls</th>
+                <th className="pb-2 pr-4 text-right">In</th>
+                <th className="pb-2 pr-4 text-right">Out</th>
+                <th className="pb-2 text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(models.data?.by_model ?? []).map((m) => (
+                <tr key={m.model} className="border-t border-white/10">
+                  <td className="py-1.5 pr-4 font-mono text-xs text-slate-200">
+                    {m.model}
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-slate-300">
+                    {m.runs.toLocaleString()}
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-slate-400">
+                    {m.tokens_in.toLocaleString()}
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-slate-400">
+                    {m.tokens_out.toLocaleString()}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums text-slate-200">
+                    {fmtUsd(m.cost_usd)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-white/15 bg-white/5 p-4">
+        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+          Current rates
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Per million tokens, as published. Pre-discount and pre-credit, so
+          your invoice can be lower than anything on this page but should not
+          be higher.
+        </p>
+        {(models.data?.pricing.length ?? 0) === 0 ? (
+          <div className="text-sm text-slate-500">
+            No pricing table synced yet.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
+                <th className="pb-2 pr-4">Model</th>
+                <th className="pb-2 pr-4 text-right">Input</th>
+                <th className="pb-2 pr-4 text-right">Output</th>
+                <th className="pb-2">Fetched</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(models.data?.pricing ?? []).map((r) => (
+                <tr key={r.model} className="border-t border-white/10">
+                  <td className="py-1.5 pr-4 font-mono text-xs text-slate-200">
+                    {r.model}
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-slate-300">
+                    ${r.input_per_1m_usd.toFixed(2)}
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-slate-300">
+                    ${r.output_per_1m_usd.toFixed(2)}
+                  </td>
+                  <td className="py-1.5 text-xs text-slate-500">
+                    {r.fetched_at
+                      ? new Date(r.fetched_at).toLocaleString()
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="rounded-lg border border-white/15 bg-white/5 p-4">

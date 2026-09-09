@@ -1,27 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
-
 import { apiGet } from "../lib/api";
-import StatBars, { BarItem } from "../components/StatBars";
 
 
-/** The windows the two webhook breakdowns can be read over. The tiles
- *  above them are fixed windows by definition and ignore this. */
-const WINDOWS = [
-  { key: "24h", label: "24 hours" },
-  { key: "7d", label: "7 days" },
-  { key: "30d", label: "30 days" },
-  { key: "all", label: "All time" },
-] as const;
 
 
-interface TypeCount {
-  label: string;
-  count: number;
-  // "notification_type" | "webhook_type" | "null" — tells the drill-down
-  // which inbox filter to apply when the bar is clicked.
-  label_source?: string;
-}
 
 
 interface StorageBucket {
@@ -31,30 +13,10 @@ interface StorageBucket {
 }
 
 
-interface ModelSpend {
-  model: string;
-  // Billed calls. Named "runs" on the wire from when a run was the only
-  // way to reach Gemini.
-  runs: number;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
-}
 
 
-interface SourceSpend {
-  source: string;
-  calls: number;
-  cost_usd: number;
-}
 
 
-interface PricingRow {
-  model: string;
-  input_per_1m_usd: number;
-  output_per_1m_usd: number;
-  fetched_at: string;
-}
 
 
 interface SystemLoad {
@@ -83,30 +45,11 @@ interface StatsOverview {
   webhooks_last_24h: number;
   webhooks_last_7d: number;
   webhooks_last_30d: number;
-  webhooks_by_type: TypeCount[];
-  webhooks_by_family: TypeCount[];
-  // Echoed back rather than assumed, so the charts label themselves from
-  // the data they are actually drawing.
-  range: string;
-  family: string | null;
-  webhooks_in_window: number;
   runs_total: number;
   runs_last_24h: number;
   runs_success_rate: number | null;
   storage: StorageBucket[];
   storage_total_bytes: number;
-  gemini_spend_30d_usd: number;
-  gemini_spend_by_model: ModelSpend[];
-  gemini_spend_by_source: SourceSpend[];
-  gemini_pricing: PricingRow[];
-}
-
-
-function fmtUsd(n: number): string {
-  if (n === 0) return "$0.00";
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  if (n < 1) return `$${n.toFixed(3)}`;
-  return `$${n.toFixed(2)}`;
 }
 
 
@@ -119,33 +62,10 @@ function fmtBytes(b: number): string {
 
 
 export default function Stats() {
-  // In the URL, like every other filter in the app, so a view worth
-  // showing someone is a link rather than a list of instructions.
-  const [params, setParams] = useSearchParams();
-  const range =
-    WINDOWS.find((w) => w.key === params.get("range"))?.key ?? "all";
-  const family = params.get("family");
-
-  const patch = (next: Record<string, string | null>) => {
-    const p = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(next)) {
-      if (v === null) p.delete(k);
-      else p.set(k, v);
-    }
-    setParams(p, { replace: true });
-  };
-
   const stats = useQuery({
-    queryKey: ["stats-overview", range, family],
-    queryFn: () => {
-      const qs = new URLSearchParams({ range });
-      if (family) qs.set("family", family);
-      return apiGet<StatsOverview>(`/api/stats/overview?${qs}`);
-    },
+    queryKey: ["stats-overview"],
+    queryFn: () => apiGet<StatsOverview>("/api/stats/overview"),
     refetchInterval: 30000,
-    // Keeping the old numbers on screen while the new ones load beats
-    // collapsing the charts to "Loading…" on every filter click.
-    placeholderData: (prev) => prev,
   });
   const coverage = useQuery({
     queryKey: ["taxonomy-coverage"],
@@ -193,76 +113,9 @@ export default function Stats() {
               }
             />
             <StatTile label="Disk used" value={fmtBytes(s.storage_total_bytes)} />
-            <StatTile
-              label="Gemini spend (30d est.)"
-              value={fmtUsd(s.gemini_spend_30d_usd)}
-            />
           </div>
 
           {sys && <ServerLoadCard sys={sys} />}
-
-          <WebhookFilterBar
-            range={range}
-            family={family}
-            total={s.webhooks_in_window}
-            onRange={(r) => patch({ range: r === "all" ? null : r })}
-            onClearFamily={() => patch({ family: null })}
-          />
-
-          <Card
-            title="Webhooks by family"
-            hint="Click a family to narrow the event types below."
-          >
-            <StatBars
-              total={s.webhooks_in_window}
-              items={s.webhooks_by_family.map<BarItem>((item) => ({
-                key: item.label,
-                label: item.label,
-                count: item.count,
-                selected: family === item.label,
-                // Picks rather than navigates: the whole point is to
-                // filter the chart underneath, and sending someone to
-                // the Explorer would lose the comparison they are in
-                // the middle of making.
-                onPick: () =>
-                  patch({
-                    family: family === item.label ? null : item.label,
-                  }),
-                title:
-                  family === item.label
-                    ? `${item.label} — filtering the event types below. Click to clear.`
-                    : `${item.label} — ${item.count.toLocaleString()} webhooks. Click to narrow the event types below.`,
-              }))}
-            />
-          </Card>
-
-          <Card
-            title={
-              family ? `Top event types · ${family}` : "Top event types"
-            }
-            hint="Click a type to open those events in the Explorer."
-          >
-            <StatBars
-              total={s.webhooks_in_window}
-              emptyText={
-                family
-                  ? `No ${family} webhooks in this window.`
-                  : "Nothing in this window."
-              }
-              items={s.webhooks_by_type.map<BarItem>((item) => ({
-                key: `${item.label_source ?? ""}:${item.label}`,
-                label: item.label,
-                count: item.count,
-                href:
-                  item.label_source === "webhook_type"
-                    ? `/inbox?webhook_type=${encodeURIComponent(item.label)}`
-                    : item.label_source === "null" ||
-                        item.label === "(unrecognized)"
-                      ? `/inbox?notification_type=__null__&webhook_type=__null__`
-                      : `/inbox?notification_type=${encodeURIComponent(item.label)}`,
-              }))}
-            />
-          </Card>
 
           <Card title="Storage">
             <table className="w-full text-sm">
@@ -283,109 +136,6 @@ export default function Stats() {
                 ))}
               </tbody>
             </table>
-          </Card>
-
-          <Card title="Gemini spend by model (30d)">
-            {s.gemini_spend_by_model.length === 0 ? (
-              <div className="text-sm text-slate-500">
-                No Gemini calls in the last 30 days yet — kick off a flow with
-                a Gemini analyze step, or compose an analytic.
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
-                    <th className="pb-2 pr-4">Model</th>
-                    <th className="pb-2 pr-4">Calls</th>
-                    <th className="pb-2 pr-4">In tok</th>
-                    <th className="pb-2 pr-4">Out tok</th>
-                    <th className="pb-2">Cost (est.)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.gemini_spend_by_model.map((m) => (
-                    <tr key={m.model} className="border-t border-white/10">
-                      <td className="py-2 pr-4 text-slate-200 font-mono text-xs">
-                        {m.model}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-300">
-                        {m.runs.toLocaleString()}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-400">
-                        {m.tokens_in.toLocaleString()}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-400">
-                        {m.tokens_out.toLocaleString()}
-                      </td>
-                      <td className="py-2 text-slate-200">
-                        {fmtUsd(m.cost_usd)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {s.gemini_spend_by_source.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-white/10">
-                <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
-                  Outside flow runs
-                </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  {s.gemini_spend_by_source.map((x) => (
-                    <div key={x.source} className="text-xs text-slate-400">
-                      <span className="text-slate-300">{x.source}</span>{" "}
-                      {x.calls.toLocaleString()}
-                      {x.calls === 1 ? " call" : " calls"} ·{" "}
-                      <span className="text-slate-200">{fmtUsd(x.cost_usd)}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-2">
-                  Design-time calls — composing analytics and Helix demos,
-                  drafting flows. Included in the totals above.
-                </p>
-              </div>
-            )}
-            <p className="text-[11px] text-slate-500 mt-3">
-              Estimate based on Google's published per-token rates × the
-              usage_metadata each call reports. Not invoice reconciliation —
-              ignores credits, free-tier, batch discounts.
-            </p>
-          </Card>
-
-          <Card title="Current Gemini rates (per 1M tokens)">
-            {s.gemini_pricing.length === 0 ? (
-              <div className="text-sm text-slate-500">No rates loaded yet.</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-400 text-xs uppercase tracking-wider">
-                    <th className="pb-2 pr-4">Model</th>
-                    <th className="pb-2 pr-4">Input</th>
-                    <th className="pb-2 pr-4">Output</th>
-                    <th className="pb-2">Last refreshed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.gemini_pricing.map((p) => (
-                    <tr key={p.model} className="border-t border-white/10">
-                      <td className="py-2 pr-4 text-slate-200 font-mono text-xs">
-                        {p.model}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-300">
-                        ${p.input_per_1m_usd.toFixed(2)}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-300">
-                        ${p.output_per_1m_usd.toFixed(2)}
-                      </td>
-                      <td className="py-2 text-slate-500 text-xs">
-                        {new Date(p.fetched_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
           </Card>
 
           {coverage.data && <CoverageCard data={coverage.data} />}
@@ -579,58 +329,6 @@ function Card({
  * counters above still cover fixed windows, so this only governs the
  * two breakdowns and says so.
  */
-function WebhookFilterBar({
-  range,
-  family,
-  total,
-  onRange,
-  onClearFamily,
-}: {
-  range: string;
-  family: string | null;
-  total: number;
-  onRange: (r: string) => void;
-  onClearFamily: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 flex-wrap">
-      <div className="inline-flex rounded-md border border-white/15 overflow-hidden">
-        {WINDOWS.map((w) => (
-          <button
-            key={w.key}
-            type="button"
-            onClick={() => onRange(w.key)}
-            aria-pressed={range === w.key}
-            className={`text-xs px-3 py-1.5 transition-colors ${
-              range === w.key
-                ? "bg-sky-950/60 text-sky-200"
-                : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
-            }`}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
-
-      {family && (
-        <button
-          type="button"
-          onClick={onClearFamily}
-          className="text-xs px-2.5 py-1.5 rounded-md border border-sky-600 bg-sky-950/40 text-sky-200 hover:bg-sky-950/70 transition-colors"
-          title="Clear the family filter"
-        >
-          family: {family} <span className="text-sky-400/70 ml-0.5">×</span>
-        </button>
-      )}
-
-      <span className="text-xs text-slate-500 ml-auto">
-        {total.toLocaleString()} webhook{total === 1 ? "" : "s"} in this window
-      </span>
-    </div>
-  );
-}
-
-
 function CoverageCard({ data }: { data: Coverage }) {
   const missing = data.families
     .map((f) => ({ ...f, types: f.types.filter((t) => t.count === 0) }))

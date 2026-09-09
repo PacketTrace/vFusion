@@ -19,8 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.verkada.footage import CLIP_ROOT
 from app.db import get_session
-from app.models import GeminiPricing, Run, WebhookAsset, WebhookEvent
-from app.pricing import ledger
+from app.models import Run, WebhookAsset, WebhookEvent
 
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -47,29 +46,32 @@ class StorageBucket(BaseModel):
     file_count: int
 
 
-class ModelSpend(BaseModel):
-    model: str
-    # Billed calls, not flow runs. Composing an analytic is one of
-    # these and is not a run at all.
-    runs: int
-    tokens_in: int
-    tokens_out: int
-    cost_usd: float
+class WebhookBreakdown(BaseModel):
+    """The two webhook charts, and nothing else.
 
+    Split out of /overview because it is read from a different place now
+    -- the Webhooks tab, which polls it -- and overview is expensive in
+    a way that has nothing to do with webhooks: it walks the clips
+    directory on disk to size it. Polling that every thirty seconds to
+    draw two bar charts is a filesystem scan for no reason.
+    """
 
-class SourceSpend(BaseModel):
-    """Spend from somewhere other than a flow run."""
-
-    source: str
-    calls: int
-    cost_usd: float
-
-
-class PricingRow(BaseModel):
-    model: str
-    input_per_1m_usd: float
-    output_per_1m_usd: float
-    fetched_at: datetime
+    generated_at: datetime
+    by_type: list[TypeCount]
+    by_family: list[TypeCount]
+    # Echoed back rather than assumed, so the charts label themselves
+    # from the data they are actually drawing. What was asked for and
+    # what is on screen disagree for one render on every filter change,
+    # which is exactly when somebody is reading the number.
+    #
+    # Called "range" rather than "window" to match the audit page, and
+    # because "window" shadows the global of that name in the component
+    # reading it.
+    range: str = "all"
+    family: str | None = None
+    # Denominator for the share on each bar. Deliberately not the
+    # all-time total: a share of the wrong total is worse than none.
+    total: int = 0
 
 
 class StatsOverview(BaseModel):
@@ -79,24 +81,6 @@ class StatsOverview(BaseModel):
     webhooks_last_24h: int
     webhooks_last_7d: int
     webhooks_last_30d: int
-    webhooks_by_type: list[TypeCount]
-    webhooks_by_family: list[TypeCount]
-    # What the two breakdowns above were computed over. Echoed back so
-    # the page can label its own charts from the response rather than
-    # from what it believes it asked for -- those two disagree for one
-    # render every time a filter changes, which is exactly when someone
-    # is looking at the number.
-    #
-    # Named "range" to match the audit page's vocabulary, and because
-    # "window" shadows the global of that name in the component reading
-    # it, which is a trap rather than a bug only until somebody adds a
-    # window.matchMedia call.
-    range: str = "all"
-    family: str | None = None
-    # Denominator for the shares shown on each bar. Not webhooks_total:
-    # that is all time, and a share of the wrong total is worse than no
-    # share at all.
-    webhooks_in_window: int = 0
     # Flow execution
     runs_total: int
     runs_last_24h: int
@@ -104,12 +88,6 @@ class StatsOverview(BaseModel):
     # Disk
     storage: list[StorageBucket]
     storage_total_bytes: int
-    # Gemini spend (estimated from published per-1M rates × usage_metadata
-    # tokens captured on each run). Numbers are pre-discount, pre-credit.
-    gemini_spend_30d_usd: float
-    gemini_spend_by_model: list[ModelSpend]
-    gemini_spend_by_source: list[SourceSpend]
-    gemini_pricing: list[PricingRow]
 
 
 def _dir_size(path: Path) -> tuple[int, int]:
@@ -204,57 +182,40 @@ WINDOWS: dict[str, timedelta] = {
 UNKNOWN_FAMILY = "(unknown)"
 
 
-@router.get("/overview", response_model=StatsOverview)
-async def overview(
+@router.get("/webhooks", response_model=WebhookBreakdown)
+async def webhook_breakdown(
     session: AsyncSession = Depends(get_session),
-    range: str = Query("all", alias="range", description="24h | 7d | 30d | all"),
+    range: str = Query("all", description="24h | 7d | 30d | all"),
     family: str | None = Query(
         None, description="Narrow the event-type breakdown to one family"
     ),
-) -> StatsOverview:
-    now = datetime.now(timezone.utc)
-    cutoff_24h = now - timedelta(hours=24)
-    cutoff_7d = now - timedelta(days=7)
-    cutoff_30d = now - timedelta(days=30)
+) -> WebhookBreakdown:
+    """What arrived, by family and by type, over a window.
 
-    # An unrecognised window is "all" rather than a 422. This is a
+    These used to have no window at all: they counted every webhook ever
+    received, which is an answer that stops changing after a month and
+    can never say what broke this morning.
+    """
+    now = datetime.now(timezone.utc)
+
+    # An unrecognised range is "all" rather than a 422. This is a
     # dashboard reading its own URL, and a bad query string should show
-    # you the page, not an error you cannot act on.
+    # you the page rather than an error you cannot act on.
     rng = range if range in WINDOWS or range == "all" else "all"
-    window_cutoff = now - WINDOWS[rng] if rng in WINDOWS else None
+    cutoff = now - WINDOWS[rng] if rng in WINDOWS else None
 
     def _windowed(stmt):
-        return stmt.where(WebhookEvent.received_at >= window_cutoff) if window_cutoff else stmt
+        return stmt.where(WebhookEvent.received_at >= cutoff) if cutoff else stmt
 
-    # The family filter narrows the event types, never the family chart
-    # itself -- filtering a chart by a value read off that same chart
-    # leaves one bar and no way back.
+    # The family filter narrows the event types and never the family
+    # chart itself: filtering a chart by a value read off that same
+    # chart leaves one bar and no way back to the others.
     def _family_filtered(stmt):
         if family is None:
             return stmt
         if family == UNKNOWN_FAMILY:
             return stmt.where(WebhookEvent.family.is_(None))
         return stmt.where(WebhookEvent.family == family)
-
-    # Webhook counters.
-    webhooks_total = (await session.execute(
-        select(func.count()).select_from(WebhookEvent)
-    )).scalar_one()
-    webhooks_24h = (await session.execute(
-        select(func.count())
-        .select_from(WebhookEvent)
-        .where(WebhookEvent.received_at >= cutoff_24h)
-    )).scalar_one()
-    webhooks_7d = (await session.execute(
-        select(func.count())
-        .select_from(WebhookEvent)
-        .where(WebhookEvent.received_at >= cutoff_7d)
-    )).scalar_one()
-    webhooks_30d = (await session.execute(
-        select(func.count())
-        .select_from(WebhookEvent)
-        .where(WebhookEvent.received_at >= cutoff_30d)
-    )).scalar_one()
 
     # Top event types: lpr / sensor_alert have no notification_type by
     # Verkada's spec — they're discriminated by webhook_type. We group on
@@ -304,6 +265,43 @@ async def overview(
     # nothing, where a fourth COUNT(*) would cost a scan.
     webhooks_in_window = sum(r.count for r in by_family)
 
+    return WebhookBreakdown(
+        generated_at=now,
+        by_type=by_type,
+        by_family=by_family,
+        range=rng,
+        family=family,
+        total=webhooks_in_window,
+    )
+
+
+@router.get("/overview", response_model=StatsOverview)
+async def overview(session: AsyncSession = Depends(get_session)) -> StatsOverview:
+    now = datetime.now(timezone.utc)
+    cutoff_24h = now - timedelta(hours=24)
+    cutoff_7d = now - timedelta(days=7)
+    cutoff_30d = now - timedelta(days=30)
+
+    # Webhook counters.
+    webhooks_total = (await session.execute(
+        select(func.count()).select_from(WebhookEvent)
+    )).scalar_one()
+    webhooks_24h = (await session.execute(
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(WebhookEvent.received_at >= cutoff_24h)
+    )).scalar_one()
+    webhooks_7d = (await session.execute(
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(WebhookEvent.received_at >= cutoff_7d)
+    )).scalar_one()
+    webhooks_30d = (await session.execute(
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(WebhookEvent.received_at >= cutoff_30d)
+    )).scalar_one()
+
     # Run counters.
     runs_total = (await session.execute(
         select(func.count()).select_from(Run)
@@ -337,102 +335,15 @@ async def overview(
     ]
     storage_total = sum(b.bytes for b in storage)
 
-    # Gemini spend: walk recent runs, sum the cost dicts each gemini_*
-    # step recorded onto its output. We don't try to recompute from raw
-    # token counts here — the action already did that with the live
-    # pricing table at the time of the run, which keeps historical costs
-    # stable even if Google moves prices later.
-    spend_rows = (await session.execute(
-        select(Run.steps, Run.created_at).where(Run.created_at >= cutoff_30d)
-    )).all()
-    by_model: dict[str, ModelSpend] = {}
-    total_30d = 0.0
-    for steps, _created in spend_rows:
-        for s in steps or []:
-            out = s.get("output") if isinstance(s, dict) else None
-            cost = out.get("cost") if isinstance(out, dict) else None
-            if not isinstance(cost, dict):
-                continue
-            model = str(cost.get("model") or s.get("type") or "unknown")
-            cost_usd = float(cost.get("cost_usd") or 0)
-            t_in = int(cost.get("tokens_in") or 0)
-            t_out = int(cost.get("tokens_out") or 0)
-            total_30d += cost_usd
-            if model not in by_model:
-                by_model[model] = ModelSpend(
-                    model=model, runs=0, tokens_in=0, tokens_out=0, cost_usd=0.0
-                )
-            entry = by_model[model]
-            entry.runs += 1
-            entry.tokens_in += t_in
-            entry.tokens_out += t_out
-            entry.cost_usd += cost_usd
-    # Gemini calls that happened outside a run — composing an analytic
-    # or a Helix demo, drafting a flow. They bill to the same key, so
-    # leaving them out reported a number that was low by exactly the
-    # amount of design work done that month.
-    by_source: dict[str, SourceSpend] = {}
-    for entry in await ledger.since(cutoff_30d):
-        model = str(entry.get("model") or "unknown")
-        cost_usd = float(entry.get("cost_usd") or 0)
-        t_in = int(entry.get("tokens_in") or 0)
-        t_out = int(entry.get("tokens_out") or 0)
-        total_30d += cost_usd
-        if model not in by_model:
-            by_model[model] = ModelSpend(
-                model=model, runs=0, tokens_in=0, tokens_out=0, cost_usd=0.0
-            )
-        entry_m = by_model[model]
-        entry_m.runs += 1
-        entry_m.tokens_in += t_in
-        entry_m.tokens_out += t_out
-        entry_m.cost_usd += cost_usd
-
-        source = str(entry.get("source") or "Other")
-        if source not in by_source:
-            by_source[source] = SourceSpend(source=source, calls=0, cost_usd=0.0)
-        entry_s = by_source[source]
-        entry_s.calls += 1
-        entry_s.cost_usd += cost_usd
-
-    spend_by_model = sorted(
-        by_model.values(), key=lambda m: m.cost_usd, reverse=True
-    )
-    spend_by_source = sorted(
-        by_source.values(), key=lambda x: x.cost_usd, reverse=True
-    )
-
-    pricing_rows = (await session.execute(
-        select(GeminiPricing).order_by(GeminiPricing.model.asc())
-    )).scalars().all()
-    pricing = [
-        PricingRow(
-            model=p.model,
-            input_per_1m_usd=float(p.input_per_1m_usd),
-            output_per_1m_usd=float(p.output_per_1m_usd),
-            fetched_at=p.fetched_at,
-        )
-        for p in pricing_rows
-    ]
-
     return StatsOverview(
         generated_at=now,
         webhooks_total=webhooks_total,
         webhooks_last_24h=webhooks_24h,
         webhooks_last_7d=webhooks_7d,
         webhooks_last_30d=webhooks_30d,
-        webhooks_by_type=by_type,
-        webhooks_by_family=by_family,
-        range=rng,
-        family=family,
-        webhooks_in_window=webhooks_in_window,
         runs_total=runs_total,
         runs_last_24h=runs_24h,
         runs_success_rate=success_rate,
         storage=storage,
         storage_total_bytes=storage_total,
-        gemini_spend_30d_usd=round(total_30d, 4),
-        gemini_spend_by_model=spend_by_model,
-        gemini_spend_by_source=spend_by_source,
-        gemini_pricing=pricing,
     )

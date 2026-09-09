@@ -18,6 +18,12 @@ Every request to `https://<your-public-url>/hooks/<anything>` is captured, class
 
 Deleting an event asks first: payloads are the raw material for trigger filters and test runs.
 
+### Insights
+
+The same switch the audit log has: **Events** or **Insights** over the same webhooks. Insights charts what arrived by family and by type over a window you choose, from the last 24 hours to all time. Clicking a family narrows the event types to it; clicking a type drops you back on the events list already filtered to it.
+
+These charts used to be on Settings → Stats, three clicks away next to disk usage. They are a summary of the rows on the other half of this tab, and the reason to look at one is always to go and look at the other.
+
 ## Audit log
 
 A local, filterable copy of Command's audit log. Verkada's own audit log page filters by a handful of categories and caps a query at 90 days. Its API accepts only a time range. So vFusion pulls the log **every ten seconds** and stores it, and every question is answered from the local copy.
