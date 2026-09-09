@@ -80,44 +80,31 @@ export default function Connections() {
           )}
         </div>
 
-        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-x-auto">
-          {conns.isLoading ? (
-            <div className="p-6 text-sm text-slate-400">Loading…</div>
-          ) : verkadaConns.length === 0 ? (
+        {conns.isLoading ? (
+          <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg p-6 text-sm text-slate-400">
+            Loading…
+          </div>
+        ) : verkadaConns.length === 0 ? (
+          <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg">
             <FirstRunState />
-          ) : (
-            <table className="w-full min-w-[64rem] text-sm">
-              <thead className="text-slate-400 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-3 py-2">Name</th>
-                  <th className="text-left px-3 py-2">External ID</th>
-                  <th className="text-left px-3 py-2">API key</th>
-                  <th className="text-left px-3 py-2">Status</th>
-                  <th className="text-left px-3 py-2">Cameras</th>
-                  <th className="text-left px-3 py-2">Doors</th>
-                  <th className="text-left px-3 py-2">Helix events</th>
-                  <th className="text-left px-3 py-2">Scenarios</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {verkadaConns.map((c) => (
-                  <VerkadaRow
-                    key={c.id}
-                    c={c}
-                    onFinish={() => setForm({ kind: "finish", connection: c })}
-                    onEdit={() => setForm({ kind: "edit", connection: c })}
-                    onDelete={() => {
-                      if (confirm(`Delete "${c.name}"? This can't be undone.`)) {
-                        del.mutate(c.id);
-                      }
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {verkadaConns.map((c) => (
+              <VerkadaOrgCard
+                key={c.id}
+                c={c}
+                onFinish={() => setForm({ kind: "finish", connection: c })}
+                onEdit={() => setForm({ kind: "edit", connection: c })}
+                onDelete={() => {
+                  if (confirm(`Delete "${c.name}"? This can't be undone.`)) {
+                    del.mutate(c.id);
+                  }
+                }}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ---- 3rd-party API keys ---- */}
@@ -138,13 +125,16 @@ export default function Connections() {
             ))}
         </div>
 
-        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg overflow-x-auto">
+        <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg">
           {thirdPartyConns.length === 0 ? (
             <div className="p-6 text-sm text-slate-400">
               No 3rd-party API keys yet. Add a Gemini key to enable AI analysis actions.
             </div>
           ) : (
-            <table className="w-full min-w-[64rem] text-sm">
+            /* No min-width. Three short columns were being held open to
+               64rem, so a two-row list scrolled sideways on a screen with
+               room to spare. */
+            <table className="w-full text-sm">
               <thead className="text-slate-400 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-3 py-2">Name</th>
@@ -218,7 +208,30 @@ export default function Connections() {
 }
 
 
-function VerkadaRow({
+/**
+ * One Verkada org, as a card rather than a table row.
+ *
+ * It was a row, and the row needed 64rem to fit: nine columns and six
+ * buttons, so the actions ran off the right edge and had to be scrolled
+ * to while three quarters of the page sat empty. Scrolling sideways
+ * past a screenful of nothing is the tell that the form is wrong, not
+ * the width.
+ *
+ * A table exists to compare rows. Almost nobody has two Verkada orgs,
+ * and the columns here are not being compared against anything — they
+ * are the attributes of a single thing. So this is a card, and the
+ * layout can follow the shape of the content instead of a grid built
+ * for a list that does not exist.
+ *
+ * The change that matters most is not the width. Each sync button now
+ * sits inside the tile showing the count it changes, so "95 cameras,
+ * synced an hour ago, sync again" reads as one statement. Before, six
+ * identically-styled buttons sat in a row far from the four numbers
+ * they affected, and which button moved which number was something you
+ * had to already know. Results and failures land in the same tile for
+ * the same reason.
+ */
+function VerkadaOrgCard({
   c,
   onFinish,
   onEdit,
@@ -230,102 +243,96 @@ function VerkadaRow({
   onDelete: () => void;
 }) {
   const qc = useQueryClient();
-  // Per-row status line so a failed sync surfaces inline instead of
-  // looking like a no-op (the buttons would otherwise just flip back to
-  // their idle label). Cleared on the next sync click.
-  const [syncStatus, setSyncStatus] = useState<{
-    kind: "ok" | "err";
-    msg: string;
-  } | null>(null);
-  const startSync = () => setSyncStatus(null);
-  const okMsg = (label: string, count: number) => `${label}: ${count} synced`;
-  // Strip the api-wrapper's `METHOD /path → STATUS:` prefix so the
-  // surfaced message is the actual server-side reason.
+
+  // Per-resource rather than one shared line, so a doors failure cannot
+  // appear to be about cameras.
+  const [status, setStatus] = useState<
+    Record<string, { kind: "ok" | "err"; msg: string } | undefined>
+  >({});
+  const [poiCount, setPoiCount] = useState<number | null>(null);
+
+  // Strip the api wrapper's `METHOD /path → STATUS:` prefix so what is
+  // surfaced is the server's actual reason.
   const cleanErr = (e: Error): string => {
     const m = e.message.match(/→\s*\d+\s*:\s*(.+)$/);
     return m ? m[1] : e.message;
   };
-  const errMsg = (label: string, e: Error) => `${label} failed: ${cleanErr(e)}`;
+  const set = (key: string, kind: "ok" | "err", msg: string) =>
+    setStatus((s) => ({ ...s, [key]: { kind, msg } }));
+  const clear = (key: string) =>
+    setStatus((s) => ({ ...s, [key]: undefined }));
+
+  // The per-door "Door Management via API" toggle is a second gotcha,
+  // separate from listing the doors at all. People hit the first and
+  // forget the second, so it rides along with every doors result.
+  const DOOR_NOTE =
+    'Each door also needs "Door Management via API" enabled in its ' +
+    "Command settings before it can be unlocked.";
 
   const syncCameras = useMutation({
-    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-cameras`, {}),
-    onMutate: startSync,
+    mutationFn: () =>
+      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-cameras`, {}),
+    onMutate: () => clear("cameras"),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-cameras"] });
-      setSyncStatus({ kind: "ok", msg: okMsg("Cameras", d.count) });
+      set("cameras", "ok", `${d.count} synced`);
     },
-    onError: (e: Error) =>
-      setSyncStatus({ kind: "err", msg: errMsg("Cameras", e) }),
+    onError: (e: Error) => set("cameras", "err", cleanErr(e)),
   });
-  // Reminder appended to every sync-doors result (success or failure)
-  // because the per-door "Door Management via API" toggle is a separate
-  // gotcha from listing the doors — the operator hits the first issue
-  // they encounter and forgets the second otherwise.
-  const DOOR_API_REMINDER =
-    ' Heads-up: each door also needs "Door Management via API" enabled ' +
-    "in its Verkada Command door settings to be unlockable via API.";
-
   const syncDoors = useMutation({
-    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-doors`, {}),
-    onMutate: startSync,
+    mutationFn: () =>
+      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-doors`, {}),
+    onMutate: () => clear("doors"),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-doors"] });
-      setSyncStatus({
-        kind: "ok",
-        msg: `${okMsg("Doors", d.count)}.${DOOR_API_REMINDER}`,
-      });
+      set("doors", "ok", `${d.count} synced. ${DOOR_NOTE}`);
     },
-    onError: (e: Error) =>
-      setSyncStatus({
-        kind: "err",
-        msg: `${errMsg("Doors", e)}${DOOR_API_REMINDER}`,
-      }),
-  });
-  // People of Interest live in a JSON cache rather than a table, so the
-  // count comes back from the sync itself instead of a connection column.
-  const syncPoi = useMutation({
-    mutationFn: () =>
-      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-poi`, {}),
-    onMutate: startSync,
-    onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["filter-fields"] });
-      setSyncStatus({ kind: "ok", msg: okMsg("People of interest", d.count) });
-    },
-    onError: (e: Error) =>
-      setSyncStatus({ kind: "err", msg: errMsg("People of interest", e) }),
+    onError: (e: Error) => set("doors", "err", `${cleanErr(e)} ${DOOR_NOTE}`),
   });
   const syncHelix = useMutation({
-    mutationFn: () => apiPost<{ count: number }>(`/api/connections/${c.id}/sync-helix`, {}),
-    onMutate: startSync,
+    mutationFn: () =>
+      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-helix`, {}),
+    onMutate: () => clear("helix"),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["helix-event-types"] });
-      setSyncStatus({ kind: "ok", msg: okMsg("Helix events", d.count) });
+      set("helix", "ok", `${d.count} synced`);
     },
-    onError: (e: Error) =>
-      setSyncStatus({ kind: "err", msg: errMsg("Helix events", e) }),
+    onError: (e: Error) => set("helix", "err", cleanErr(e)),
   });
   const syncScenarios = useMutation({
     mutationFn: () =>
       apiPost<{ count: number }>(`/api/connections/${c.id}/sync-scenarios`, {}),
-    onMutate: startSync,
+    onMutate: () => clear("scenarios"),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["connections"] });
       qc.invalidateQueries({ queryKey: ["verkada-scenarios"] });
-      setSyncStatus({ kind: "ok", msg: okMsg("Scenarios", d.count) });
+      set("scenarios", "ok", `${d.count} synced`);
     },
-    onError: (e: Error) =>
-      setSyncStatus({ kind: "err", msg: errMsg("Scenarios", e) }),
+    onError: (e: Error) => set("scenarios", "err", cleanErr(e)),
+  });
+  // People of interest live in a JSON cache rather than a table, so
+  // there is no column for them and the count only exists after a sync.
+  const syncPoi = useMutation({
+    mutationFn: () =>
+      apiPost<{ count: number }>(`/api/connections/${c.id}/sync-poi`, {}),
+    onMutate: () => clear("poi"),
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["filter-fields"] });
+      setPoiCount(d.count);
+      set("poi", "ok", `${d.count} synced`);
+    },
+    onError: (e: Error) => set("poi", "err", cleanErr(e)),
   });
 
-  // Streaming-permission probe — fires a real live frame + historical
-  // clip pull against an online synced camera and reports which Verkada
-  // streaming permission tier the API key has. Offline cameras fail the
-  // pull for reasons unrelated to the key, so the backend only picks from
-  // cameras Verkada reports as online.
-  const [streamingResult, setStreamingResult] = useState<{
+  // A probe, not a sync: it pulls a real live frame and a real historical
+  // clip from an online camera and reports which streaming tier the key
+  // actually has. Offline cameras fail for reasons that have nothing to
+  // do with the key, so the backend only picks from ones Verkada reports
+  // as online.
+  const [streaming, setStreaming] = useState<{
     camera_id: string;
     camera_name: string | null;
     camera_status: string | null;
@@ -335,149 +342,284 @@ function VerkadaRow({
   } | null>(null);
   const testStreaming = useMutation({
     mutationFn: () =>
-      apiPost<NonNullable<typeof streamingResult>>(
+      apiPost<NonNullable<typeof streaming>>(
         `/api/connections/${c.id}/test-streaming`,
         {},
       ),
     onMutate: () => {
-      setSyncStatus(null);
-      setStreamingResult(null);
+      clear("streaming");
+      setStreaming(null);
     },
-    onSuccess: (d) => setStreamingResult(d),
-    onError: (e: Error) =>
-      setSyncStatus({ kind: "err", msg: errMsg("Test streaming", e) }),
+    onSuccess: (d) => setStreaming(d),
+    onError: (e: Error) => set("streaming", "err", cleanErr(e)),
   });
+
+  const resources = [
+    {
+      key: "cameras",
+      label: "Cameras",
+      count: c.camera_count,
+      ts: c.cameras_last_synced_at,
+      pending: syncCameras.isPending,
+      run: () => syncCameras.mutate(),
+      title: "Pull camera names from the Verkada API",
+    },
+    {
+      key: "doors",
+      label: "Doors",
+      count: c.door_count,
+      ts: c.doors_last_synced_at,
+      pending: syncDoors.isPending,
+      run: () => syncDoors.mutate(),
+      title: "Pull door names from /access/v1/doors",
+    },
+    {
+      key: "helix",
+      label: "Helix events",
+      count: c.helix_event_count,
+      ts: c.helix_events_last_synced_at,
+      pending: syncHelix.isPending,
+      run: () => syncHelix.mutate(),
+      title: "Pull Helix event types from /cameras/v1/video_tagging/event_type",
+    },
+    {
+      key: "scenarios",
+      label: "Scenarios",
+      count: c.scenario_count,
+      ts: c.scenarios_last_synced_at,
+      pending: syncScenarios.isPending,
+      run: () => syncScenarios.mutate(),
+      title: "Pull Access scenarios from /access/v1/scenarios",
+    },
+    {
+      key: "poi",
+      label: "People of interest",
+      count: poiCount,
+      ts: null,
+      pending: syncPoi.isPending,
+      run: () => syncPoi.mutate(),
+      title:
+        "Pull people of interest so they can be picked as trigger filters before they are ever seen on camera",
+    },
+  ];
+
   return (
-    <tr className={!c.setup_complete ? "bg-amber-950/30" : ""}>
-      <td className="px-3 py-2 font-medium text-slate-100">{c.name}</td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-400 whitespace-nowrap">
-        {c.external_id ?? "—"}
-      </td>
-      <td
-        className="px-3 py-2 font-mono text-xs text-slate-400"
-        title="Last 5 characters of the stored key — for telling which key a 403 belongs to"
-      >
-        {c.api_key_hint ?? "—"}
-      </td>
-      <td className="px-3 py-2">
-        <StatusBadge ready={c.setup_complete} />
-      </td>
-      <CountCell n={c.camera_count} ts={c.cameras_last_synced_at} />
-      <CountCell n={c.door_count} ts={c.doors_last_synced_at} />
-      <CountCell n={c.helix_event_count} ts={c.helix_events_last_synced_at} />
-      <CountCell n={c.scenario_count} ts={c.scenarios_last_synced_at} />
-      <td className="px-3 py-2 align-top">
-        <div className="text-right whitespace-nowrap space-x-2">
-          {c.setup_complete && (
-            <>
-              <SyncBtn
-                label="Sync cameras"
-                pending={syncCameras.isPending}
-                onClick={() => syncCameras.mutate()}
-                title="Pull camera names from Verkada API"
-              />
-              <SyncBtn
-                label="Sync doors"
-                pending={syncDoors.isPending}
-                onClick={() => syncDoors.mutate()}
-                title="Pull door names from /access/v1/doors"
-              />
-              <SyncBtn
-                label="Sync helix"
-                pending={syncHelix.isPending}
-                onClick={() => syncHelix.mutate()}
-                title="Pull Helix event types from /cameras/v1/video_tagging/event_type"
-              />
-              <SyncBtn
-                label="Sync scenarios"
-                pending={syncScenarios.isPending}
-                onClick={() => syncScenarios.mutate()}
-                title="Pull Access scenarios from /access/v1/scenarios"
-              />
-              <SyncBtn
-                label="Sync people"
-                pending={syncPoi.isPending}
-                onClick={() => syncPoi.mutate()}
-                title="Pull Persons of Interest so they can be picked as trigger filters before they are ever seen on camera"
-              />
-              <SyncBtn
-                label="Test streaming"
-                pending={testStreaming.isPending}
-                onClick={() => testStreaming.mutate()}
-                title="Probe Streaming - Live and Streaming - Live/Historical permissions via a real HLS pull"
-              />
-            </>
-          )}
+    <div
+      className={`backdrop-blur-sm border rounded-lg overflow-hidden ${
+        c.setup_complete
+          ? "bg-white/5 border-white/15"
+          : "bg-amber-950/30 border-amber-800/50"
+      }`}
+    >
+      {/* Identity */}
+      <div className="flex items-start gap-4 flex-wrap p-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-semibold text-white truncate">
+              {c.name}
+            </h3>
+            <StatusBadge ready={c.setup_complete} />
+          </div>
+          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap mt-1.5 text-xs text-slate-500">
+            <span className="font-mono" title="Verkada organization ID">
+              {c.external_id ?? "no org id yet"}
+            </span>
+            <span
+              className="font-mono"
+              title="Last characters of the stored key — enough to tell which key a 403 belongs to, not enough to use"
+            >
+              key {c.api_key_hint ?? "—"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           {!c.setup_complete && (
             <button
               onClick={onFinish}
-              className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white"
+              className="text-xs px-2.5 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white transition-colors"
             >
               Finish setup
             </button>
           )}
           <button
             onClick={onEdit}
-            className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-white/30"
+            className="text-xs px-2.5 py-1.5 rounded border border-white/15 text-slate-300 hover:text-white hover:border-white/30 transition-colors"
             title="Edit name, API key, or signing secret"
           >
             Edit
           </button>
           <button
             onClick={onDelete}
-            className="text-xs px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700"
+            className="text-xs px-2.5 py-1.5 rounded border border-white/15 text-slate-300 hover:text-rose-300 hover:border-rose-700 transition-colors"
           >
             Delete
           </button>
         </div>
-        {syncStatus && (
-          <div
-            className={`text-[11px] mt-1.5 text-left break-words ${
-              syncStatus.kind === "err"
-                ? "text-rose-300"
-                : "text-emerald-300"
-            }`}
-            title={syncStatus.msg}
-          >
-            {syncStatus.kind === "err" ? "✗ " : "✓ "}
-            {syncStatus.msg}
-          </div>
-        )}
-        {streamingResult && (
-          <div className="text-[11px] mt-1.5 text-left break-words space-y-0.5">
-            <div
-              className={
-                streamingResult.tier === "None"
-                  ? "text-rose-300"
-                  : "text-emerald-300"
-              }
-            >
-              {streamingResult.tier === "None" ? "✗" : "✓"}{" "}
-              {streamingResult.tier}
-              {streamingResult.camera_name && (
-                <span className="text-slate-500">
-                  {" "}· tested via {streamingResult.camera_name}
-                  {streamingResult.camera_status
-                    ? ` (${streamingResult.camera_status})`
-                    : ""}
-                </span>
-              )}
+      </div>
+
+      {c.setup_complete && (
+        <>
+          {/* What has been pulled from Command, and the button that pulls it */}
+          <div className="border-t border-white/10 p-4">
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-3">
+              Synced from Command
             </div>
-            {!streamingResult.live.ok && streamingResult.live.error && (
-              <div className="text-rose-300/90">
-                Live: {streamingResult.live.error}
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+              {resources.map((r) => (
+                <ResourceTile
+                  key={r.key}
+                  label={r.label}
+                  count={r.count}
+                  ts={r.ts}
+                  pending={r.pending}
+                  onSync={r.run}
+                  title={r.title}
+                  status={status[r.key]}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* The streaming probe: not a sync, so not in the grid */}
+          <div className="border-t border-white/10 p-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                  Streaming permissions
+                </div>
+                <p className="text-xs text-slate-400 mt-1 max-w-prose">
+                  Pulls a real live frame and a real historical clip from an
+                  online camera, so the answer is what your key can actually
+                  do rather than what the scope list claims.
+                </p>
+              </div>
+              <SyncBtn
+                label="Test streaming"
+                pending={testStreaming.isPending}
+                onClick={() => testStreaming.mutate()}
+                title="Probe Streaming - Live and Streaming - Live/Historical via a real HLS pull"
+              />
+            </div>
+
+            {status.streaming?.kind === "err" && (
+              <div className="text-[11px] text-rose-300 mt-2 break-words">
+                ✗ {status.streaming.msg}
               </div>
             )}
-            {!streamingResult.historical.ok &&
-              streamingResult.historical.error && (
-                <div className="text-rose-300/90">
-                  Historical: {streamingResult.historical.error}
+            {streaming && (
+              <div className="text-[11px] mt-2 space-y-0.5 break-words">
+                <div
+                  className={
+                    streaming.tier === "None"
+                      ? "text-rose-300"
+                      : "text-emerald-300"
+                  }
+                >
+                  {streaming.tier === "None" ? "✗" : "✓"} {streaming.tier}
+                  {streaming.camera_name && (
+                    <span className="text-slate-500">
+                      {" "}· tested via {streaming.camera_name}
+                      {streaming.camera_status
+                        ? ` (${streaming.camera_status})`
+                        : ""}
+                    </span>
+                  )}
                 </div>
-              )}
+                {!streaming.live.ok && streaming.live.error && (
+                  <div className="text-rose-300/90">
+                    Live: {streaming.live.error}
+                  </div>
+                )}
+                {!streaming.historical.ok && streaming.historical.error && (
+                  <div className="text-rose-300/90">
+                    Historical: {streaming.historical.error}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
-      </td>
-    </tr>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+/** How long ago, in the resolution a person would say it in. */
+function since(ts: string | null): string {
+  if (!ts) return "never synced";
+  const secs = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  if (secs < 90) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 90) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 36) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+
+/**
+ * One count, when it was last pulled, and the button that pulls it.
+ *
+ * Keeping those three together is the entire point of the rewrite. A
+ * count with no action beside it is trivia, and an action with no count
+ * beside it is a guess about what it will do.
+ */
+function ResourceTile({
+  label,
+  count,
+  ts,
+  pending,
+  onSync,
+  title,
+  status,
+}: {
+  label: string;
+  count: number | null;
+  ts: string | null;
+  pending: boolean;
+  onSync: () => void;
+  title?: string;
+  status?: { kind: "ok" | "err"; msg: string };
+}) {
+  return (
+    <div className="bg-black/20 border border-white/10 rounded-md p-3 flex flex-col gap-2">
+      <div>
+        <div className="text-xl font-semibold text-white tabular-nums leading-none">
+          {count === null ? (
+            <span className="text-slate-600">—</span>
+          ) : count === 0 ? (
+            <span className="text-slate-600">0</span>
+          ) : (
+            count
+          )}
+        </div>
+        <div className="text-xs text-slate-300 mt-1.5">{label}</div>
+        <div className="text-[10px] text-slate-500 mt-0.5">{since(ts)}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onSync}
+        disabled={pending}
+        title={title}
+        className="mt-auto text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-sky-500 hover:bg-white/5 disabled:opacity-50 transition-colors"
+      >
+        {pending ? "Syncing…" : "Sync"}
+      </button>
+      {status && (
+        <div
+          className={`text-[10px] leading-snug break-words ${
+            status.kind === "err" ? "text-rose-300" : "text-emerald-300"
+          }`}
+          title={status.msg}
+        >
+          {status.kind === "err" ? "✗ " : "✓ "}
+          {status.msg}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -503,16 +645,6 @@ function SyncBtn({
     >
       {pending ? "Syncing…" : label}
     </button>
-  );
-}
-
-
-function CountCell({ n, ts }: { n: number; ts: string | null }) {
-  return (
-    <td className="px-3 py-2 text-slate-400 text-xs">
-      {n > 0 ? <span className="text-slate-100">{n}</span> : <span className="text-slate-500">—</span>}
-      {ts && <div className="text-[10px] text-slate-500 mt-0.5">{new Date(ts).toLocaleString()}</div>}
-    </td>
   );
 }
 
