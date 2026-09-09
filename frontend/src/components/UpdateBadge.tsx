@@ -34,11 +34,14 @@ interface UpdateInfo {
 }
 
 /** What the operator runs. Kept here because it is what the popover is
- *  for — a version number nobody can act on is just an interruption. */
-const COMMAND = [
-  "cd ~/vFusion",
-  "./update.sh",
-].join("\n");
+ *  for — a version number nobody can act on is just an interruption.
+ *
+ *  Deliberately without a `cd`. The install directory is whatever the
+ *  operator cloned into, and a guessed path that is wrong is worse than
+ *  no path at all: it looks authoritative, fails, and sends someone
+ *  looking for a problem that is not there. The label above it says
+ *  where to run it. */
+const COMMAND = "./update.sh";
 
 export default function UpdateBadge() {
   const [open, setOpen] = useState(false);
@@ -133,7 +136,7 @@ export default function UpdateBadge() {
 
           <div className="mt-3">
             <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
-              Run this on the host
+              Run this in your vFusion directory
             </div>
             <pre className="text-[11px] font-mono text-slate-200 bg-black/40 border border-white/10 rounded-md px-3 py-2 whitespace-pre overflow-x-auto">
 {COMMAND}
