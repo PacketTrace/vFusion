@@ -68,6 +68,9 @@ class PublicConfig(BaseModel):
     # spot without first getting past it.
     build: str = "unknown"
     started_at: str | None = None
+    # The release this is, as opposed to ``build``, which is whether the
+    # container is running the code you last pushed.
+    version: str = build_info.VERSION
     # True once at least one Verkada Connection exists — onboarding is
     # then genuinely complete and relaunching it is a no-op.
     verkada_connected: bool = False
@@ -158,6 +161,7 @@ async def public_config(
             ephemeral=True,
             build=build_info.build_id(),
             started_at=build_info.STARTED_AT.isoformat(),
+            version=build_info.VERSION,
             **onboarding,
         )
     if settings.public_webhook_base:
@@ -167,6 +171,7 @@ async def public_config(
             ephemeral=False,
             build=build_info.build_id(),
             started_at=build_info.STARTED_AT.isoformat(),
+            version=build_info.VERSION,
             **onboarding,
         )
     return PublicConfig(
@@ -175,6 +180,7 @@ async def public_config(
         ephemeral=False,
         build=build_info.build_id(),
         started_at=build_info.STARTED_AT.isoformat(),
+        version=build_info.VERSION,
         **onboarding,
     )
 

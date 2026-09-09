@@ -40,6 +40,7 @@ export default function BuildStamp() {
   });
 
   const backend = cfg.data?.build ?? "…";
+  const version = cfg.data?.version;
   const started = cfg.data?.started_at
     ? new Date(cfg.data.started_at)
     : null;
@@ -48,12 +49,15 @@ export default function BuildStamp() {
     <span
       className="text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors cursor-default"
       title={
+        (version ? `vFusion ${version}\n\n` : "") +
         `frontend ${FRONTEND}\nbackend ${backend}` +
         (started ? `\nbackend started ${started.toLocaleString()}` : "") +
-        "\n\nBoth change only when their code does. If one looks stale " +
-        "after a deploy, that container did not rebuild."
+        "\n\nThe version is the release. The two ids change only when " +
+        "their code does — if one looks stale after a deploy, that " +
+        "container did not rebuild."
       }
     >
+      {version ? `v${version} · ` : ""}
       {FRONTEND}·{backend}
     </span>
   );

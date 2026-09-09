@@ -17,7 +17,7 @@
   <a href="#faq">FAQ</a>
 </p>
 
-> **Beta, and not an official Verkada product.** Built by a Verkada SE as a personal project. Expect breaking changes; no warranty ([LICENSE](LICENSE)). It can unlock doors, pull footage and call any API your key allows, so read [Before you deploy](#before-you-deploy) first.
+> **Version 1.1, beta, and not an official Verkada product.** Built by a Verkada SE as a personal project. Expect breaking changes; no warranty ([LICENSE](LICENSE)). It can unlock doors, pull footage and call any API your key allows, so read [Before you deploy](#before-you-deploy) first.
 
 ## What it does
 

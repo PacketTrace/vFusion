@@ -1,5 +1,10 @@
 """What is actually running, so "did that deploy?" is answerable.
 
+Also the product version, which belongs next to the build id rather than
+in a packaging file nobody reads: the two answer the same question at
+different resolutions. The version says which release this is; the build
+id says whether the container came up with the code you just pushed.
+
 There is no git in the image and no build argument threaded through
 compose, so the build id is derived from the source itself: a short
 digest over every ``.py`` file's path, size and mtime. It changes when
@@ -24,6 +29,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 APP_DIR = Path(__file__).resolve().parent
+
+# The one place the product version is written down. The frontend's
+# package.json mirrors it for npm's benefit; everything a person sees
+# reads it from here, through /api/config.
+VERSION = "1.1.0"
 
 STARTED_AT = datetime.now(timezone.utc)
 _STARTED_MONOTONIC = time.monotonic()
