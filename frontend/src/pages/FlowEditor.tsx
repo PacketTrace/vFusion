@@ -730,8 +730,27 @@ function FlowEditorInner() {
   // Auto-layout positions for nodes that don't have a persisted position.
   // User-dragged nodes (node.position set) win — that's the snapping lock.
   const layout = computeLayout(nodes, edges, heights);
-  const posFor = (node: FlowNode) =>
-    node.position ?? layout.get(node.id) ?? { x: 0, y: ROW_Y };
+
+  // ...with one exception. computeLayout never places a node above the
+  // trigger's own row, so a stored position up there cannot have come
+  // from it. It came from a template: every built-in one used to ship
+  // `"position": {"x": 220, "y": 0}` on its first step, which is exactly
+  // where the trigger sits, so any flow made from one opened with the
+  // two cards on top of each other until somebody hit Auto arrange.
+  //
+  // Fixing it here rather than in the template files covers both cases
+  // at once: flows made from a template in future, and the ones already
+  // saved with y=0 sitting in the database, which are the ones people
+  // actually have. Ignoring a stored position only when it collides with
+  // the trigger leaves every deliberate drag alone.
+  const triggerBottom = heights[TRIGGER_ID] ?? DEFAULT_NODE_H;
+  const posFor = (node: FlowNode) => {
+    const stored = node.position;
+    if (stored && stored.y < triggerBottom) {
+      return layout.get(node.id) ?? stored;
+    }
+    return stored ?? layout.get(node.id) ?? { x: 0, y: ROW_Y };
+  };
 
   const autoArrange = () => {
     // Wipe persisted positions so every node falls back to computeLayout.
