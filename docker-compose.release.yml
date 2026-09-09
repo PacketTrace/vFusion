@@ -1,5 +1,10 @@
 # vFusion from published images.
 #
+# NOT USABLE YET: nothing has been pushed to ghcr.io, so this file will
+# fail on pull. The workflow that builds the images is parked at
+# docs/ci/release.yml and needs a token that can write workflow files.
+# Use docker-compose.yml until then.
+#
 #   docker compose -f docker-compose.release.yml --profile quick up -d
 #
 # The difference from docker-compose.yml is what happens on an upgrade.

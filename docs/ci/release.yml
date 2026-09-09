@@ -1,27 +1,18 @@
-# NOT ACTIVE HERE. This file belongs at .github/workflows/release.yml.
+# NOT ACTIVE. This belongs at .github/workflows/release.yml, and until it
+# is there, no images are published and docker-compose.release.yml has
+# nothing to pull.
 #
-# It is parked in docs/ because GitHub refuses a push that creates or
-# changes a workflow file unless the token doing the pushing carries the
-# Workflows permission, and the token that wrote the rest of this commit
-# does not. Move it into place from a machine whose credentials do:
+# It is parked here because GitHub refuses any push that creates or
+# changes a workflow file unless the pushing token carries the Workflows
+# permission, and the token used to write the rest of this does not.
 #
-#     mkdir -p .github/workflows
-#     git mv docs/ci/release.yml .github/workflows/release.yml
-#     git commit -m "ci: build and publish release images to ghcr"
-#     git push
+# To land it, add "Workflows: Read and write" to that fine-grained PAT at
+# github.com/settings/personal-access-tokens. Nothing else is needed from
+# you; the move, the commit and the tag are one command from here once
+# the token can do it.
 #
-# Then delete this header. Nothing else in the file needs changing.
-#
-# One thing has to happen after it lands: the workflow runs on a version
-# tag, and v1.1.0 already points at a commit that predates it, so it will
-# not fire on its own. With the release still an unpublished draft,
-# nothing has consumed that tag yet, so move it onto the commit that has
-# the workflow in it:
-#
-#     git tag -f -a v1.1.0 -m "vFusion 1.1.0"
-#     git push -f origin v1.1.0
-#
-# That push is what builds and publishes the images.
+# Nothing else in vFusion depends on this file. update.sh and the update
+# badge work without it.
 
 # Build and publish the images an upgrade pulls.
 #

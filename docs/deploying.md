@@ -160,25 +160,21 @@ Migrations run on backend boot. The `worker` image must be rebuilt alongside `ba
 
 ## Published images
 
+**Not live yet.** `docker-compose.release.yml` and `frontend/Dockerfile.release` are in the repo and the workflow that builds the images is at `docs/ci/release.yml`, but nothing has been published to the registry, so the compose file below would fail on pull. This section describes what it will do, not what it does.
+
 The default `docker-compose.yml` builds from source, which is right while you are editing it and slow when you are not: every update recompiles the frontend, reinstalls `node_modules` and rebuilds the Python image on your hardware. On a Raspberry Pi that is the difference between a coffee and an afternoon.
 
-`docker-compose.release.yml` runs images that CI already built, for `linux/amd64` and `linux/arm64`:
+Once the images exist, this runs them instead, for `linux/amd64` and `linux/arm64`:
 
 ```bash
 docker compose -f docker-compose.release.yml --profile quick up -d
 ```
 
-`update.sh` notices which of the two you are running and does the right thing, so the update command does not change.
+`update.sh` already notices which of the two an install is running and does the right thing, so the update command does not change either way.
 
-Two things differ. The dashboard is a static bundle behind nginx instead of a Vite dev server, and that nginx proxies `/api` to the backend — so the app and its API are same-origin and **there is no CORS to configure and no `VITE_API_BASE` to set**, even when you browse from another machine. And nothing bind-mounts the source, so editing files on the host has no effect; switch back to `docker-compose.yml` when you want to change code.
+Two things will differ. The dashboard is a static bundle behind nginx instead of a Vite dev server, and that nginx proxies `/api` to the backend — so the app and its API are same-origin and **there is no CORS to configure and no `VITE_API_BASE` to set**, even when you browse from another machine. And nothing bind-mounts the source, so editing files on the host has no effect; switch back to `docker-compose.yml` when you want to change code.
 
-Pin the version on anything you care about:
-
-```
-VFUSION_TAG=1.1.0
-```
-
-`latest` follows the newest release, which is fine right up until a morning you had not planned to upgrade. The images are at [ghcr.io/packettrace/vfusion-backend](https://github.com/PacketTrace/vFusion/pkgs/container/vfusion-backend) and [vfusion-frontend](https://github.com/PacketTrace/vFusion/pkgs/container/vfusion-frontend).
+`VFUSION_TAG` picks the version. `latest` follows the newest release, which is fine right up until a morning you had not planned to upgrade.
 
 ## Backups
 

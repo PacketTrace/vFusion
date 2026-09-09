@@ -152,16 +152,6 @@ Open **http://localhost:15173**, set the admin password, and follow the welcome 
 
 That is quick mode: a free TryCloudflare URL that changes on restart. For a stable URL on your own domain, optional profiles (MQTT, virtual camera), browsing from another machine, every environment variable and backups, see **[Deploying](docs/deploying.md)**.
 
-### Skipping the build
-
-The command above compiles the frontend and builds the Python image on your machine, which is a few minutes on a workstation and considerably longer on a Pi. To run the images CI already built for `amd64` and `arm64` instead:
-
-```bash
-docker compose -f docker-compose.release.yml --profile quick up -d
-```
-
-Same stack, no build step, and the dashboard and its API are same-origin — so browsing from another machine needs no `VITE_API_BASE` and no CORS. Use the first form when you want to change the code.
-
 ### Updating
 
 ```bash
