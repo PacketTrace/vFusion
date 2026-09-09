@@ -67,6 +67,10 @@ interface TrackRecord {
   points: number;
   max_size: number;
   path: [number, number, number, number][];
+  /** Still in frame. The duration is counting, and no row for it exists
+   *  in the history file yet — it is written when the object leaves. */
+  ongoing?: boolean;
+  last_seen_sec_ago?: number;
 }
 
 /** The preflight checks, in the order the backend returns them. Knowing
@@ -234,7 +238,7 @@ export default function Mqtt() {
         <h1 className="text-2xl font-semibold text-white">MQTT</h1>
         <p className="text-slate-400 text-sm mt-1 max-w-3xl">
           {tab === "history"
-            ? "Every object a camera tracked through frame and out again, recorded as it happened. Replay one to pull the footage it came from."
+            ? "Every object a camera tracked, including the ones still in frame. Replay one to pull the footage it came from."
             : "Point a camera at vFusion's MQTT broker and watch what it reports. Cameras publish bounding boxes for people, vehicles and animals about eight times a second — this is that stream, unedited."}
         </p>
         <div className="mt-4 flex items-center gap-1 border-b border-white/10">
@@ -969,10 +973,14 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
   const history = useQuery({
     queryKey: ["mqtt-history", only],
     queryFn: () =>
-      apiGet<{ tracks: TrackRecord[]; summary: Record<string, unknown> }>(
-        `/api/mqtt/history?limit=200${only ? `&camera_id=${only}` : ""}`,
-      ),
-    refetchInterval: 15000,
+      apiGet<{
+        tracks: TrackRecord[];
+        summary: Record<string, unknown>;
+        ongoing_count: number;
+      }>(`/api/mqtt/history?limit=200${only ? `&camera_id=${only}` : ""}`),
+    // Ongoing rows carry a duration that is still counting, so a
+    // fifteen-second refresh showed a number that was visibly wrong.
+    refetchInterval: 5000,
   });
 
   const allTracks = history.data?.tracks ?? [];
@@ -1059,8 +1067,17 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
       {summary && (
         <div className="text-xs text-slate-400 flex flex-wrap gap-4">
           <span>
-            <span className="font-mono text-slate-200">{summary.total}</span> tracks
+            <span className="font-mono text-slate-200">{summary.total}</span> recorded
           </span>
+          {(history.data?.ongoing_count ?? 0) > 0 && (
+            <span
+              className="flex items-center gap-1.5 text-emerald-300"
+              title="Still in frame. These are not in the history file yet — each one is written when its object leaves."
+            >
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="font-mono">{history.data?.ongoing_count}</span> in frame now
+            </span>
+          )}
           {Object.entries(summary.by_type).map(([t, n]) => (
             <span key={t} className="flex items-center gap-1.5">
               <span
@@ -1105,6 +1122,12 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
                 title="Replay this track and pull the footage"
               >
                 <td className="px-2 py-1 font-mono text-xs text-slate-300">
+                  {t.ongoing && (
+                    <span
+                      className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 align-middle"
+                      title="Still in frame"
+                    />
+                  )}
                   {new Date(t.started_at).toLocaleString()}
                 </td>
                 <td className="px-2 py-1 text-xs text-slate-300 max-w-[12rem] truncate">
@@ -1117,7 +1140,18 @@ function TrackHistory({ cameraId }: { cameraId: string }) {
                   />
                   {t.type}
                 </td>
-                <td className="px-2 py-1 font-mono text-xs">{t.duration_sec}s</td>
+                <td className="px-2 py-1 font-mono text-xs">
+                  {t.ongoing ? (
+                    <span
+                      className="text-emerald-300"
+                      title="Counting — this object has not left the frame yet"
+                    >
+                      {Math.round(t.duration_sec)}s and counting
+                    </span>
+                  ) : (
+                    `${t.duration_sec}s`
+                  )}
+                </td>
                 <td
                   className="px-2 py-1 font-mono text-xs text-slate-400"
                   title="Largest box area seen — bigger means nearer the camera"

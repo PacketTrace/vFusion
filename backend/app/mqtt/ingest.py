@@ -276,6 +276,60 @@ class Ingest:
 
         self._event.set()
 
+    def live_tracks(
+        self, camera_id: str | None = None, object_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """In-progress tracks, shaped like the records ``_retire`` writes.
+
+        History only gained a row when an object *left*, which meant the
+        thing most worth knowing about was the thing you could not see: a
+        subject that has been in frame for eight minutes is still in
+        frame, so it had never been written down, and the only way to
+        find out was to happen to be watching the live view.
+
+        These are the same objects the live view is drawing, passed
+        through the same duration and noise rules ``_retire`` applies, so
+        a row appearing here is a promise that the same row will be in
+        the file once the object leaves. Nothing is written now: an
+        in-progress track has no final duration, and a file that had to
+        be rewritten as the number climbed would be a different and much
+        worse design.
+        """
+        thresholds = filters.get()
+        now = time.monotonic()
+        out: list[dict[str, Any]] = []
+        for cam_id, state in self.cameras.items():
+            if camera_id and cam_id != camera_id:
+                continue
+            for track in state.tracks.values():
+                if object_type and track.type != object_type:
+                    continue
+                duration = now - track.first_seen
+                if duration < history.MIN_DURATION_SEC or not track.path:
+                    continue
+                if not _qualifies(track, thresholds):
+                    continue
+                started = datetime.fromtimestamp(track.first_wall, tz=timezone.utc)
+                out.append(
+                    {
+                        "camera_id": cam_id,
+                        "obj_id": track.obj_id,
+                        "type": track.type,
+                        "started_at": started.isoformat(),
+                        "duration_sec": round(duration, 2),
+                        "points": len(track.path),
+                        "max_size": round(max(w * h for _, _, w, h in track.path), 4),
+                        "path": track.path,
+                        # The one field that separates these from the
+                        # file's rows. Everything reading history has to
+                        # know the duration is still counting.
+                        "ongoing": True,
+                        "last_seen_sec_ago": round(now - track.last_seen, 2),
+                    }
+                )
+        out.sort(key=lambda t: t["duration_sec"], reverse=True)
+        return out
+
     def _retire(self, camera_id: str, track: Track) -> None:
         """Persist a finished track, if it was substantial enough to matter."""
         duration = track.last_seen - track.first_seen

@@ -1135,14 +1135,27 @@ async def track_history(
     object_type: str | None = Query(default=None),
     limit: int = Query(default=200, le=2000),
 ) -> dict[str, Any]:
-    """Completed tracks, most recent first, with a summary.
+    """Tracks, most recent first, with a summary.
 
     One row per object rather than per message: the live view already
     shows the messages, and what you want hours later is "what came
     through, when, and for how long".
+
+    In-progress objects come first, from memory, because the file only
+    gains a row when something leaves -- so the longest-running event on
+    a camera was always the one History could not show you. They carry
+    ``ongoing`` and a duration that is still counting; the same row lands
+    in the file, once, when the object finally goes.
     """
+    live = ingest.live_tracks(camera_id=camera_id, object_type=object_type)
+    done = history.read(
+        camera_id=camera_id,
+        limit=max(0, limit - len(live)),
+        object_type=object_type,
+    )
     return {
-        "tracks": history.read(camera_id=camera_id, limit=limit, object_type=object_type),
+        "tracks": live + done,
+        "ongoing_count": len(live),
         "summary": history.summarize(camera_id=camera_id),
     }
 

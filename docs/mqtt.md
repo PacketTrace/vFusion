@@ -33,7 +33,9 @@ Then, per camera: see the exact request before sending it, push the configuratio
 
 ## History tab
 
-Completed tracks, one row per object, written when it leaves view: its path, how long it stayed, and a replay beside the footage it came from, with a timeline and a nudge control to align the two.
+One row per object: its path, how long it stayed, and a replay beside the footage it came from, with a timeline and a nudge control to align the two.
+
+**Objects still in frame appear first**, marked in green with a duration that is still counting. The file only gains a row when something leaves, so without this the longest event on a camera was the one History could not show you: a subject that has been in view for eight minutes is, by definition, still in view. Those rows come from memory and are written to the file once, when the object finally goes. A backend restart loses an in-progress track, which is the honest cost of not rewriting a file as a number climbs.
 
 ![MQTT, history](images/mqtt-history.png)
 
