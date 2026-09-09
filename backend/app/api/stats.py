@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psutil
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,22 @@ class StatsOverview(BaseModel):
     webhooks_last_30d: int
     webhooks_by_type: list[TypeCount]
     webhooks_by_family: list[TypeCount]
+    # What the two breakdowns above were computed over. Echoed back so
+    # the page can label its own charts from the response rather than
+    # from what it believes it asked for -- those two disagree for one
+    # render every time a filter changes, which is exactly when someone
+    # is looking at the number.
+    #
+    # Named "range" to match the audit page's vocabulary, and because
+    # "window" shadows the global of that name in the component reading
+    # it, which is a trap rather than a bug only until somebody adds a
+    # window.matchMedia call.
+    range: str = "all"
+    family: str | None = None
+    # Denominator for the shares shown on each bar. Not webhooks_total:
+    # that is all time, and a share of the wrong total is worse than no
+    # share at all.
+    webhooks_in_window: int = 0
     # Flow execution
     runs_total: int
     runs_last_24h: int
@@ -172,12 +188,53 @@ async def system_load() -> SystemLoad:
     )
 
 
+# How far back the two webhook breakdowns look. The tiles are fixed
+# windows by definition and ignore this; the charts did not previously
+# have a window at all, which meant they answered "what has ever
+# happened here" forever -- a question that stops changing after a month
+# and cannot tell you what broke this morning.
+WINDOWS: dict[str, timedelta] = {
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
+
+# The label the UI shows for events whose family never resolved. Sent
+# back as a filter value too, so clicking that bar narrows to it.
+UNKNOWN_FAMILY = "(unknown)"
+
+
 @router.get("/overview", response_model=StatsOverview)
-async def overview(session: AsyncSession = Depends(get_session)) -> StatsOverview:
+async def overview(
+    session: AsyncSession = Depends(get_session),
+    range: str = Query("all", alias="range", description="24h | 7d | 30d | all"),
+    family: str | None = Query(
+        None, description="Narrow the event-type breakdown to one family"
+    ),
+) -> StatsOverview:
     now = datetime.now(timezone.utc)
     cutoff_24h = now - timedelta(hours=24)
     cutoff_7d = now - timedelta(days=7)
     cutoff_30d = now - timedelta(days=30)
+
+    # An unrecognised window is "all" rather than a 422. This is a
+    # dashboard reading its own URL, and a bad query string should show
+    # you the page, not an error you cannot act on.
+    rng = range if range in WINDOWS or range == "all" else "all"
+    window_cutoff = now - WINDOWS[rng] if rng in WINDOWS else None
+
+    def _windowed(stmt):
+        return stmt.where(WebhookEvent.received_at >= window_cutoff) if window_cutoff else stmt
+
+    # The family filter narrows the event types, never the family chart
+    # itself -- filtering a chart by a value read off that same chart
+    # leaves one bar and no way back.
+    def _family_filtered(stmt):
+        if family is None:
+            return stmt
+        if family == UNKNOWN_FAMILY:
+            return stmt.where(WebhookEvent.family.is_(None))
+        return stmt.where(WebhookEvent.family == family)
 
     # Webhook counters.
     webhooks_total = (await session.execute(
@@ -204,11 +261,13 @@ async def overview(session: AsyncSession = Depends(get_session)) -> StatsOvervie
     # both columns and then collapse so those events show under their own
     # label instead of dumping into "(unrecognized)" alongside true junk.
     by_type_rows = (await session.execute(
-        select(
-            WebhookEvent.notification_type,
-            WebhookEvent.webhook_type,
-            func.count(),
-        )
+        _family_filtered(_windowed(
+            select(
+                WebhookEvent.notification_type,
+                WebhookEvent.webhook_type,
+                func.count(),
+            )
+        ))
         .group_by(WebhookEvent.notification_type, WebhookEvent.webhook_type)
         .order_by(func.count().desc())
         .limit(40)
@@ -232,14 +291,18 @@ async def overview(session: AsyncSession = Depends(get_session)) -> StatsOvervie
     ]
 
     by_family_rows = (await session.execute(
-        select(WebhookEvent.family, func.count())
+        _windowed(select(WebhookEvent.family, func.count()))
         .group_by(WebhookEvent.family)
         .order_by(func.count().desc())
     )).all()
     by_family = [
-        TypeCount(label=row[0] or "(unknown)", count=int(row[1]))
+        TypeCount(label=row[0] or UNKNOWN_FAMILY, count=int(row[1]))
         for row in by_family_rows
     ]
+    # The share denominator: every webhook in the window, whatever its
+    # family. Summing the family rows gives the same number and costs
+    # nothing, where a fourth COUNT(*) would cost a scan.
+    webhooks_in_window = sum(r.count for r in by_family)
 
     # Run counters.
     runs_total = (await session.execute(
@@ -360,6 +423,9 @@ async def overview(session: AsyncSession = Depends(get_session)) -> StatsOvervie
         webhooks_last_30d=webhooks_30d,
         webhooks_by_type=by_type,
         webhooks_by_family=by_family,
+        range=rng,
+        family=family,
+        webhooks_in_window=webhooks_in_window,
         runs_total=runs_total,
         runs_last_24h=runs_24h,
         runs_success_rate=success_rate,

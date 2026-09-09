@@ -488,23 +488,25 @@ function VerkadaOrgCard({
               last tile's, and the label it belongs to is beside it. */}
           <div className="px-4 pb-4">
             <div className="bg-black/20 border border-white/10 rounded-md p-3">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="min-w-0">
-                  <div className="text-xs text-slate-300">
-                    Streaming permissions
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1 max-w-prose">
-                    Pulls a real live frame and a real historical clip from an
-                    online camera, so the answer is what your key can actually
-                    do rather than what the scope list claims.
-                  </p>
+              {/* Stacked, not spread. justify-between on a card this wide
+                  throws the button to the far right edge with a metre of
+                  nothing between it and the words it belongs to, and the
+                  gap grows with the window. Under the text it stays put. */}
+              <div className="max-w-prose">
+                <div className="text-xs text-slate-300">
+                  Streaming permissions
                 </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Pulls a real live frame and a real historical clip from an
+                  online camera, so the answer is what your key can actually do
+                  rather than what the scope list claims.
+                </p>
                 <button
                   type="button"
                   onClick={() => testStreaming.mutate()}
                   disabled={testStreaming.isPending}
                   title="Probe Streaming - Live and Streaming - Live/Historical via a real HLS pull"
-                  className="shrink-0 text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-sky-500 hover:bg-white/5 disabled:opacity-50 transition-colors"
+                  className="mt-2 text-[11px] px-2 py-1 rounded border border-white/15 text-slate-300 hover:text-white hover:border-sky-500 hover:bg-white/5 disabled:opacity-50 transition-colors"
                 >
                   {testStreaming.isPending ? "Testing…" : "Test streaming"}
                 </button>

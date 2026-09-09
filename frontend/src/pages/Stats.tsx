@@ -1,7 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 import { apiGet } from "../lib/api";
+import StatBars, { BarItem } from "../components/StatBars";
+
+
+/** The windows the two webhook breakdowns can be read over. The tiles
+ *  above them are fixed windows by definition and ignore this. */
+const WINDOWS = [
+  { key: "24h", label: "24 hours" },
+  { key: "7d", label: "7 days" },
+  { key: "30d", label: "30 days" },
+  { key: "all", label: "All time" },
+] as const;
 
 
 interface TypeCount {
@@ -74,6 +85,11 @@ interface StatsOverview {
   webhooks_last_30d: number;
   webhooks_by_type: TypeCount[];
   webhooks_by_family: TypeCount[];
+  // Echoed back rather than assumed, so the charts label themselves from
+  // the data they are actually drawing.
+  range: string;
+  family: string | null;
+  webhooks_in_window: number;
   runs_total: number;
   runs_last_24h: number;
   runs_success_rate: number | null;
@@ -103,10 +119,33 @@ function fmtBytes(b: number): string {
 
 
 export default function Stats() {
+  // In the URL, like every other filter in the app, so a view worth
+  // showing someone is a link rather than a list of instructions.
+  const [params, setParams] = useSearchParams();
+  const range =
+    WINDOWS.find((w) => w.key === params.get("range"))?.key ?? "all";
+  const family = params.get("family");
+
+  const patch = (next: Record<string, string | null>) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(next)) {
+      if (v === null) p.delete(k);
+      else p.set(k, v);
+    }
+    setParams(p, { replace: true });
+  };
+
   const stats = useQuery({
-    queryKey: ["stats-overview"],
-    queryFn: () => apiGet<StatsOverview>("/api/stats/overview"),
+    queryKey: ["stats-overview", range, family],
+    queryFn: () => {
+      const qs = new URLSearchParams({ range });
+      if (family) qs.set("family", family);
+      return apiGet<StatsOverview>(`/api/stats/overview?${qs}`);
+    },
     refetchInterval: 30000,
+    // Keeping the old numbers on screen while the new ones load beats
+    // collapsing the charts to "Loading…" on every filter click.
+    placeholderData: (prev) => prev,
   });
   const coverage = useQuery({
     queryKey: ["taxonomy-coverage"],
@@ -162,27 +201,66 @@ export default function Stats() {
 
           {sys && <ServerLoadCard sys={sys} />}
 
-          <Card title="Webhooks by family">
-            <BarList
-              items={s.webhooks_by_family}
-              linkBuilder={(item) =>
-                item.label === "(unknown)"
-                  ? `/inbox?family=unknown`
-                  : `/inbox?family=${encodeURIComponent(item.label)}`
-              }
+          <WebhookFilterBar
+            range={range}
+            family={family}
+            total={s.webhooks_in_window}
+            onRange={(r) => patch({ range: r === "all" ? null : r })}
+            onClearFamily={() => patch({ family: null })}
+          />
+
+          <Card
+            title="Webhooks by family"
+            hint="Click a family to narrow the event types below."
+          >
+            <StatBars
+              total={s.webhooks_in_window}
+              items={s.webhooks_by_family.map<BarItem>((item) => ({
+                key: item.label,
+                label: item.label,
+                count: item.count,
+                selected: family === item.label,
+                // Picks rather than navigates: the whole point is to
+                // filter the chart underneath, and sending someone to
+                // the Explorer would lose the comparison they are in
+                // the middle of making.
+                onPick: () =>
+                  patch({
+                    family: family === item.label ? null : item.label,
+                  }),
+                title:
+                  family === item.label
+                    ? `${item.label} — filtering the event types below. Click to clear.`
+                    : `${item.label} — ${item.count.toLocaleString()} webhooks. Click to narrow the event types below.`,
+              }))}
             />
           </Card>
 
-          <Card title="Top event types">
-            <BarList
-              items={s.webhooks_by_type}
-              linkBuilder={(item) => {
-                if (item.label_source === "webhook_type")
-                  return `/inbox?webhook_type=${encodeURIComponent(item.label)}`;
-                if (item.label_source === "null" || item.label === "(unrecognized)")
-                  return `/inbox?notification_type=__null__&webhook_type=__null__`;
-                return `/inbox?notification_type=${encodeURIComponent(item.label)}`;
-              }}
+          <Card
+            title={
+              family ? `Top event types · ${family}` : "Top event types"
+            }
+            hint="Click a type to open those events in the Explorer."
+          >
+            <StatBars
+              total={s.webhooks_in_window}
+              emptyText={
+                family
+                  ? `No ${family} webhooks in this window.`
+                  : "Nothing in this window."
+              }
+              items={s.webhooks_by_type.map<BarItem>((item) => ({
+                key: `${item.label_source ?? ""}:${item.label}`,
+                label: item.label,
+                count: item.count,
+                href:
+                  item.label_source === "webhook_type"
+                    ? `/inbox?webhook_type=${encodeURIComponent(item.label)}`
+                    : item.label_source === "null" ||
+                        item.label === "(unrecognized)"
+                      ? `/inbox?notification_type=__null__&webhook_type=__null__`
+                      : `/inbox?notification_type=${encodeURIComponent(item.label)}`,
+              }))}
             />
           </Card>
 
@@ -441,79 +519,6 @@ function StatTile({ label, value }: { label: string; value: string }) {
 }
 
 
-function Card({
-  title,
-  children,
-}: {
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg p-4">
-      {title && (
-        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3">
-          {title}
-        </h2>
-      )}
-      {children}
-    </div>
-  );
-}
-
-
-function BarList({
-  items,
-  linkBuilder,
-}: {
-  items: TypeCount[];
-  // Build a destination URL from the row. When provided, each row
-  // renders as a Link so users can click through to inspect those
-  // events in the inbox.
-  linkBuilder?: (item: TypeCount) => string;
-}) {
-  if (items.length === 0)
-    return <div className="text-sm text-slate-500">No data yet.</div>;
-  const max = Math.max(...items.map((i) => i.count), 1);
-  return (
-    <ul className="space-y-1">
-      {items.map((i) => {
-        const body = (
-          <>
-            <div className="flex justify-between text-xs text-slate-300">
-              <span className="truncate">{i.label}</span>
-              <span className="text-slate-400 ml-2">
-                {i.count.toLocaleString()}
-              </span>
-            </div>
-            <div className="h-1.5 bg-white/5 rounded mt-1 overflow-hidden">
-              <div
-                className="h-full bg-sky-500/70"
-                style={{ width: `${(i.count / max) * 100}%` }}
-              />
-            </div>
-          </>
-        );
-        return (
-          <li key={`${i.label_source ?? ""}:${i.label}`} className="text-sm">
-            {linkBuilder ? (
-              <Link
-                to={linkBuilder(i)}
-                className="block hover:bg-white/5 rounded -mx-2 px-2 py-1 transition-colors"
-                title="Open these events in the Explorer"
-              >
-                {body}
-              </Link>
-            ) : (
-              body
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-
 interface CoverageType {
   notification_type: string;
   label: string;
@@ -535,13 +540,97 @@ interface Coverage {
   total: number;
 }
 
-/** Which event types we hold a real sample of.
+
+function Card({
+  title,
+  hint,
+  children,
+}: {
+  title?: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white/5 backdrop-blur-sm border border-white/15 rounded-lg p-4">
+      {title && (
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+          <h2 className="text-xs uppercase tracking-wider text-slate-400">
+            {title}
+          </h2>
+          {/* Rows here have been clickable the whole time and nothing
+              said so. A chart you can drill into is only useful to
+              somebody who already knows they can. */}
+          {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+
+/**
+ * The row above the two webhook charts: how far back they look, and
+ * what is currently narrowing them.
  *
- *  Filters are derived from observed payloads, so a type nobody has sent
- *  is a type the flow builder can only offer camera_id for. Listing the
- *  gaps turns "the filters look wrong here" into a concrete errand:
- *  trigger one of these in Command so we can read its fields.
+ * The charts had no window at all before, which meant they answered
+ * "what has ever arrived here" -- a question whose answer stops moving
+ * after a month and can never tell you what changed this morning. The
+ * counters above still cover fixed windows, so this only governs the
+ * two breakdowns and says so.
  */
+function WebhookFilterBar({
+  range,
+  family,
+  total,
+  onRange,
+  onClearFamily,
+}: {
+  range: string;
+  family: string | null;
+  total: number;
+  onRange: (r: string) => void;
+  onClearFamily: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="inline-flex rounded-md border border-white/15 overflow-hidden">
+        {WINDOWS.map((w) => (
+          <button
+            key={w.key}
+            type="button"
+            onClick={() => onRange(w.key)}
+            aria-pressed={range === w.key}
+            className={`text-xs px-3 py-1.5 transition-colors ${
+              range === w.key
+                ? "bg-sky-950/60 text-sky-200"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
+
+      {family && (
+        <button
+          type="button"
+          onClick={onClearFamily}
+          className="text-xs px-2.5 py-1.5 rounded-md border border-sky-600 bg-sky-950/40 text-sky-200 hover:bg-sky-950/70 transition-colors"
+          title="Clear the family filter"
+        >
+          family: {family} <span className="text-sky-400/70 ml-0.5">×</span>
+        </button>
+      )}
+
+      <span className="text-xs text-slate-500 ml-auto">
+        {total.toLocaleString()} webhook{total === 1 ? "" : "s"} in this window
+      </span>
+    </div>
+  );
+}
+
+
 function CoverageCard({ data }: { data: Coverage }) {
   const missing = data.families
     .map((f) => ({ ...f, types: f.types.filter((t) => t.count === 0) }))
