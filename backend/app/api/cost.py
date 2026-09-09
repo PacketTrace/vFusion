@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -17,6 +18,34 @@ from app.settings_store import invalidate_cache, set_value
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cost", tags=["cost"])
+
+
+class ModelSpend(BaseModel):
+    model: str
+    # Billed calls. Named "runs" from when a run was the only way to
+    # reach Gemini; it counts ledger entries too now.
+    runs: int
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+
+class PricingRow(BaseModel):
+    model: str
+    # Declared float rather than left to a bare dict, because the column
+    # is Numeric(10,4) and SQLAlchemy hands back a Decimal, which JSON
+    # has no type for -- so it serialises as the *string* "0.3000" and
+    # the page dies on .toFixed of a string. Naming the type here makes
+    # pydantic coerce it on the way out, so the shape cannot drift back.
+    input_per_1m_usd: float
+    output_per_1m_usd: float
+    fetched_at: datetime | None = None
+
+
+class ModelsResponse(BaseModel):
+    since: datetime
+    by_model: list[ModelSpend]
+    pricing: list[PricingRow]
 
 
 class CapRequest(BaseModel):
@@ -35,8 +64,8 @@ async def breakdown(session: AsyncSession = Depends(get_session)) -> dict[str, A
     return await budget.breakdown(session, budget.month_start())
 
 
-@router.get("/models")
-async def models(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+@router.get("/models", response_model=ModelsResponse)
+async def models(session: AsyncSession = Depends(get_session)) -> ModelsResponse:
     """Per-model spend this month, and the rates it was priced with.
 
     Month to date rather than a rolling thirty days, so it agrees with
@@ -52,19 +81,11 @@ async def models(session: AsyncSession = Depends(get_session)) -> dict[str, Any]
     rows = (
         await session.execute(select(GeminiPricing).order_by(GeminiPricing.model.asc()))
     ).scalars().all()
-    return {
-        "since": since.isoformat(),
-        "by_model": await budget.by_model(session, since),
-        "pricing": [
-            {
-                "model": r.model,
-                "input_per_1m_usd": r.input_per_1m_usd,
-                "output_per_1m_usd": r.output_per_1m_usd,
-                "fetched_at": r.fetched_at.isoformat() if r.fetched_at else None,
-            }
-            for r in rows
-        ],
-    }
+    return ModelsResponse(
+        since=since,
+        by_model=[ModelSpend(**m) for m in await budget.by_model(session, since)],
+        pricing=[PricingRow.model_validate(r, from_attributes=True) for r in rows],
+    )
 
 
 @router.put("/cap")
