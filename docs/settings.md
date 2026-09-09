@@ -62,6 +62,18 @@ Ingest counters for 24 hours, 7 days and 30 days, webhooks by family, top event 
 
 ![Settings, stats](images/stats.png)
 
+## Updates
+
+Which release is running, whether a newer one exists, and the command to take it.
+
+The header only shows an **Update** badge when there is something to do, so the up-to-date case has nowhere to live in the chrome. This tab is where it lives, along with the things the badge deliberately hides: when the check last ran, whether it failed and why, which channel it follows, and a **Check now** button that skips the six-hour cache instead of waiting for it.
+
+An update hidden with **Not now** can be put back in the header from here.
+
+vFusion asks GitHub for its own release list every six hours and caches the answer, so a restart does not trigger a fresh call. The request is an ordinary unauthenticated read carrying no version, no org and nothing else about the install. `UPDATE_CHANNEL` picks the line it follows: `beta` for any published release, `stable` for only those not marked pre-release, `off` for no outbound request at all.
+
+There is no update button and there will not be one. A container cannot replace itself, so the only way to give an app that power is to mount the Docker socket, which is root on the host. Updating is [`./update.sh`](deploying.md#updating).
+
 ## Help
 
 The **Help** button in the header opens a chat that knows vFusion specifically: what exists, how it works, what it refuses to do, and where a thing lives. Its knowledge is assembled from the source at runtime (docstrings, the action registry, the route table, this documentation), so it changes when the code does. Each answer shows what it cost. It uses your Gemini key.

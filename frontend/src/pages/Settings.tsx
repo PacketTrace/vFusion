@@ -6,6 +6,7 @@ import Connections from "./Connections";
 import CostSettings from "./CostSettings";
 import Security from "./Security";
 import Stats from "./Stats";
+import UpdateSettings from "./UpdateSettings";
 
 import { ONBOARDING_QUERY_KEY } from "../components/OnboardingGate";
 import {
@@ -37,7 +38,8 @@ export default function Settings() {
     requested === "connections" ||
     requested === "stats" ||
     requested === "security" ||
-    requested === "cost"
+    requested === "cost" ||
+    requested === "updates"
       ? requested
       : "retention";
   const setTab = (next: string) => {
@@ -57,6 +59,8 @@ export default function Settings() {
               ? "Counters for ingest, flow runs, spend and on-disk storage."
               : tab === "cost"
                 ? "What vFusion has spent this month, and a cap that pauses flows when it is reached."
+                : tab === "updates"
+                ? "Which release this is, whether a newer one exists, and how to take it."
                 : tab === "security"
                 ? "What this install stands on, what it exposes, and whether its credentials are being used by anyone else."
                 : "Tunable knobs for how long captured data sticks around. Changes apply on the next cleanup cron tick (within ~30 seconds)."}
@@ -68,6 +72,7 @@ export default function Settings() {
             { key: "security", label: "Security" },
             { key: "cost", label: "Cost" },
             { key: "stats", label: "Stats" },
+            { key: "updates", label: "Updates" },
           ].map((t) => (
             <button
               key={t.key}
@@ -89,6 +94,7 @@ export default function Settings() {
       {tab === "security" && <Security />}
       {tab === "cost" && <CostSettings />}
       {tab === "stats" && <Stats />}
+      {tab === "updates" && <UpdateSettings />}
       {tab === "retention" && (
       <>
 

@@ -103,7 +103,7 @@ flow templates, analytics, your existing flows and their runs. Workbench
 has the analytics builder, the API runner and video generation. Helix
 manages event types and demo data. Virtual camera serves footage to a
 Command Connector. MQTT is object-position streaming. Settings has
-Connections, Retention, Security and Stats.
+Connections, Retention, Security, Cost, Stats and Updates.
 
 **Verkada's 403.** The API answers 403 both for a key that lacks a scope
 and for a path it does not serve, so a 403 does not tell you which.
@@ -114,9 +114,12 @@ running, and confirms the new version came up. There is no update button
 and there will not be one: a container cannot replace itself, and the
 only way to give it that power is the Docker socket, which is root on
 the host. When a newer release exists, a green **Update** badge appears
-in the header carrying the version, the notes and the command. The check
-reads GitHub's public release list every six hours and sends nothing
-about the install; ``UPDATE_CHANNEL=off`` disables it.
+in the header carrying the version, the notes and the command. The badge
+shows nothing when there is nothing to do, so **Settings -> Updates** is
+where the up-to-date case lives, along with when the check last ran,
+whether it failed, and a **Check now** button that skips the cache. The
+check reads GitHub's public release list every six hours and sends
+nothing about the install; ``UPDATE_CHANNEL=off`` disables it.
 """
 
 def _python_knowledge() -> list[str]:

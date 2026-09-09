@@ -183,6 +183,7 @@ async def check(force: bool = False) -> dict[str, Any]:
         "latest": None,
         "url": RELEASES_PAGE,
         "dismissed": False,
+        "checked_at": None,
         "error": None,
     }
     if chan == "off":
@@ -217,6 +218,11 @@ async def check(force: bool = False) -> dict[str, Any]:
         dismissed = state.get("dismissed")
 
     base["error"] = state.get("error")
+    # When it last *tried*, which is not the same as when it last
+    # succeeded. The settings page shows both, because "checked eight
+    # minutes ago" next to a stale answer is the shape of the bug where
+    # a host has quietly been unable to reach GitHub for a week.
+    base["checked_at"] = state.get("fetched_at")
     latest = cached.get("latest")
     if not latest:
         return base
@@ -236,6 +242,12 @@ async def check(force: bool = False) -> dict[str, Any]:
 
 
 async def dismiss(version: str) -> None:
-    """Hide the banner for exactly this version."""
+    """Hide the banner for exactly this version.
+
+    An empty string clears the dismissal, because it can never equal a
+    real version. The Settings page uses that to put a hidden update
+    back in the header, and saying so here is the difference between a
+    documented behaviour and one that happens to work.
+    """
     async with _lock:
         _save({**dict(_load()), "dismissed": version})
