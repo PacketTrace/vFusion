@@ -159,7 +159,7 @@ function AppShell() {
               className={({ isActive }) =>
                 `${navItem} ${isActive ? navActive : navInactive}`
               }
-              title="Serve your own clips to Verkada's Command Connector as a third-party camera"
+              title="See what a camera would look like in Command without a Command Connector on site — play a clip through it and Command records it as a real camera"
             >
               Virtual camera
             </NavLink>

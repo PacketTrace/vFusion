@@ -48,7 +48,7 @@ vFusion is a visual router for everything that happens in a Verkada org. Events 
 
 **New worlds**
 
-- 🎬 **Virtual camera** — serve your own clips, a URL, or a live stream to a Command Connector over RTSP with ONVIF Profile S, on one unbroken stream. Generate footage with Veo that looks like a ceiling dome shot it.
+- 🎬 **Virtual camera** — show someone what their cameras would look like in Command without a Command Connector on their site. Play a clip through it and Command records it as an ordinary camera, analytics and all, over RTSP with ONVIF Profile S on one unbroken stream. Clips, a URL or a live source, or footage generated with Veo that looks like a ceiling dome shot it.
 - 📡 **MQTT** — broker, certificates and credentials generated for you; configure cameras to publish live object positions; watch the boxes, filter the noise, replay a track beside its footage.
 - 🧰 **MCP explorer** — browse Verkada's Model Context Protocol server with the key you already have: every tool badged read-only, writes or destructive, and a history of when each one appeared.
 - 🏷 **Helix** — draft event types from a sentence, send test events by hand, read back what is really on Verkada, and seed a plausible week of demo data for an integration nobody has built yet.
@@ -101,7 +101,7 @@ Not on the list? Describe it in a sentence on the Automate tab and the builder p
 
 ![MQTT, history](docs/images/mqtt-history.png)
 
-**Virtual camera.** One unbroken RTSP stream for a Command Connector to record, with ONVIF Profile S so Advanced Analytics works on it.
+**Virtual camera.** "What would my cameras look like in Command?" normally means a trial: a Connector on site, on their network, wait. Play a clip through this instead and they find out today. One unbroken RTSP stream, with ONVIF Profile S so Advanced Analytics runs on it.
 
 ![Virtual camera](docs/images/virtual-camera.png)
 

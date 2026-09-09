@@ -274,7 +274,7 @@ export default function Rtsp() {
         <p className="text-slate-400 text-sm mt-1">
           {tab === "queue"
             ? "What the camera plays, in order. Add a clip and it joins the stream without interrupting it; loop keeps the queue going round rather than falling back to standby."
-            : "A camera that does not exist, for Verkada's Command Connector to record. While it is on there is always a picture — your uploads when there are any, black with a clock when there are not — so the camera never goes offline between clips."}
+            : "See what a camera would look like in Command without a Command Connector on site. Play a clip through this and Command records it as an ordinary camera, analytics and all. While it is on there is always a picture — your uploads when there are any, black with a clock when there are not — so it never goes offline between clips."}
         </p>
         <div className="mt-4 flex items-center gap-1 border-b border-white/10">
           {[
