@@ -1,9 +1,21 @@
 # Virtual camera
 
-*Serve your own footage to Verkada's Command Connector as a third-party camera.*
+*See footage inside Verkada Command as a real camera, without a Command Connector of your own.*
 
 **Where:** the **Virtual camera** item in the nav. Two tabs: Camera and Queue.
 **Compose profile:** `docker compose --profile rtsp up -d` (adds the `rtsp-server` container).
+
+## What it is for
+
+The usual question is "what would my cameras look like in Command?", and the usual answer is a trial: get a Command Connector on site, put it on the network, wait.
+
+This is the shortcut. Take a clip from the camera someone already has, play it through the virtual camera, and it appears in Command as an ordinary camera on a Connector **you** already own. It records continuously, motion and people analytics run on it, and History, Archive, Search and Stats all behave normally. Nothing in Command knows the footage came from a file.
+
+The person you are showing it to needs no hardware, no Connector on their site and no access to their network. Only a clip. You need one Connector, in your own org, once.
+
+It is good for other things as well: replaying one scene until an analytic is tuned, demoing a camera angle that does not exist yet, or feeding in footage generated with Veo. But seeing it in Command before committing to a trial is why most people turn it on.
+
+## How it stays up
 
 A Command Connector adds a third-party camera by URL and expects that URL to keep answering. A stream that stops between clips gets the camera marked offline, and a camera that flaps is worse than one never added. So the virtual camera holds **one unbroken stream open for as long as the switch is on**, and changes what is inside it. Clip boundaries are invisible to the Connector.
 

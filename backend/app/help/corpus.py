@@ -13,8 +13,8 @@ route table, and the README and SECURITY documents. Change the code and
 the help changes with it, because there is no second copy to update.
 
 It is injected whole rather than retrieved from. It comes to roughly
-fifty thousand tokens, which fits a 1M-context model with room to
-spare, and injection cannot miss. A retriever that fails to surface the
+seventy-five thousand tokens, which fits a 1M-context model with room
+to spare, and injection cannot miss. A retriever that fails to surface the
 paragraph explaining that vFusion does not send email produces a
 confident "yes it does" — which is worse than no help at all, and
 indistinguishable from good help until someone acts on it.
@@ -101,12 +101,37 @@ use the single Gemini connection.
 **Where things are.** Explorer is what is happening in the org. The Webhooks tab is incoming events, with an **Events / Insights** switch -- Insights charts what arrived by family and by type over a window you pick, and clicking a bar filters the events list. The Audit log tab is a local copy of Command's audit log (pulled every ten seconds, filterable by user / event / device / IP / key / endpoint, CSV export) and has the same switch, where Insights charts the same slice with drill-down. Audit rows can also start flows: pick the **Audit log** trigger in the flow editor, choose a category / event / actor and optional field filters, and the flow runs within ten seconds of the action happening in Command (backfilled history never fires flows). Automate holds
 flow templates, analytics, your existing flows and their runs. Workbench
 has the analytics builder, the API runner and video generation. Helix
-manages event types and demo data. Virtual camera serves footage to a
-Command Connector. MQTT is object-position streaming. Settings has
+manages event types and demo data. Virtual camera plays footage you
+supply into Command as a real camera, so someone can see their own
+clips in Command without a Command Connector of their own. MQTT is object-position streaming. Settings has
 Connections, Retention, Security, Cost, Stats and Updates. Gemini spend
 per model, and the rates behind it, are on **Cost** rather than Stats:
 they are the answer to why the number at the top of that page is the
 size it is. Stats is ingest and run counters, storage and server load.
+
+**What the virtual camera is actually for.** The usual question is
+"what would my cameras look like in Command?", and the usual answer is
+a trial: get a Command Connector on site, put it on the network, wait.
+This is the shortcut. Take a clip from the camera someone already has,
+play it through the virtual camera, and it turns up in Command as an
+ordinary camera on a Connector *you* already own. It records
+continuously, motion and people analytics run on it, and History,
+Archive, Search and Stats all behave normally, because nothing in
+Command knows the footage came from a file.
+
+So the person you are showing it to needs no hardware, no Connector on
+their site, and no access to their network -- only a clip. You need one
+Connector, in your own org, once.
+
+It is good for other things too: replaying a scene until an analytic is
+tuned, demoing a camera angle that does not exist yet, or feeding
+Veo-generated footage in. But "see it in Command before committing to a
+trial" is the reason most people turn it on.
+
+The stream stays up whether or not there is anything to play -- a
+Connector marks a camera offline the moment its stream stops, and a
+camera that flaps is worse than one never added. Empty queue means
+black with a clock, not silence.
 
 **Verkada's 403.** The API answers 403 both for a key that lacks a scope
 and for a path it does not serve, so a 403 does not tell you which.
