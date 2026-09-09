@@ -1,0 +1,180 @@
+# NOT ACTIVE HERE. This file belongs at .github/workflows/release.yml.
+#
+# It is parked in docs/ because GitHub refuses a push that creates or
+# changes a workflow file unless the token doing the pushing carries the
+# Workflows permission, and the token that wrote the rest of this commit
+# does not. Move it into place from a machine whose credentials do:
+#
+#     mkdir -p .github/workflows
+#     git mv docs/ci/release.yml .github/workflows/release.yml
+#     git commit -m "ci: build and publish release images to ghcr"
+#     git push
+#
+# Then delete this header. Nothing else in the file needs changing.
+#
+# One thing has to happen after it lands: the workflow runs on a version
+# tag, and v1.1.0 already points at a commit that predates it, so it will
+# not fire on its own. With the release still an unpublished draft,
+# nothing has consumed that tag yet, so move it onto the commit that has
+# the workflow in it:
+#
+#     git tag -f -a v1.1.0 -m "vFusion 1.1.0"
+#     git push -f origin v1.1.0
+#
+# That push is what builds and publishes the images.
+
+# Build and publish the images an upgrade pulls.
+#
+# Runs on a version tag, so publishing is the same act as tagging a
+# release, and on manual dispatch for when a tag needs rebuilding
+# without moving it.
+#
+# amd64 and arm64 are built on their own native runners rather than one
+# runner emulating the other. GitHub gives public repositories free
+# arm64 runners, and the alternative — QEMU — turns `npm run build` and
+# a Python wheel install into a twenty-minute affair for no benefit.
+# Each runner pushes an image by digest; a final job stitches the two
+# digests into one multi-architecture tag, so `docker pull` on a Pi and
+# on a workstation resolve the same name to the right binary.
+
+name: Release images
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to build and publish, e.g. v1.1.0"
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+  # GHCR rejects a repository name with a capital in it, and the owner
+  # here is "PacketTrace". metadata-action lowercases on its own;
+  # build-push-action's raw `outputs:` does not, so compute it once.
+  OWNER: packettrace
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile.release
+        platform:
+          # `id` exists only because the cache scope and the artifact
+          # name below want a token without a slash in it.
+          - runner: ubuntu-24.04
+            arch: linux/amd64
+            id: amd64
+          - runner: ubuntu-24.04-arm
+            arch: linux/arm64
+            id: arm64
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push by digest only. Tags are applied once, by the merge job,
+      # so a tag never points at a half-published manifest with one
+      # architecture missing.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          platforms: ${{ matrix.platform.arch }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.id }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.id }}
+          # One line on purpose: this is a CSV value, and a folded
+          # YAML scalar would leave a space after every comma for
+          # buildx to choke on.
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OWNER }}/vfusion-${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+
+      # One empty file per digest, named for the hex half of it. The
+      # merge job reconstructs the full reference from the filename,
+      # which is the pattern buildx's own docs use — an artifact needs
+      # a file, and the name carries all the information there is.
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -eu
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image.name }}-${{ matrix.platform.id }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` currently follows the beta line, because beta is where
+      # releases come from. When main starts publishing its own tags,
+      # gate latest on that and leave beta pointing here.
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/vfusion-${{ matrix.image }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || github.ref_name }}
+            type=raw,value=beta
+            type=raw,value=latest
+
+      - name: Create the multi-architecture manifest
+        working-directory: /tmp/digests
+        run: |
+          set -eu
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${{ env.REGISTRY }}/${{ env.OWNER }}/vfusion-${{ matrix.image }}@sha256:%s " *)
+
+      - name: Show what was published
+        run: |
+          docker buildx imagetools inspect \
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/vfusion-${{ matrix.image }}:${{ steps.meta.outputs.version }}
