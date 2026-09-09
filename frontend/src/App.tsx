@@ -96,7 +96,14 @@ function AppShell() {
   }, [brand]);
   return (
     <div className="h-full flex flex-col">
-      <header className="border-b border-white/10 bg-black/40 backdrop-blur-md">
+      {/* relative z-30 is load-bearing, not decoration. backdrop-blur
+          creates a stacking context, which traps anything absolutely
+          positioned in here -- the update popover was being painted
+          over by the page below it and could not be clicked, however
+          high its own z-index went. Raising the whole header fixes it
+          at the level the problem actually lives. Modals stay above at
+          z-50, which is right: a modal should cover the header. */}
+      <header className="relative z-30 border-b border-white/10 bg-black/40 backdrop-blur-md">
         <div className="w-full px-6 h-14 flex items-center gap-6">
           {/* Compact and self-contained, which is what every earlier
               attempt was missing — a track drawn around the letters is

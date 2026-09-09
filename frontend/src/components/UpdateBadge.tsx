@@ -120,7 +120,7 @@ export default function UpdateBadge() {
 
       {open && (
         <div
-          className="animate-value-picker absolute right-0 top-full mt-2 w-[22rem] rounded-lg border border-white/10 bg-slate-900 shadow-2xl shadow-black/60 p-4 z-50"
+          className="animate-value-picker absolute right-0 top-full mt-2 w-[22rem] max-h-[calc(100vh-6rem)] overflow-y-auto rounded-lg border border-white/10 bg-slate-900 shadow-2xl shadow-black/60 p-4 z-50"
           style={{ transformOrigin: "top right" }}
           role="dialog"
           aria-label="Update available"
